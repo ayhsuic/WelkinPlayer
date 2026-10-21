@@ -1,0 +1,86 @@
+name: Android Build (fix verification)
+
+# Android compile smoke test for the ndk-context double-init fix.
+#
+# Triggers manually (Actions -> Android Build -> Run workflow) or on push to
+# the `android-build` branch. Builds debug APKs so NO signing secrets are
+# required; uploads the APKs as artifacts for inspection. This proves the Rust
+# fix compiles and bundles for Android without touching release.yml (which only
+# runs on `v*` tags and needs repository secrets).
+on:
+  workflow_dispatch:
+  push:
+    branches: ["android-build"]
+
+jobs:
+  android:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: android
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 17
+
+      - name: Use the preinstalled Android SDK
+        run: |
+          # android-actions/setup-android@v3 tries to install the removed legacy
+          # `tools` package and fails on current SDKs. The GitHub runner already
+          # ships an SDK, so just accept its licenses and export the paths.
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          sdkmanager=$(find "$sdk/cmdline-tools" -maxdepth 3 -type f -name sdkmanager 2>/dev/null | sort | tail -n1)
+          if [ -n "$sdkmanager" ]; then
+            yes | "$sdkmanager" --licenses >/dev/null 2>&1 || true
+          fi
+          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$sdk" >> "$GITHUB_ENV"
+
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26b
+          add-to-path: false
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sync version from package.json
+        run: pnpm version:sync
+
+      - name: Build debug APKs (per ABI)
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: pnpm tauri android build --debug --apk --split-per-abi
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug
+          path: src-tauri/gen/android/app/build/outputs/apk
+          if-no-files-found: error
