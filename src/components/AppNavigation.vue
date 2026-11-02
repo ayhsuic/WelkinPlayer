@@ -36,26 +36,26 @@ function isClassificationActive(id: View): boolean {
 
 <template>
   <template v-if="placement === 'header'">
-    <header class="flex h-[calc(3.5rem_+_env(safe-area-inset-top))] items-center justify-between border-b border-line bg-surface px-4 pt-[env(safe-area-inset-top)] md:hidden">
-      <span class="flex items-center gap-2">
-        <button type="button" class="header-drawer-btn grid h-10 w-10 place-items-center text-muted transition-colors hover:text-fg" :aria-label="t('nav.more')" :aria-expanded="drawerOpen" aria-haspopup="dialog" @click="toggleDrawer"><Menu :size="20" :stroke-width="1.8" /></button>
-        <span class="flex items-center gap-2 text-sm font-black uppercase tracking-[0.25em]"><span class="h-3 w-3 bg-accent"></span>Welkin</span>
-      </span>
-      <span class="flex items-center gap-3"><span class="grid place-items-center text-dim" :title="networkLabel"><WifiOff v-if="!network.available" :size="16" :stroke-width="1.8" /><Wifi v-else-if="!network.metered" :size="16" :stroke-width="1.8" /><Signal v-else :size="16" :stroke-width="1.8" /></span><button type="button" class="bg-accent px-2 py-1 text-xs font-bold uppercase leading-none tracking-[0.2em] text-accent-fg transition-opacity hover:opacity-80" @click="emit('navigate', 'sponsor')">{{ editionLabel }}</button></span>
-    </header>
+    <button type="button" class="header-drawer-btn fixed left-3 top-[calc(env(safe-area-inset-top)_+_0.5rem)] z-[60] grid h-10 w-10 place-items-center border border-line bg-surface text-fg transition-colors hover:text-accent md:hidden" :aria-label="t('nav.more')" :aria-expanded="drawerOpen" aria-haspopup="dialog" @click="toggleDrawer"><Menu :size="20" :stroke-width="1.8" /></button>
     <Teleport to="body">
       <Transition name="sheet-backdrop"><div v-if="drawerOpen" class="fixed inset-0 z-[70] bg-black/40 md:hidden" @pointerdown="closeDrawer"></div></Transition>
       <Transition name="drawer">
         <section v-if="drawerOpen" class="drawer-shell fixed bottom-0 left-0 top-0 z-[71] flex w-[280px] flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface pb-3 md:hidden" role="dialog" aria-modal="true" aria-label="navigation">
           <div class="flex items-center justify-between border-b border-line px-5 py-4">
-            <span class="flex items-center gap-2 text-sm font-black uppercase tracking-[0.25em]"><span class="sidebar-logo grid h-7 w-7 place-items-center bg-accent text-accent-fg" aria-hidden="true"><Music2 :size="14" :stroke-width="2.2" /></span>Welkin</span>
-            <button type="button" class="grid h-9 w-9 place-items-center text-dim transition-colors hover:text-fg" :aria-label="t('controls.close')" @click="closeDrawer"><X :size="16" :stroke-width="1.8" /></button>
+            <span class="flex items-center gap-2">
+              <span class="sidebar-logo grid h-7 w-7 shrink-0 place-items-center bg-accent text-accent-fg" aria-hidden="true"><Music2 :size="14" :stroke-width="2.2" /></span>
+              <span class="flex items-center gap-2 text-sm font-black uppercase tracking-[0.25em]">Welkin<button type="button" class="bg-accent px-2 py-1 text-xs font-bold uppercase leading-none tracking-[0.2em] text-accent-fg transition-opacity hover:opacity-80" @click="closeDrawer(); emit('navigate', 'sponsor')">{{ editionLabel }}</button></span>
+            </span>
+            <span class="flex items-center gap-2">
+              <span class="grid place-items-center text-dim" :title="networkLabel"><WifiOff v-if="!network.available" :size="15" :stroke-width="1.8" /><Wifi v-else-if="!network.metered" :size="15" :stroke-width="1.8" /><Signal v-else :size="15" :stroke-width="1.8" /></span>
+              <button type="button" class="grid h-9 w-9 place-items-center text-dim transition-colors hover:text-fg" :aria-label="t('controls.close')" @click="closeDrawer"><X :size="16" :stroke-width="1.8" /></button>
+            </span>
           </div>
           <nav class="flex flex-col gap-px p-3">
             <button v-for="item in navItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === item.id ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
-            <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'tracks' && !activePlaylistId && !activeArtist && !activeAlbum && !activeSource ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('tracks')"><ListMusic :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.tracks") }}</span></button>
             <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'favorites' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('favorites')"><Heart :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.favorites") }}</span></button>
             <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="playlistsActive ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('playlists')"><ListPlus :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.playlists") }}</span></button>
+            <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'tracks' && !activePlaylistId && !activeArtist && !activeAlbum && !activeSource ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('tracks')"><ListMusic :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.tracks") }}</span></button>
           </nav>
           <div class="mx-3 border-t border-line"></div>
           <nav class="flex flex-col gap-px p-3">
@@ -64,9 +64,14 @@ function isClassificationActive(id: View): boolean {
           <div class="mx-3 border-t border-line"></div>
           <nav class="flex flex-col gap-px p-3">
             <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'stats' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('stats')"><Activity :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.stats") }}</span></button>
-            <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'settings' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('settings')"><Settings2 :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.settings") }}</span></button>
-            <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'sponsor' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('sponsor')"><HeartHandshake :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.sponsor") }}</span></button>
           </nav>
+          <div class="mt-auto border-t border-line pt-3">
+            <nav class="flex flex-col gap-px p-3">
+              <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'settings' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('settings')"><Settings2 :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.settings") }}</span></button>
+              <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'sponsor' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('sponsor')"><HeartHandshake :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.sponsor") }}</span></button>
+              <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] text-muted transition-colors ak-hover hover:text-fg" @click="closeDrawer"><ChevronLeft :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("controls.collapse") }}</span></button>
+            </nav>
+          </div>
         </section>
       </Transition>
     </Teleport>
