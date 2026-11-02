@@ -1,6 +1,6 @@
 [package]
 name = "welkinplayer"
-version = "1.0.3-rc-1"
+version = "1.2.0"
 description = "A Tauri App"
 authors = ["Atemukesu"]
 license = "GPL-3.0-only"
@@ -43,6 +43,7 @@ lofty = "0.22"
 # Decode embedded cover art and re-encode a small JPEG thumbnail for the cache.
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp", "tiff"] }
 base64 = "0.22"
+urlencoding = "2"
 # Content-addressed naming for standalone playlist cover files.
 sha2 = "0.10"
 # Verifies developer-issued Pro activation codes (Ed25519-signed JWTs).
@@ -65,11 +66,18 @@ keyring = { version = "3", features = ["apple-native"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+# Linux MPRIS system media controls. souvlaki's default `dbus-crossroads`
+# backend blocks in `Connection::process(Duration::from_millis(1000))` after
+# every event, so a `set_playback`/`set_metadata` queued from the engine tick can
+# sit for up to a second before it reaches the bus — the 1-2 s play/pause lag.
+# The pure-Rust `zbus` backend polls its channel every 10 ms with no blocking
+# `process`, so updates land in ~1 ms (measured).
+souvlaki = { version = "0.8", default-features = false, features = ["use_zbus"] }
 # Linux runs on the Chromium Embedded Framework instead of the system
 # WebKitGTK webview, so the app no longer links webkit2gtk at all. The CEF
 # binary distribution is downloaded by the `cef` crate on the first build and
 # bundled next to the app by the Tauri CLI.
-tauri-runtime-cef = { version = "3.0.0-alpha.6", features = ["devtools"] }
+tauri-runtime-cef = { version = "3.0.0-alpha.6" }
 # rfd's GTK backend pumps the default GLib main context on its own thread, which
 # aborts the CEF browser process after the dialog closes. The XDG portal backend
 # runs out of process over D-Bus instead.
@@ -82,13 +90,13 @@ winit = { version = "0.31.0-beta.3", package = "tauri-winit", default-features =
 gtk = { version = "0.11.5", package = "gtk4" }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
-tauri-runtime-wry = { version = "3.0.0-alpha.5", features = ["devtools"] }
+tauri-runtime-wry = { version = "3.0.0-alpha.5" }
 tauri-plugin-dialog = "3.0.0-alpha.4"
 
-# System media controls on desktop: Windows SMTC, macOS Now Playing and Linux
-# MPRIS behind one API. Android implements its own native MediaSession, so the
-# crate is only pulled in for the three desktop targets.
-[target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+# System media controls on desktop: Windows SMTC and macOS Now Playing. Android
+# implements its own native MediaSession, so the crate is only pulled in for the
+# desktop targets; Linux enables it (with a different backend) below.
 souvlaki = "0.8"
 # Signed, per-platform updates published as GitHub release assets. Desktop only:
 # Android queries the GitHub Releases API and downloads the APK manually instead.
@@ -116,14 +124,14 @@ rustfft = "6"
 rtrb = "0.3"
 
 # Android has no keyring backend of its own. `android-keyring` installs a
-# Keystore-backed credential builder over the plain `keyring` crate.
-# `jni`/`ndk-context` are used to publish the Android context that
-# android-keyring (via ndk-context) expects, which tao 0.35 no longer does.
+# Keystore-backed credential builder over the plain `keyring` crate, and `jni`
+# backs this crate's own bridge calls. `ndk-context` is deliberately absent:
+# tao publishes that slot itself (from `Rust.onCreate`) and publishing it twice
+# aborts, so `src/platform/android.rs` caches the handles it needs instead.
 [target.'cfg(target_os = "android")'.dependencies]
 keyring = "3"
-android-keyring = "0.2"
+android-keyring = { version = "0.2", default-features = false }
 jni = "0.21"
-ndk-context = "0.1"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

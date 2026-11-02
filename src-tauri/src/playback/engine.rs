@@ -21,10 +21,11 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use rodio::{Decoder, OutputStream, OutputStreamBuilder, Source};
 use rtrb::{Consumer, Producer, RingBuffer};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::core::error::AppError;
 use crate::playback::source::{open_track, ReadSeek};
@@ -78,6 +79,395 @@ pub struct AudioState {
     pub position_ms: f64,
     pub duration_ms: f64,
     pub ended: bool,
+    /// The loaded file's native sample rate (0 when nothing is loaded).
+    pub sample_rate: u32,
+    /// The rate the engine actually processes at: `min(file, device)`.
+    pub work_rate: u32,
+    /// The rate the output stream is currently opened at. This is what the
+    /// quality picker controls, and it is valid even when nothing is loaded.
+    pub output_rate: u32,
+}
+
+/// Output device capabilities, for the audio-quality picker.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceInfo {
+    /// Rate the output stream is currently opened at.
+    pub current_rate: u32,
+    /// Real music rates the device can take (deduplicated, ascending).
+    pub supported_rates: Vec<u32>,
+    /// Highest rate on offer: the largest of `supported_rates` (0 when nothing
+    /// could be probed). Software endpoints are bounded first, so this is a real
+    /// music rate rather than a plugin's `384000` fiction.
+    pub max_rate: u32,
+    /// The output devices currently available. On Android this is the
+    /// `AudioManager.getDevices()` list (with a `device_type`); on desktop it is
+    /// the cpal enumeration. Empty when none could be read.
+    pub devices: Vec<DeviceEntry>,
+    /// Identifier of the device the stream is currently bound to. `None` means
+    /// the engine follows the system default rather than a pinned choice.
+    pub current_device: Option<String>,
+}
+
+/// One selectable output device, with the music rates it actually supports.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceEntry {
+    /// Stable-enough identifier: the device name. On Android this is the
+    /// `AudioDeviceInfo` product name; on desktop it is the cpal device name.
+    /// `getProductName` can return the same string for the built-in speaker and
+    /// a wired headset, so when a name repeats we append `#n` to make the id
+    /// unique (see `enumerate_android_devices`).
+    pub id: String,
+    /// Human-readable label (currently the same as `id`).
+    pub name: String,
+    /// Music sample rates this device can take, after the software-endpoint
+    /// guard described in `device_info`.
+    pub supported_rates: Vec<u32>,
+    /// `AudioDeviceInfo.getType()` value on Android; `0` on platforms where the
+    /// backend does not expose a device type. Lets the UI tag a row as
+    /// headphones / USB / Bluetooth / built-in speaker.
+    pub device_type: u32,
+}
+
+/// The sample rates worth offering in the quality picker: the standard music
+/// and HD rates. cpal enumerates plenty more (8 kHz … 64 kHz on Android), but
+/// nothing musical ever plays at those, so they are left out.
+const STANDARD_RATES: [u32; 6] = [44_100, 48_000, 88_200, 96_000, 176_400, 192_000];
+
+/// Raw min/max sample-rate ranges advertised by the default output device.
+/// Real hardware reports a sane range (or discrete rates on Android), while the
+/// Linux ALSA/PipeWire/Pulse *plugin* devices claim an absurd `1 … 384000`
+/// (Pulse: `1 … 768000`) for every channel and format. Read-only; safe to call
+/// from any thread.
+pub fn device_ranges() -> Vec<(u32, u32)> {
+    let mut ranges = Vec::new();
+    if let Some(device) = rodio::cpal::default_host().default_output_device() {
+        if let Ok(configs) = device.supported_output_configs() {
+            for config in configs {
+                ranges.push((config.min_sample_rate().0, config.max_sample_rate().0));
+            }
+        }
+    }
+    ranges
+}
+
+/// Whether the endpoint is a software mixer rather than real hardware. The
+/// Linux plugin devices are indistinguishable from hardware through cpal, but
+/// their `1 … 384000` claim is a giveaway; their real ceiling is unknowable
+/// here, so we must not derive a "device maximum" from them.
+fn is_software_endpoint(ranges: &[(u32, u32)]) -> bool {
+    ranges.iter().any(|(low, high)| *low <= 100 && *high >= 384_000)
+}
+
+/// Probe the default output device for the rates it supports. Read-only and
+/// safe to call from any thread; `current_rate` is filled by the caller from
+/// the engine's live stream.
+pub fn device_info() -> DeviceInfo {
+    let ranges = device_ranges();
+    // A software endpoint's range is a lie, so bound the list to the endpoint's
+    // own preferred rate (never below 48 kHz, so 48 kHz files can still play
+    // natively). Real hardware is trusted as reported.
+    let ceiling = if is_software_endpoint(&ranges) {
+        let preferred = rodio::cpal::default_host()
+            .default_output_device()
+            .and_then(|device| device.default_output_config().ok())
+            .map(|config| config.sample_rate().0)
+            .unwrap_or(48_000);
+        preferred.max(48_000)
+    } else {
+        u32::MAX
+    };
+    let supported_rates: Vec<u32> = STANDARD_RATES
+        .into_iter()
+        .filter(|rate| *rate <= ceiling)
+        .filter(|rate| ranges.iter().any(|(low, high)| low <= rate && rate <= high))
+        .collect();
+    let max_rate = supported_rates.last().copied().unwrap_or(0);
+    DeviceInfo {
+        current_rate: 0,
+        supported_rates,
+        max_rate,
+        devices: enumerate_devices(),
+        current_device: None,
+    }
+}
+
+/// Enumerate the output devices cpal can see (desktop), with the rates each one
+/// supports after the software-endpoint guard. Safe to call from any thread.
+/// On Android this defers to [`enumerate_android_devices`], which talks to
+/// `AudioManager` directly because cpal's Android backend does no enumeration.
+pub fn enumerate_devices() -> Vec<DeviceEntry> {
+    #[cfg(target_os = "android")]
+    {
+        enumerate_android_devices()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        enumerate_cpal_devices()
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn enumerate_cpal_devices() -> Vec<DeviceEntry> {
+    let host = rodio::cpal::default_host();
+    let mut devices: Vec<DeviceEntry> = Vec::new();
+    if let Ok(list) = host.output_devices() {
+        for device in list {
+            let name = match device.name() {
+                Ok(name) => name,
+                Err(_) => continue,
+            };
+            // Skip cpal's hard-coded ALSA pseudo-devices. cpal probes `jack`
+            // and `oss` to detect them, and on a host without a running jackd
+            // (no socket) or without `/dev/dsp`, the ALSA JACK/OSS plugins dump
+            // their own connection errors straight to stderr. Those messages
+            // come from the C libraries, so no Rust log filter can silence
+            // them; not probing at all is the only clean fix. Real output still
+            // happens through `default` (PipeWire/Pulse), and genuine hardware
+            // is enumerated separately from the card list below.
+            if matches!(name.as_str(), "jack" | "oss") {
+                continue;
+            }
+            let ranges = device
+                .supported_output_configs()
+                .map(|configs| {
+                    configs
+                        .map(|config| (config.min_sample_rate().0, config.max_sample_rate().0))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let ceiling = if is_software_endpoint(&ranges) {
+                device
+                    .default_output_config()
+                    .map(|config| config.sample_rate().0)
+                    .unwrap_or(48_000)
+                    .max(48_000)
+            } else {
+                u32::MAX
+            };
+            let supported_rates: Vec<u32> = STANDARD_RATES
+                .into_iter()
+                .filter(|rate| *rate <= ceiling)
+                .filter(|rate| ranges.iter().any(|(low, high)| low <= rate && rate <= high))
+                .collect();
+            devices.push(DeviceEntry {
+                id: name.clone(),
+                name,
+                supported_rates,
+                device_type: 0,
+            });
+        }
+        if let Some(default_name) = host
+            .default_output_device()
+            .and_then(|device| device.name().ok())
+        {
+            if let Some(index) = devices.iter().position(|device| device.id == default_name) {
+                let default = devices.remove(index);
+                devices.insert(0, default);
+            }
+        }
+    }
+    devices
+}
+
+/// `AudioManager.getDevices()` on Android, read through JNI. cpal's Android
+/// backend does not enumerate output devices, and its device names are *not* the
+/// `AudioDeviceInfo` product names — so the only reliable way to present a device
+/// list and to detect plug/unplug is to ask `AudioManager` ourselves.
+///
+/// Returns device entries for the playback-relevant output types. Sensible even
+/// though we still open the stream through cpal's default device: the list is
+/// what the UI shows, and its signature is what `check_device` compares each poll
+/// to learn that headphones were plugged in or out.
+#[cfg(target_os = "android")]
+pub fn enumerate_android_devices() -> Vec<DeviceEntry> {
+    use jni::objects::{JObject, JString, JValue};
+
+    // Playback-relevant output types (AudioDeviceInfo constant values).
+    const TYPES: &[i32] = &[
+        2,  // TYPE_BUILTIN_SPEAKER
+        3,  // TYPE_WIRED_HEADSET
+        4,  // TYPE_WIRED_HEADPHONES
+        8,  // TYPE_BLUETOOTH_A2DP
+        11, // TYPE_USB_DEVICE
+        22, // TYPE_USB_HEADSET
+    ];
+
+    let vm = match crate::platform::android::java_vm() {
+        Some(vm) => vm,
+        None => return Vec::new(),
+    };
+    let mut env = match vm.attach_current_thread() {
+        Ok(env) => env,
+        Err(error) => {
+            log::warn!("playback: android device enum attach failed: {error}");
+            return Vec::new();
+        }
+    };
+    let application = match crate::platform::android::application_jobject() {
+        Some(object) => object,
+        None => return Vec::new(),
+    };
+
+    // Context.AUDIO_SERVICE == "audio"
+    let service_name = match env.new_string("audio") {
+        Ok(string) => JObject::from(string),
+        Err(_) => return Vec::new(),
+    };
+    let audio_manager = match env
+        .call_method(
+            &application,
+            "getSystemService",
+            "(Ljava/lang/String;)Ljava/lang/Object;",
+            &[JValue::Object(&service_name)],
+        )
+        .and_then(|value| value.l())
+    {
+        Ok(object) => object,
+        Err(error) => {
+            log::warn!("playback: android getSystemService(audio) failed: {error}");
+            return Vec::new();
+        }
+    };
+
+    // AudioManager.GET_DEVICES_OUTPUTS == 2
+    let devices_obj = match env
+        .call_method(
+            &audio_manager,
+            "getDevices",
+            "(I)[Landroid/media/AudioDeviceInfo;",
+            &[JValue::Int(2)],
+        )
+        .and_then(|value| value.l())
+    {
+        Ok(object) => object,
+        Err(error) => {
+            log::warn!("playback: android AudioManager.getDevices failed: {error}");
+            return Vec::new();
+        }
+    };
+    // The returned `AudioDeviceInfo[]` is a `JObjectArray`, not a bare `JObject`.
+    let devices_array = unsafe { jni::objects::JObjectArray::from_raw(devices_obj.as_raw()) };
+
+    let len = match env.get_array_length(&devices_array) {
+        Ok(len) => len,
+        Err(_) => 0,
+    };
+    let mut out = Vec::new();
+    for index in 0..len {
+        let device = match env.get_object_array_element(&devices_array, index) {
+            Ok(device) => device,
+            Err(_) => continue,
+        };
+        let type_ = match env
+            .call_method(&device, "getType", "()I", &[])
+            .and_then(|value| value.i())
+        {
+            Ok(type_) => type_,
+            Err(_) => continue,
+        };
+        if !TYPES.contains(&type_) {
+            continue;
+        }
+        // `getProductName` returns a `CharSequence`; convert it to a `String`
+        // (toString) before reading it as a JNI string.
+        let name_obj = match env
+            .call_method(&device, "getProductName", "()Ljava/lang/CharSequence;", &[])
+            .and_then(|value| value.l())
+        {
+            Ok(object) => object,
+            Err(_) => JObject::null(),
+        };
+        let name = if name_obj.as_raw().is_null() {
+            format!("type-{type_}")
+        } else {
+            let name_str = match env
+                .call_method(&name_obj, "toString", "()Ljava/lang/String;", &[])
+                .and_then(|value| value.l())
+            {
+                Ok(string) => string,
+                Err(_) => JObject::null(),
+            };
+            if name_str.as_raw().is_null() {
+                format!("type-{type_}")
+            } else {
+                env.get_string(&JString::from(name_str))
+                    .map(|string| string.into())
+                    .unwrap_or_else(|_| format!("type-{type_}"))
+            }
+        };
+        out.push(DeviceEntry {
+            id: name.clone(),
+            name,
+            supported_rates: Vec::new(),
+            device_type: type_ as u32,
+        });
+    }
+    // `getProductName` can return the same string for the built-in speaker and
+    // a wired headset (both report "Welkin" or similar), which would make two
+    // rows collapse into one id and the picker ambiguous. Disambiguate by type.
+    let mut used: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for device in &mut out {
+        if let Some(n) = used.get_mut(&device.name) {
+            *n += 1;
+            device.id = format!("{}#{}", device.name, *n);
+        } else {
+            used.insert(device.name.clone(), 1);
+            device.id = device.name.clone();
+        }
+    }
+    out.sort_by_key(|device| (device.device_type, device.name.clone()));
+    out
+}
+
+/// A canonical, order-independent signature of the current output-device list,
+/// used by [`Worker::check_device`] to detect plug/unplug without a native
+/// event. On Android it is the `AudioManager` list; on desktop it is the single
+/// cpal default device name. Empty when enumeration is unavailable.
+///
+/// On desktop this deliberately reads only the default device instead of
+/// running the full [`enumerate_devices`] walk: that walk opens every
+/// pseudo-device, which is both wasteful and noisy (see `enumerate_cpal_devices`),
+/// and it runs on every `check_device` poll. The default device name is the
+/// signal that actually changes when the OS reroutes output, so it is enough
+/// to detect a plug/unplug.
+#[cfg(target_os = "android")]
+fn device_signature() -> String {
+    let mut ids: Vec<String> = enumerate_devices().into_iter().map(|device| format!("{}:{}", device.device_type, device.id)).collect();
+    ids.sort();
+    ids.join("|")
+}
+
+#[cfg(not(target_os = "android"))]
+fn device_signature() -> String {
+    rodio::cpal::default_host()
+        .default_output_device()
+        .and_then(|device| device.name().ok())
+        .unwrap_or_default()
+}
+
+/// The rate to open the output stream at before a track is loaded. cpal's ALSA
+/// default is hard-coded to prefer 44.1 kHz whenever the range allows it, so
+/// we don't hand the stream to cpal unmodified: prefer 48 kHz — the modern
+/// hardware standard — then 44.1 kHz, then the highest on offer, then cpal's
+/// own default as a last resort.
+fn default_output_rate() -> u32 {
+    let supported = device_info().supported_rates;
+    if supported.contains(&48_000) {
+        return 48_000;
+    }
+    if supported.contains(&44_100) {
+        return 44_100;
+    }
+    if let Some(rate) = supported.last() {
+        return *rate;
+    }
+    rodio::cpal::default_host()
+        .default_output_device()
+        .and_then(|device| device.default_output_config().ok())
+        .map(|config| config.sample_rate().0)
+        .unwrap_or(48_000)
 }
 
 /// Lock-light state shared between the worker and the command/event threads.
@@ -90,6 +480,10 @@ pub struct Shared {
     underruns: AtomicU64,
     channels: AtomicU32,
     sample_rate: AtomicU32,
+    /// The loaded file's native rate, before the work-rate cap. 0 when idle.
+    native_rate: AtomicU32,
+    /// The rate the output stream is currently opened at, for the quality UI.
+    device_rate: AtomicU32,
     duration_ms: AtomicU64,
     transport: AtomicU8,
     worker_started: AtomicBool,
@@ -114,6 +508,9 @@ pub struct Shared {
     /// Requested seek target (seconds as `f64` bits) while a seek is in flight.
     /// The event thread reports this instead of the decoder's stale playhead.
     seek_preview: Mutex<Option<f64>>,
+    /// The application handle, for emitting playback-context events from the
+    /// shared state (the queue lives outside the engine but needs to notify).
+    app: Mutex<Option<AppHandle>>,
 }
 
 /// One constant-tempo run of playback. `out` is an interleaved output-sample
@@ -151,6 +548,8 @@ impl Shared {
             underruns: AtomicU64::new(0),
             channels: AtomicU32::new(2),
             sample_rate: AtomicU32::new(44_100),
+            native_rate: AtomicU32::new(0),
+            device_rate: AtomicU32::new(0),
             duration_ms: AtomicU64::new(0),
             transport: AtomicU8::new(Transport::Idle as u8),
             worker_started: AtomicBool::new(false),
@@ -165,7 +564,33 @@ impl Shared {
             spectrum: std::array::from_fn(|_| AtomicU32::new(0)),
             spectrum_sequence: AtomicU64::new(0),
             seek_preview: Mutex::new(None),
+            app: Mutex::new(None),
         }
+    }
+
+    /// Stash the app handle so the shared state can emit `playback:changed`.
+    pub fn set_app(&self, app: AppHandle) {
+        *self.app.lock().unwrap_or_else(|error| error.into_inner()) = Some(app);
+    }
+
+    /// The application handle, if it has been set.
+    pub fn app_handle(&self) -> Option<AppHandle> {
+        self.app
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
+
+    /// Whether the engine currently holds `(source_id, path)` as the loaded
+    /// track. Used by the playback context to decide between resuming and
+    /// reloading, so a `play` on an already-loaded track does not reload it.
+    pub fn is_loaded(&self, source_id: &str, path: &str) -> bool {
+        let location = self
+            .location
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        matches!(location.as_ref(), Some((loaded_source, loaded_path))
+            if loaded_source == source_id && loaded_path == path)
     }
 
     /// Report a seek target while the decoder is still being repositioned, so
@@ -188,6 +613,34 @@ impl Shared {
     /// Requested playback state: a track is loaded and not paused.
     pub fn is_paused(&self) -> bool {
         self.transport.load(Ordering::Relaxed) != Transport::Playing as u8
+    }
+
+    /// Authoritative "is audio currently sounding" used by the desktop-lyric tick
+    /// driver: loaded, not paused, and not past the end.
+    pub fn is_playing(&self) -> bool {
+        let transport = self.transport.load(Ordering::Relaxed);
+        transport == Transport::Playing as u8 && !self.has_ended()
+    }
+
+    /// Current playhead in milliseconds. Public so other subsystems (the desktop
+    /// lyric tick driver) can read the engine's authoritative position without
+    /// going through the webview.
+    pub fn position_ms(&self) -> f64 {
+        // While a seek is being applied, report where the user asked to go rather
+        // than the decoder's not-yet-updated playhead.
+        if let Some(target) = *self
+            .seek_preview
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+        {
+            return target * 1000.0;
+        }
+        self.position_secs() * 1000.0
+    }
+
+    /// Live output stream rate, for the quality UI.
+    pub fn device_rate(&self) -> u32 {
+        self.device_rate.load(Ordering::Relaxed)
     }
 
     pub fn set_paused(&self, paused: bool) {
@@ -219,6 +672,11 @@ impl Shared {
             0.0
         };
         self.volume.store(value.to_bits(), Ordering::Relaxed);
+    }
+
+    /// Current output volume as a percentage (0-100).
+    pub fn volume_percent(&self) -> f32 {
+        f32::from_bits(self.volume.load(Ordering::Relaxed)) * 100.0
     }
 
     fn volume(&self) -> f32 {
@@ -257,20 +715,6 @@ impl Shared {
 
     fn set_ended(&self, ended: bool) {
         self.progress().ended.store(ended, Ordering::Relaxed);
-    }
-
-    /// Position snapshot in milliseconds, derived from the played output.
-    fn position_ms(&self) -> f64 {
-        // While a seek is being applied, report where the user asked to go
-        // rather than the decoder's not-yet-updated playhead.
-        if let Some(target) = *self
-            .seek_preview
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-        {
-            return target * 1000.0;
-        }
-        self.position_secs() * 1000.0
     }
 
     /// Source position (seconds) at the played output sample, mapped through the
@@ -415,6 +859,9 @@ impl Shared {
             position_ms: self.position_ms(),
             duration_ms: self.duration_ms.load(Ordering::Relaxed) as f64,
             ended,
+            sample_rate: self.native_rate.load(Ordering::Relaxed),
+            work_rate: self.sample_rate.load(Ordering::Relaxed),
+            output_rate: self.device_rate.load(Ordering::Relaxed),
         }
     }
 }
@@ -608,6 +1055,18 @@ pub enum Command {
     SetTempo {
         rate: f32,
     },
+    /// User-selected output quality: the output stream is reopened at this
+    /// exact rate and resyncs the current track without dropping playback.
+    SetQuality {
+        rate: u32,
+    },
+    /// Select a specific output device (`None` follows the system default).
+    /// On Android this only pins a `AudioManager` device identity for change
+    /// detection; the actual stream still follows the system default (cpal
+    /// cannot address an Android device by name).
+    SetDevice {
+        device_id: Option<String>,
+    },
     Play,
     Pause,
     Seek {
@@ -616,7 +1075,9 @@ pub enum Command {
     Stop,
 }
 
-/// Handle held in Tauri managed state.
+/// Handle held in Tauri managed state. `Clone` is cheap: the sender is
+/// multi-producer and the rest is shared via `Arc`.
+#[derive(Clone)]
 pub struct Engine {
     tx: Sender<Command>,
     shared: Arc<Shared>,
@@ -646,6 +1107,7 @@ pub fn start(app: AppHandle, cache: Arc<StreamCache>, smart: Arc<SmartCache>) ->
     log::info!("playback: starting worker and event threads");
     let (tx, rx) = mpsc::channel();
     let shared = Arc::new(Shared::new());
+    shared.set_app(app.clone());
     let shutdown = Arc::new(AtomicBool::new(false));
 
     let worker_shared = shared.clone();
@@ -704,6 +1166,13 @@ mod events {
             if emit_state {
                 state_ticks = 0;
                 let _ = app.emit("audio:state", state);
+                // MPRIS receives the position through the playback snapshot;
+                // update it every state tick instead of once per second.
+                if let Some(context) =
+                    app.try_state::<crate::playback::context::PlaybackContext>()
+                {
+                    context.apply_to_media_control();
+                }
                 log::debug!(
                     "playback: state playing={} pos={:.3}s dur={:.3}s ended={} played={}",
                     state.playing,
@@ -781,6 +1250,12 @@ mod events {
             if state.ended && ended_armed {
                 ended_armed = false;
                 let _ = app.emit("audio:ended", ());
+                // Auto-advance the queue in Rust so playback survives a dead or
+                // throttled webview. The webview no longer drives next/previous;
+                // the context owns the queue and reloads the engine directly.
+                if let Some(context) = app.try_state::<crate::playback::context::PlaybackContext>() {
+                    context.on_ended();
+                }
             }
         }
     }
@@ -824,9 +1299,16 @@ mod worker {
             let mut current = Current {
                 decoder,
                 pending: Vec::new(),
+                native: Vec::new(),
+                resampler: None,
                 source_done: false,
                 stretch: build_stretch(rate, channels, 0.25).unwrap(),
                 applied_tempo: 0.25,
+                direct: false,
+                draining: false,
+                drain_flushed: false,
+                drain_tail: Vec::new(),
+                drain_pos: 0,
                 out_made: 0,
                 scratch: Vec::new(),
                 tail: Vec::new(),
@@ -875,15 +1357,98 @@ mod worker {
             .map_err(|error| AppError::other(error.to_string()))
     }
 
+    /// Linear-interpolating sample-rate converter, run on the worker thread.
+    ///
+    /// This is deliberately the same arithmetic rodio's `UniformSourceIterator`
+    /// uses in the realtime callback, but moved off the audio thread and fed
+    /// from the engine's own buffers. It keeps inter-channel phase (all channels
+    /// advance together) and is stateful across `process` calls, so a decoded
+    /// chunk stream converts incrementally. Used only to bring a file *down* to
+    /// the device rate; equal rates bypass it entirely.
+    struct Resampler {
+        /// Input frames consumed per output frame (`from / to`).
+        step: f64,
+        /// Fractional read position within `buf`, in frames.
+        pos: f64,
+        /// Leftover input frames (interleaved), carried across calls.
+        buf: Vec<f32>,
+        channels: usize,
+    }
+
+    impl Resampler {
+        fn new(from: u32, to: u32, channels: usize) -> Self {
+            Self {
+                step: from as f64 / to as f64,
+                pos: 0.0,
+                buf: Vec::new(),
+                channels,
+            }
+        }
+
+        /// Append `input` (interleaved frames) and emit converted frames to `dst`.
+        fn process(&mut self, input: &[f32], dst: &mut Vec<f32>) {
+            let ch = self.channels;
+            self.buf.extend_from_slice(input);
+            let frames = self.buf.len() / ch;
+            if frames < 2 {
+                return;
+            }
+            let last = (frames - 1) as f64;
+            while self.pos < last {
+                let i = self.pos.floor() as usize;
+                let frac = (self.pos - i as f64) as f32;
+                for c in 0..ch {
+                    let a = self.buf[i * ch + c];
+                    let b = self.buf[(i + 1) * ch + c];
+                    dst.push(a + (b - a) * frac);
+                }
+                self.pos += self.step;
+            }
+            // Drop frames that can never be read again, keeping the frame the
+            // next `pos` interpolates from. `pos` stays relative to the new
+            // buffer, so the absolute read position is unchanged.
+            let keep = (self.pos.floor() as usize).min(frames - 1);
+            if keep > 0 {
+                self.buf.drain(0..keep * ch);
+                self.pos -= keep as f64;
+            }
+        }
+
+        /// Drop all carried state, e.g. after a seek repositions the decoder.
+        fn reset(&mut self) {
+            self.buf.clear();
+            self.pos = 0.0;
+        }
+    }
+
     struct Current {
         decoder: Decoder<Box<dyn ReadSeek>>,
-        /// Decoded source samples not yet handed to the stretcher.
+        /// Samples at the work rate, not yet handed to the stretcher (or the
+        /// ring, at 1.0x). This is what every downstream stage consumes.
         pending: Vec<f32>,
+        /// Native-rate staging buffer, used only while `resampler` is set.
+        native: Vec<f32>,
+        /// Converts the file's rate to the work rate on the worker thread, so
+        /// neither the realtime callback nor WSOLA ever sees the file's native
+        /// high rate. `None` when the device already runs at the file's rate.
+        resampler: Option<Resampler>,
         source_done: bool,
         /// Pitch-preserving time-stretcher applied inline before the ring.
         stretch: wsola::TimeStretch,
         /// Tempo most recently applied to `stretch`.
         applied_tempo: f32,
+        /// True while at exactly 1.0x: the ring is fed straight from `pending`
+        /// and WSOLA is skipped (it is a costly identity transform there).
+        direct: bool,
+        /// Set while handing playback from the stretcher back to the direct
+        /// 1.0x feed: the stretcher is emptied first so no decoded audio is
+        /// dropped. Stays set across `pump` calls if the ring fills mid-drain.
+        draining: bool,
+        /// Whether the drain has already emitted the stretcher's overlap tail.
+        drain_flushed: bool,
+        /// Drain output not yet accepted by the ring.
+        drain_tail: Vec<f32>,
+        drain_pos: usize,
         /// Interleaved output samples produced so far (anchors tempo segments).
         out_made: u64,
         /// Reused buffer for pulling stretched samples.
@@ -909,6 +1474,57 @@ mod worker {
         Ok(stretch)
     }
 
+    /// Open an output stream pinned to the requested sample rate. `device_id`
+    /// selects a specific cpal device on desktop; on Android cpal does not
+    /// enumerate and its device names do not match `AudioManager` product names,
+    /// so it is ignored and the system default is used (the OS routes to the
+    /// active output device anyway). If the device is gone or refuses the rate we
+    /// fall back to the default device so a bad preference never kills output.
+    fn open_stream(rate: u32, device_id: Option<&str>) -> Result<OutputStream, String> {
+        #[cfg(target_os = "android")]
+        let _ = device_id; // cpal follows the system default on Android.
+        #[cfg(not(target_os = "android"))]
+        let device = match device_id {
+            Some(id) => rodio::cpal::default_host()
+                .output_devices()
+                .ok()
+                .and_then(|devices| {
+                    devices
+                        .into_iter()
+                        .find(|device| device.name().map(|name| name == id).unwrap_or(false))
+                })
+                .or_else(|| rodio::cpal::default_host().default_output_device())
+                .ok_or_else(|| "no output device".to_string())?,
+            None => rodio::cpal::default_host()
+                .default_output_device()
+                .ok_or_else(|| "no output device".to_string())?,
+        };
+        #[cfg(not(target_os = "android"))]
+        let device = device;
+        #[cfg(target_os = "android")]
+        let device = rodio::cpal::default_host()
+            .default_output_device()
+            .ok_or_else(|| "no output device".to_string())?;
+        let stream = OutputStreamBuilder::default()
+            .with_device(device.clone())
+            .with_sample_rate(rate)
+            .open_stream();
+        match stream {
+            Ok(stream) => Ok(stream),
+            Err(error) => {
+                log::warn!(
+                    "playback engine: {rate} Hz output rejected ({error}), falling back to device default"
+                );
+                Ok::<_, String>(
+                    OutputStreamBuilder::default()
+                        .with_device(device)
+                        .open_stream()
+                        .map_err(|fallback| fallback.to_string())?,
+                )
+            }
+        }
+    }
+
     struct Worker {
         app: AppHandle,
         cache: Arc<StreamCache>,
@@ -918,10 +1534,31 @@ mod worker {
         shutdown: Arc<AtomicBool>,
         /// Kept alive for the worker's lifetime; sources are added to its mixer.
         stream: OutputStream,
+        /// Device output rate, in samples per second. The work rate never
+        /// exceeds it: a 96 kHz file plays on a 48 kHz device at 48 kHz, with
+        /// WSOLA and the ring all running at 48 kHz. While a track is loaded
+        /// this equals the file's native rate capped by `selected_rate`, so a
+        /// lower-rate file is never upsampled to a higher output rate.
+        device_rate: u32,
+        /// The user's chosen output-quality ceiling (from the picker). The live
+        /// `device_rate` is `min(selected_rate, file rate)`, so HD files use the
+        /// higher rate and lower-rate files stay at their native rate.
+        selected_rate: u32,
+        /// The device the user asked for, or `None` to follow the system default.
+        /// On Android this is only used to detect change and to report a pin; the
+        /// actual stream opening ignores it (cpal follows the system default).
+        selected_device: Option<String>,
         current: Option<Current>,
         pending_tempo: Option<f32>,
         /// Throttles the worker-loop heartbeat.
         last_trace: std::time::Instant,
+        /// Signature of the device list observed on the previous poll (a sorted,
+        /// canonical string of `type:name`), so a change can be detected without
+        /// any platform-native event hooks. On Android this is the
+        /// `AudioManager` list; on desktop it is the cpal default device name.
+        bound_device_signature: String,
+        /// Throttles the device-change poll to roughly once per second.
+        last_device_check: std::time::Instant,
     }
 
     pub fn run(
@@ -934,7 +1571,16 @@ mod worker {
     ) {
         log::info!("playback: worker thread starting, opening output stream");
         shared.worker_started.store(true, Ordering::Release);
-        let Ok(stream) = OutputStreamBuilder::open_default_stream() else {
+        // Open at a sane default rate rather than cpal's 44.1 kHz hard-coded
+        // default, which on ALSA/PipeWire/Pulse prefers 44.1 kHz even on 48 kHz
+        // hardware. The frontend pins the real rate via `audio_set_quality`
+        // before the first track loads, which reopens the stream.
+        let initial_rate = default_output_rate();
+        let stream = open_stream(initial_rate, None).or_else(|error| {
+            log::warn!("playback engine: opening {initial_rate} Hz output failed ({error}); using device default");
+            OutputStreamBuilder::open_default_stream().map_err(|fallback| fallback.to_string())
+        });
+        let Ok(stream) = stream else {
             log::error!("playback engine: no audio output device available");
             *shared
                 .failure
@@ -946,6 +1592,9 @@ mod worker {
             return;
         };
         log::info!("playback: output stream opened, worker started");
+        let config = stream.config();
+        let device_rate = config.sample_rate();
+        log::info!("playback: device output {device_rate} Hz (work rate caps at this)");
 
         let mut worker = Worker {
             app,
@@ -955,14 +1604,249 @@ mod worker {
             shutdown,
             ring: Ring::new(1).0,
             stream,
+            device_rate,
+            selected_rate: initial_rate,
+            selected_device: None,
             current: None,
             pending_tempo: None,
             last_trace: std::time::Instant::now(),
+            bound_device_signature: device_signature(),
+            last_device_check: std::time::Instant::now(),
         };
+        worker.publish_device_rates();
         worker.loop_forever(rx);
     }
 
     impl Worker {
+        /// Publish the live stream rate, the device's advertised maximum, and
+        /// Publish the live stream rate so the quality UI reflects reality.
+        fn publish_device_rates(&self) {
+            self.shared.device_rate.store(self.device_rate, Ordering::Relaxed);
+        }
+
+        /// Apply a new output-quality preference: reopen the output stream at
+        /// `min(rate, current file rate)` and resync the current track. The
+        /// output rate is never raised above the file's native rate, so a 48 kHz
+        /// track on a 96 kHz selection plays natively at 48 kHz instead of
+        /// being upsampled.
+        fn set_quality(&mut self, rate: u32) {
+            self.selected_rate = rate;
+            let file_rate = self.shared.native_rate.load(Ordering::Relaxed);
+            let target = if file_rate > 0 {
+                rate.min(file_rate)
+            } else {
+                rate
+            };
+            if target == self.device_rate {
+                return;
+            }
+            log::info!("playback: quality change requested -> {rate} Hz (file {file_rate} Hz, opening {target} Hz)");
+            let was_paused = self.shared.is_paused();
+            let location = self
+                .shared
+                .location
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone();
+            let position = self.shared.position_secs();
+
+            let stream = match open_stream(target, self.selected_device.as_deref()) {
+                Ok(stream) => stream,
+                Err(error) => {
+                    log::error!("playback engine: reopening output stream failed: {error}");
+                    *self
+                        .shared
+                        .failure
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner()) = Some(ErrorInfo {
+                        code: "AUDIO_DEVICE".to_string(),
+                        message: "无法切换音频输出设备参数".to_string(),
+                    });
+                    return;
+                }
+            };
+            let actual = stream.config().sample_rate();
+            // Report the rate we actually got, which may differ from the ask if
+            // the device rejected it and we fell back to its default.
+            self.stream = stream;
+            self.device_rate = actual;
+            self.publish_device_rates();
+            log::info!("playback: output stream reopened at {actual} Hz (asked {target})");
+
+            // The old mixer's sources are invalidated by the generation bump;
+            // rebuild the current track against the new stream.
+            self.bump_generation();
+            self.ring = Ring::new(1).0;
+            self.ring.done.store(true, Ordering::Release);
+            self.current = None;
+            let Some((source_id, path)) = location else {
+                return;
+            };
+            self.load(&source_id, &path, !was_paused);
+            if position > 0.0 {
+                self.seek(position);
+                self.shared.set_paused(was_paused);
+            }
+        }
+
+        /// Reopen the output stream for the current device/rate selection and
+        /// re-mount the playing track at its current position. Used both when the
+        /// user changes quality/device and when the output device changes under
+        /// us (headphone plug, etc.). Forced: unlike `set_quality` it never short
+        /// circuits on `target == device_rate`, because the stream handle itself
+        /// may have been invalidated by the OS-level device change.
+        ///
+        /// Returns `true` when the stream was actually (re)opened.
+        fn rebuild_stream(&mut self) -> bool {
+            let file_rate = self.shared.native_rate.load(Ordering::Relaxed);
+            let target = if file_rate > 0 {
+                self.selected_rate.min(file_rate)
+            } else {
+                self.selected_rate
+            };
+            log::info!(
+                "playback: rebuilding output stream for device {:?} at {target} Hz (current {})",
+                self.selected_device,
+                self.device_rate,
+            );
+            let was_paused = self.shared.is_paused();
+            let location = self
+                .shared
+                .location
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone();
+            let position = self.shared.position_secs();
+
+            let stream = match open_stream(target, self.selected_device.as_deref()) {
+                Ok(stream) => stream,
+                Err(error) => {
+                    log::error!("playback engine: rebuilding output stream failed: {error}");
+                    *self
+                        .shared
+                        .failure
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner()) = Some(ErrorInfo {
+                        code: "AUDIO_DEVICE".to_string(),
+                        message: "无法重建音频输出设备".to_string(),
+                    });
+                    return false;
+                }
+            };
+            let actual = stream.config().sample_rate();
+            self.stream = stream;
+            self.device_rate = actual;
+            self.publish_device_rates();
+            log::info!("playback: output stream rebuilt at {actual} Hz (asked {target})");
+
+            // The old mixer's sources are invalidated by the generation bump;
+            // rebuild the current track against the new stream.
+            self.bump_generation();
+            self.ring = Ring::new(1).0;
+            self.ring.done.store(true, Ordering::Release);
+            self.current = None;
+            let Some((source_id, path)) = location else {
+                // No track loaded: just publish the fresh device list/rate so the
+                // device picker reflects the new capability.
+                self.emit_device_changed();
+                return true;
+            };
+            self.load(&source_id, &path, !was_paused);
+            if position > 0.0 {
+                self.seek(position);
+            }
+            self.emit_device_changed();
+            true
+        }
+
+        /// Push the current device list/rate to the frontend via `audio:deviceChanged`.
+        fn emit_device_changed(&self) {
+            let mut info = device_info();
+            info.current_rate = self.device_rate;
+            info.current_device = self.selected_device.clone();
+            let _ = self.app.emit("audio:deviceChanged", info);
+        }
+
+        /// Choose a specific output device (`None` = follow system default). On
+        /// desktop the stream is reopened against that cpal device; on Android we
+        /// call `AudioManager.routeToDevices` directly (cpal cannot address an
+        /// Android device by name, so reopening the stream would not change the
+        /// route). `open_stream` always falls back to the default device if the
+        /// requested one is gone, so a bad selection can never kill output.
+        fn set_device(&mut self, device_id: Option<String>) {
+            let previous = self.selected_device.clone();
+            self.selected_device = device_id;
+            if self.selected_device == previous {
+                return;
+            }
+            #[cfg(target_os = "android")]
+            {
+                if let Some(id) = &self.selected_device {
+                    // Resolve the type from the enumerated list, then route to
+                    // the matching device. The route is what actually makes
+                    // audio play on the chosen device.
+                    if let Some(device) = enumerate_devices()
+                        .iter()
+                        .find(|device| &device.id == id)
+                    {
+                        if let Err(error) = crate::platform::android::route_audio(
+                            device.device_type as i32,
+                            &device.name,
+                        ) {
+                            log::warn!("playback: route to {id} failed: {error}");
+                            *self
+                                .shared
+                                .failure
+                                .lock()
+                                .unwrap_or_else(|error| error.into_inner()) = Some(ErrorInfo {
+                                code: "AUDIO_DEVICE".to_string(),
+                                message: format!("无法切换到输出设备: {error}"),
+                            });
+                            self.selected_device = previous;
+                            return;
+                        }
+                    }
+                } else if let Err(error) = crate::platform::android::route_audio(2, "speaker") {
+                    // "Follow default" on Android means: let the OS decide. We
+                    // route back to the built-in speaker so a previously pinned
+                    // Bluetooth/wired device is actually released.
+                    log::warn!("playback: route to default (speaker) failed: {error}");
+                }
+            }
+            self.rebuild_stream();
+        }
+
+        /// Poll for an output-device change roughly once per second and rebuild
+        /// the stream when it happens. There is no platform-native device-change
+        /// event: on Android we compare the `AudioManager` device-list signature,
+        /// on desktop we compare the cpal default device name. This is what
+        /// recovers playback after the OS invalidates the stream (e.g. headphones
+        /// unplugged on Android).
+        fn check_device(&mut self) {
+            if self.last_device_check.elapsed() < Duration::from_millis(900) {
+                return;
+            }
+            self.last_device_check = std::time::Instant::now();
+            let signature = device_signature();
+            if signature != self.bound_device_signature {
+                log::info!(
+                    "playback: output device list changed: {:?} -> {:?}",
+                    self.bound_device_signature,
+                    signature,
+                );
+                self.bound_device_signature = signature;
+                // A user-pinned device that is no longer in the list was
+                // unplugged: drop the pin and follow the system default.
+                if let Some(pinned) = &self.selected_device {
+                    if !enumerate_devices().iter().any(|device| &device.id == pinned) {
+                        log::info!("playback: pinned device {pinned:?} disappeared, following default");
+                        self.selected_device = None;
+                    }
+                }
+                self.rebuild_stream();
+            }
+        }
+
         fn loop_forever(&mut self, rx: Receiver<Command>) {
             while !self.shutdown.load(Ordering::Acquire) {
                 // Drain every queued command first so seeks/pause stay snappy.
@@ -977,6 +1861,12 @@ mod worker {
                 if let Some(rate) = self.pending_tempo.take() {
                     self.set_tempo(rate);
                 }
+
+                // Detect output-device changes (headphone plug, etc.) without any
+                // platform-native event: there is none, so we poll the device
+                // list / default roughly once per second. This recovers playback
+                // after the OS invalidates the stream.
+                self.check_device();
 
                 let idle = match self.current.as_mut() {
                     Some(current) if !self.shared.is_paused() && !self.ring.is_done() => {
@@ -1022,6 +1912,16 @@ mod worker {
                     // Coalesce slider events drained in the same worker turn;
                     // only the newest value needs a WSOLA/ring transition.
                     self.pending_tempo = Some(rate)
+                }
+
+                Command::SetQuality { rate } => {
+                    log::debug!("playback: cmd SetQuality {rate}");
+                    self.set_quality(rate)
+                }
+
+                Command::SetDevice { device_id } => {
+                    log::debug!("playback: cmd SetDevice {device_id:?}");
+                    self.set_device(device_id);
                 }
 
                 Command::Play => {
@@ -1102,11 +2002,40 @@ mod worker {
 
             let channels = decoder.channels().max(1);
             let rate = decoder.sample_rate().max(1);
+            // The output stream runs at `min(selected_quality, file rate)` so a
+            // lower-rate file is never upsampled to a higher output rate. Reopen
+            // the stream when that differs from what is currently open.
+            let output_rate = self.selected_rate.min(rate);
+            if output_rate != self.device_rate {
+                log::info!(
+                    "playback: reopening output stream for {rate} Hz file at {output_rate} Hz (quality {})",
+                    self.selected_rate,
+                );
+                match open_stream(output_rate, self.selected_device.as_deref()) {
+                    Ok(stream) => {
+                        self.stream = stream;
+                        self.device_rate = self.stream.config().sample_rate();
+                        self.publish_device_rates();
+                    }
+                    Err(error) => {
+                        log::warn!("playback: reopening output stream at {output_rate} Hz failed: {error}");
+                    }
+                }
+            }
+            // The work rate is the nearest standard rate <= the device rate,
+            // capped at the file's native rate.
+            let standard = [44_100u32, 48_000, 88_200, 96_000, 176_400, 192_000];
+            let cap = self.device_rate.min(rate);
+            let mut work_rate = standard[0];
+            for &r in &standard {
+                if r <= cap { work_rate = r; } else { break; }
+            }
+            let work_rate = work_rate.max(1);
             let duration_ms = decoder
                 .total_duration()
                 .map(|value| value.as_millis() as u64)
                 .unwrap_or(0);
-            let capacity = output_samples(rate, channels, BUFFER_MILLIS);
+            let capacity = output_samples(work_rate, channels, BUFFER_MILLIS);
 
             let generation = self.bump_generation();
             let (ring, consumer) = Ring::new(capacity);
@@ -1115,7 +2044,8 @@ mod worker {
             self.shared
                 .channels
                 .store(channels as u32, Ordering::Relaxed);
-            self.shared.sample_rate.store(rate, Ordering::Relaxed);
+            self.shared.sample_rate.store(work_rate, Ordering::Relaxed);
+            self.shared.native_rate.store(rate, Ordering::Relaxed);
             self.shared
                 .duration_ms
                 .store(duration_ms, Ordering::Relaxed);
@@ -1137,20 +2067,28 @@ mod worker {
                 .transport
                 .store(Transport::Paused as u8, Ordering::Relaxed);
 
-            let stretch = match build_stretch(rate, channels, tempo) {
+            let stretch = match build_stretch(work_rate, channels, tempo) {
                 Ok(stretch) => stretch,
                 Err(error) => {
                     self.fail(error.code(), &error.to_string());
                     return;
                 }
             };
-            self.append_source(generation, channels, rate, consumer);
+            self.append_source(generation, channels, work_rate, consumer);
             self.current = Some(Current {
                 decoder,
                 pending: Vec::with_capacity(DECODE_CHUNK),
+                native: Vec::new(),
+                resampler: (work_rate != rate)
+                    .then(|| Resampler::new(rate, work_rate, channels as usize)),
                 source_done: false,
                 stretch,
                 applied_tempo: tempo,
+                direct: tempo == 1.0,
+                draining: false,
+                drain_flushed: false,
+                drain_tail: Vec::new(),
+                drain_pos: 0,
                 out_made: 0,
                 scratch: Vec::with_capacity(STRETCH_REFILL),
                 tail: Vec::new(),
@@ -1163,7 +2101,7 @@ mod worker {
             self.prefill();
             self.shared.set_paused(!autoplay);
             log::debug!(
-                "playback: load ready {source_id}::{path} channels={channels} rate={rate} duration_ms={duration_ms} ring_len={} ring_done={}",
+                "playback: load ready {source_id}::{path} channels={channels} rate={rate} work_rate={work_rate} duration_ms={duration_ms} ring_len={} ring_done={}",
                 self.ring.len(),
                 self.ring.is_done(),
             );
@@ -1278,6 +2216,10 @@ mod worker {
                 }
             }
             current.pending.clear();
+            current.native.clear();
+            if let Some(resampler) = current.resampler.as_mut() {
+                resampler.reset();
+            }
             current.source_done = false;
             current.out_made = 0;
             current.flushed = false;
@@ -1287,6 +2229,11 @@ mod worker {
             current.stretch.reset();
             current.stretch.set_tempo(tempo);
             current.applied_tempo = tempo;
+            current.direct = tempo == 1.0;
+            current.draining = false;
+            current.drain_flushed = false;
+            current.drain_tail.clear();
+            current.drain_pos = 0;
             current.last_trace = std::time::Instant::now();
 
             let channels = self.shared.channels.load(Ordering::Relaxed).max(1) as u64;
@@ -1350,6 +2297,7 @@ mod worker {
                 .store(Transport::Idle as u8, Ordering::Relaxed);
             self.shared.set_paused(true);
             self.shared.duration_ms.store(0, Ordering::Relaxed);
+            self.shared.native_rate.store(0, Ordering::Relaxed);
             self.shared.set_ended(false);
             self.shared.reset_position(0.0, self.shared.tempo());
             self.shared.clear_seek_preview();
@@ -1380,7 +2328,6 @@ mod worker {
                     current.flushed,
                 );
             }
-
             // Push any buffered end-of-stream tail first so ordering is kept.
             Self::push_tail(ring, current);
             if current.flushed && current.tail_pos >= current.tail.len() {
@@ -1393,9 +2340,76 @@ mod worker {
                 return;
             }
 
+            let tempo = shared.tempo();
+            let want_direct = tempo == 1.0;
+
+            // Leaving the direct 1.0x feed: hand the decoded-but-unqueued audio
+            // to WSOLA so nothing is dropped, and anchor the new tempo segment.
+            if !want_direct && current.direct && !current.draining {
+                let boundary = current.out_made + current.stretch.available() as u64;
+                let position = shared.position_at(boundary);
+                shared.push_segment(boundary, position, tempo);
+                // The stretcher was drained when the direct feed began; reset it
+                // so the new tempo run primes from a clean state.
+                current.stretch.reset();
+                let aligned = current.pending.len() / channels * channels;
+                if aligned > 0 {
+                    current.stretch.push(&current.pending[..aligned]);
+                    current.pending.drain(0..aligned);
+                }
+                current.stretch.set_tempo(tempo);
+                current.applied_tempo = tempo;
+                current.direct = false;
+            }
+
+            // Entering 1.0x: finish whatever WSOLA still holds before switching,
+            // so the identity path never clips the tail of an in-flight stretch.
+            if want_direct && !current.direct && !current.draining {
+                let want = current.stretch.available();
+                current.drain_tail.clear();
+                current.drain_tail.extend(current.stretch.pull(want));
+                current.drain_pos = 0;
+                current.drain_flushed = false;
+                current.draining = true;
+            }
+
+            if current.draining {
+                if Self::push_drain(ring, current) {
+                    return;
+                }
+                current.draining = false;
+                let now = shared.tempo();
+                if now == 1.0 {
+                    current.direct = true;
+                    current.applied_tempo = 1.0;
+                    let position = shared.position_at(current.out_made);
+                    shared.push_segment(current.out_made, position, 1.0);
+                } else {
+                    // The tempo changed again while draining: resume stretching.
+                    let boundary = current.out_made + current.stretch.available() as u64;
+                    let position = shared.position_at(boundary);
+                    shared.push_segment(boundary, position, now);
+                    current.stretch.reset();
+                    let aligned = current.pending.len() / channels * channels;
+                    if aligned > 0 {
+                        current.stretch.push(&current.pending[..aligned]);
+                        current.pending.drain(0..aligned);
+                    }
+                    current.stretch.set_tempo(now);
+                    current.applied_tempo = now;
+                    current.direct = false;
+                }
+            }
+
+            // At exactly 1.0x, WSOLA is a costly identity transform: feed the
+            // ring straight from the decoder instead (this is the common case).
+            if current.direct {
+                Self::direct_output(ring, current, channels);
+                return;
+            }
+
             // Apply a playback-rate change: anchor a new tempo segment at the
             // source position of the current output index, then retune.
-            let tempo = shared.tempo();
             if (tempo - current.applied_tempo).abs() > 1e-4 {
                 // Output already inside WSOLA still belongs to the old tempo.
                 let boundary = current.out_made + current.stretch.available() as u64;
@@ -1415,29 +2429,7 @@ mod worker {
 
             // Only decode when WSOLA actually needs more input.
             if !current.source_done && current.pending.len() < channels {
-                let decode_started = std::time::Instant::now();
-                while current.pending.len() < DECODE_CHUNK {
-                    match current.decoder.next() {
-                        Some(sample) => current.pending.push(sample),
-                        None => {
-                            // Do not discard the final partial chunk. Dropping
-                            // it causes an abrupt cutoff and an audible click.
-                            current.source_done = true;
-                            log::debug!("playback: decoder reached end of stream");
-                            break;
-                        }
-                    }
-                }
-                // A blocking network read on the worker shows up here: the
-                // refill is normally sub-millisecond, so anything slow means the
-                // decoder is waiting on bytes (the classic post-seek stall).
-                let elapsed = decode_started.elapsed();
-                if !current.source_done && elapsed > Duration::from_millis(200) {
-                    log::warn!(
-                        "playback: decode refill blocked for {elapsed:?} ({} samples)",
-                        current.pending.len(),
-                    );
-                }
+                Self::refill(current, channels);
             }
 
             // Hand whole frames to the stretcher (it requires frame alignment).
@@ -1462,6 +2454,115 @@ mod worker {
             if current.flushed && current.tail_pos >= current.tail.len() {
                 ring.done.store(true, Ordering::Release);
             }
+        }
+
+        /// Decode one chunk into `pending` at the work rate, resampling the
+        /// decoder's native output first when the device runs at a lower rate.
+        /// Sets `source_done` at end of stream.
+        fn refill(current: &mut Current, channels: usize) {
+            let Current {
+                decoder,
+                native,
+                pending,
+                resampler,
+                source_done,
+                ..
+            } = current;
+            native.clear();
+            let decode_started = std::time::Instant::now();
+            // Fill whole frames only: the resampler interpolates frame-wise, so a
+            // partial trailing frame would be dropped instead of carried over.
+            let target = DECODE_CHUNK / channels * channels;
+            while native.len() < target {
+                match decoder.next() {
+                    Some(sample) => native.push(sample),
+                    None => {
+                        *source_done = true;
+                        break;
+                    }
+                }
+            }
+            // A blocking network read on the worker shows up here: a refill is
+            // normally sub-millisecond, so anything slow means the decoder is
+            // waiting on bytes (the classic post-seek stall).
+            let elapsed = decode_started.elapsed();
+            if !*source_done && elapsed > Duration::from_millis(200) {
+                log::warn!(
+                    "playback: decode refill blocked for {elapsed:?} ({} samples)",
+                    native.len(),
+                );
+            }
+            match resampler.as_mut() {
+                Some(resampler) => resampler.process(native, pending),
+                None => pending.extend_from_slice(native),
+            }
+        }
+
+        /// At 1.0x, move decoded samples straight from `pending` into the ring
+        /// and never touch the stretcher. Costs a single copy per sample instead
+        /// of WSOLA's per-sample similarity search, so high-rate lossless files
+        /// (96 kHz) regain the full realtime margin.
+        fn direct_output(ring: &mut Ring, current: &mut Current, channels: usize) {
+            loop {
+                if current.pending.len() < channels {
+                    if current.source_done {
+                        ring.done.store(true, Ordering::Release);
+                        return;
+                    }
+                    Self::refill(current, channels);
+                    if current.pending.len() < channels {
+                        if current.source_done {
+                            // End of stream with nothing but a sub-frame left.
+                            current.pending.clear();
+                            ring.done.store(true, Ordering::Release);
+                        }
+                        return;
+                    }
+                }
+                let space = ring.space();
+                if space < channels {
+                    return;
+                }
+                let aligned = space.min(current.pending.len()) / channels * channels;
+                if aligned == 0 {
+                    return;
+                }
+                let pushed = ring.push_slice(&current.pending[..aligned]);
+                current.pending.drain(0..pushed);
+                current.out_made += pushed as u64;
+                if pushed == 0 {
+                    return;
+                }
+            }
+        }
+
+        /// Push the stretcher's remaining buffered output while switching to the
+        /// direct feed. Returns true when the ring filled and the drain must
+        /// resume on the next call, false once everything was handed over.
+        fn push_drain(ring: &mut Ring, current: &mut Current) -> bool {
+            while current.drain_pos < current.drain_tail.len() {
+                let pushed = ring.push_slice(&current.drain_tail[current.drain_pos..]);
+                if pushed == 0 {
+                    return true;
+                }
+                current.drain_pos += pushed;
+                current.out_made += pushed as u64;
+            }
+            if !current.drain_flushed {
+                current.drain_flushed = true;
+                let tail: Vec<f32> = current.stretch.flush().collect();
+                current.drain_tail = tail;
+                current.drain_pos = 0;
+                while current.drain_pos < current.drain_tail.len() {
+                    let pushed = ring.push_slice(&current.drain_tail[current.drain_pos..]);
+                    if pushed == 0 {
+                        return true;
+                    }
+                    current.drain_pos += pushed;
+                    current.out_made += pushed as u64;
+                }
+            }
+            false
         }
 
         fn pull_output(ring: &mut Ring, current: &mut Current, channels: usize) -> usize {
@@ -1556,6 +2657,7 @@ mod worker {
             self.shared.set_ended(false);
             self.shared.clear_seek_preview();
             self.shared.duration_ms.store(0, Ordering::Relaxed);
+            self.shared.native_rate.store(0, Ordering::Relaxed);
             self.shared.set_paused(true);
             *self
                 .shared

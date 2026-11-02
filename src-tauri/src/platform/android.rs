@@ -1,14 +1,17 @@
 // Copyright 2026 Atemukesu
 // SPDX-License-Identifier: GPL-3.0-only
 
-//! Bridges the Android platform surfaces (floating overlay, media controls,
-//! folder picker) and the JNI context they need.
+//! Exposes the Android JNI handles the native bridges need.
 //!
-//! The `JavaVM` is captured in `JNI_OnLoad`. The `ndk-context` crate is
-//! published by tao 0.37+ (`platform_impl/android/ndk_glue.rs::onCreate`)
-//! before the Tauri entry point runs on a worker thread, so this crate must
-//! never write to it again: `ndk-context` aborts the process when
-//! `initialize_android_context` is called a second time.
+//! # Why this does not touch `ndk-context`
+//!
+//! tao publishes the process-wide context with
+//! `ndk_context::initialize_android_context` exactly once, from `Rust.onCreate`,
+//! and that call runs before `onFirstActivityCreate` starts the Rust entry point.
+//! `ndk_context` stores the context in a single slot and asserts the slot was
+//! empty, so publishing it a second time aborts the process ("assertion failed:
+//! previous.is_none()"). This module therefore only caches the handles it needs
+//! for its own JNI calls and leaves `ndk-context` to tao.
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -43,6 +46,14 @@ static DESKTOP_LYRIC_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// The VM obtained in `JNI_OnLoad`; stays valid for the process lifetime.
 static JAVA_VM: OnceLock<JavaVM> = OnceLock::new();
 
+/// The process-wide `Application`, cached because `ndk-context` is owned by tao.
+///
+/// Resolved once from `ActivityThread.currentApplication()` and kept as a global
+/// reference for the process lifetime, since every bridge call needs a
+/// `Context` and a plain local reference would be invalid after the resolving
+/// thread returns.
+static APPLICATION: OnceLock<GlobalRef> = OnceLock::new();
+
 /// Captures the `JavaVM` as soon as the native library is loaded.
 ///
 /// # Safety
@@ -62,17 +73,180 @@ pub extern "system" fn JNI_OnLoad(
     jni::sys::JNI_VERSION_1_6
 }
 
-/// Verifies the JNI context is ready before the keychain bridge uses it.
+/// Caches the `JavaVM` and `Application` handles used by the bridge calls.
 ///
-/// The `JavaVM` is captured in [`JNI_OnLoad`]. The `ndk-context` crate is
-/// published by tao 0.37+ before the Tauri entry point runs, so writing it
-/// again here would double-initialize and abort on `ndk-context`'s
-/// `assert!(previous.is_none())`.
+/// Must run before anything calls the bridges. tao already published the
+/// `ndk-context` slot by this point, so this only fills this module's own caches
+/// and never re-publishes it.
 pub fn initialize() -> Result<(), String> {
-    JAVA_VM
+    if APPLICATION.get().is_some() {
+        return Ok(());
+    }
+
+    let java_vm = JAVA_VM
         .get()
         .ok_or_else(|| "JNI_OnLoad has not run yet".to_string())?;
+
+    let mut env = java_vm
+        .attach_current_thread()
+        .map_err(|error| format!("failed to attach to the JVM: {error}"))?;
+
+    // currentApplication() is the process-wide Application object, so it works
+    // even though this runs before the Activity itself has been created.
+    let application = env
+        .call_static_method(
+            "android/app/ActivityThread",
+            "currentApplication",
+            "()Landroid/app/Application;",
+            &[],
+        )
+        .map_err(|error| format!("failed to resolve the application object: {error}"))?
+        .l()
+        .map_err(|error| format!("unexpected application return value: {error}"))?;
+
+    if application.as_raw().is_null() {
+        return Err("ActivityThread.currentApplication() returned null".to_string());
+    }
+
+    // The static keeps the global reference alive for the process lifetime, so
+    // every bridge call can borrow it from any thread.
+    let application = env
+        .new_global_ref(application)
+        .map_err(|error| format!("failed to create a global reference: {error}"))?;
+    let _ = APPLICATION.set(application);
+
     Ok(())
+}
+
+/// Borrows the cached `Application` handle for one JNI call.
+///
+/// The cached global reference outlives every call, so the handle can be reused
+/// directly: no new local reference is created, which matters because the Tauri
+/// entry point stays attached to the JVM for the process lifetime and local
+/// references created there are only released on detach.
+///
+/// Returns `Err` instead of panicking when [`initialize`] has not run, so a
+/// missing context surfaces as a command error rather than an abort.
+fn application<'local>() -> Result<JObject<'local>, String> {
+    let application = APPLICATION
+        .get()
+        .ok_or_else(|| "Android application context is not initialized".to_string())?;
+    Ok(unsafe { JObject::from_raw(application.as_obj().as_raw()) })
+}
+
+/// Borrows the cached `JavaVM` for the playback engine's JNI device queries.
+///
+/// Returns `None` (rather than panicking) when `JNI_OnLoad` has not captured the
+/// VM yet, so a missing handle degrades to "no device list" instead of aborting.
+pub fn java_vm<'local>() -> Option<&'static JavaVM> {
+    JAVA_VM.get()
+}
+
+/// Borrows the cached `Application` handle for the playback engine's JNI calls.
+///
+/// Mirrors [`application`] but is exposed for cross-module use (the playback
+/// worker needs a `Context` to reach `AudioManager`). Returns `None` when the
+/// context is not initialized.
+pub fn application_jobject<'local>() -> Option<JObject<'local>> {
+    application().ok()
+}
+
+/// Route audio to a specific output device on Android via `AudioManager`.
+///
+/// `type_` is the `AudioDeviceInfo.getType()` value (2 = speaker, 3/4 = wired,
+/// 8 = Bluetooth A2DP, 11/22 = USB). `name` is the product name used only for
+/// logging; the route is driven by the type. Returns `Ok(true)` when the route
+/// was applied, `Ok(false)` when the device type is not one we route, and
+/// `Err` on a JNI failure.
+///
+/// We deliberately do *not* reopen the output stream here: cpal's Android
+/// backend always follows the system default, so reopening it would not change
+/// which device the OS routes to. The stream stays open; only the route changes.
+pub fn route_audio(type_: i32, name: &str) -> Result<bool, String> {
+    use jni::objects::{JObject, JValue};
+
+    let java_vm = JAVA_VM
+        .get()
+        .ok_or_else(|| "JNI_OnLoad has not run yet".to_string())?;
+    let mut env = java_vm
+        .attach_current_thread()
+        .map_err(|error| format!("failed to attach to the JVM: {error}"))?;
+    let _ = env.exception_clear();
+
+    let context = application()?;
+
+    // Context.AUDIO_SERVICE == "audio"
+    let service_name = JObject::from(env.new_string("audio").map_err(|error| error.to_string())?);
+    let audio_manager = env
+        .call_method(
+            &context,
+            "getSystemService",
+            "(Ljava/lang/String;)Ljava/lang/Object;",
+            &[JValue::Object(&service_name)],
+        )
+        .map_err(|error| format!("getSystemService(audio) failed: {error}"))?
+        .l()
+        .map_err(|error| format!("unexpected audio manager return value: {error}"))?;
+
+    // Route by device type. `setDevicesForMode` is the public routing API
+    // (Android 21+); it handles every output device type uniformly, including
+    // the built-in speaker, so there is no legacy fallback needed.
+    let devices_obj = env
+        .call_method(
+            &audio_manager,
+            "getDevices",
+            "(I)[Landroid/media/AudioDeviceInfo;",
+            &[JValue::Int(2)],
+        )
+        .map_err(|error| format!("AudioManager.getDevices failed: {error}"))?
+        .l()
+        .map_err(|error| format!("unexpected getDevices return value: {error}"))?;
+    let devices_array = unsafe { jni::objects::JObjectArray::from_raw(devices_obj.as_raw()) };
+    let len = env
+        .get_array_length(&devices_array)
+        .map_err(|error| format!("get_array_length failed: {error}"))?;
+    let mut routed = false;
+    for index in 0..len {
+        let device = env
+            .get_object_array_element(&devices_array, index)
+            .map_err(|error| format!("get_object_array_element failed: {error}"))?;
+        let dev_type = env
+            .call_method(&device, "getType", "()I", &[])
+            .map_err(|error| format!("getType failed: {error}"))?
+            .i()
+            .map_err(|error| format!("unexpected getType return value: {error}"))?;
+        if dev_type != type_ {
+            continue;
+        }
+        // setDevicesForMode(mode=0 (NORMAL), [device]) — API 21+.
+        // `routeToDevices` does not exist on any Android version; this is the
+        // correct public routing API.
+        let arr = env
+            .new_object_array(
+                1,
+                "android/media/AudioDeviceInfo",
+                JObject::null(),
+            )
+            .map_err(|error| format!("new_object_array failed: {error}"))?;
+        env.set_object_array_element(&arr, 0, &device)
+            .map_err(|error| format!("set_object_array_element failed: {error}"))?;
+        env.call_method(
+            &audio_manager,
+            "setDevicesForMode",
+            "(I[Landroid/media/AudioDeviceInfo;)V",
+            &[JValue::Int(0), JValue::Object(&arr)],
+        )
+        .map_err(|error| format!("setDevicesForMode failed: {error}"))?;
+        routed = true;
+        break;
+    }
+    if !routed {
+        return Err(format!(
+            "no output device of type {type_} found to route to (name={name})"
+        ));
+    }
+    log::info!("playback: routed to device type={type_} name={name}");
+    Ok(true)
 }
 
 /// The overlay exists on every supported Android version.
@@ -112,8 +286,7 @@ fn class_through_loader<'local>(
     if let Some(class) = cell.get() {
         return Ok(class);
     }
-    let context_raw = ndk_context::android_context().context();
-    let context = unsafe { JObject::from_raw(context_raw as jni::sys::jobject) };
+    let context = application()?;
     let loader = env
         .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])
         .map_err(|error| error.to_string())?
@@ -163,8 +336,7 @@ fn overlay_permission() -> Result<bool, String> {
     // thread (the Android main thread) the attach guard does not detach, so the
     // stale exception would poison every later call; clear it defensively.
     let _ = env.exception_clear();
-    let context_raw = ndk_context::android_context().context();
-    let context = unsafe { JObject::from_raw(context_raw as jni::sys::jobject) };
+    let context = application()?;
 
     let class = bridge_class(&mut env)?;
     env.call_static_method(
@@ -190,8 +362,7 @@ pub fn desktop_lyric_open_settings() -> Result<(), String> {
     // thread (the Android main thread) the attach guard does not detach, so the
     // stale exception would poison every later call; clear it defensively.
     let _ = env.exception_clear();
-    let context_raw = ndk_context::android_context().context();
-    let context = unsafe { JObject::from_raw(context_raw as jni::sys::jobject) };
+    let context = application()?;
 
     let class = bridge_class(&mut env)?;
     env.call_static_method(
@@ -216,8 +387,7 @@ pub fn desktop_lyric_start(html: &str, js: &str) -> Result<(), String> {
     // thread (the Android main thread) the attach guard does not detach, so the
     // stale exception would poison every later call; clear it defensively.
     let _ = env.exception_clear();
-    let context_raw = ndk_context::android_context().context();
-    let context = unsafe { JObject::from_raw(context_raw as jni::sys::jobject) };
+    let context = application()?;
     let html = JObject::from(env.new_string(html).map_err(|error| error.to_string())?);
     let js = JObject::from(env.new_string(js).map_err(|error| error.to_string())?);
 
@@ -249,8 +419,7 @@ pub fn desktop_lyric_stop() -> Result<(), String> {
     // thread (the Android main thread) the attach guard does not detach, so the
     // stale exception would poison every later call; clear it defensively.
     let _ = env.exception_clear();
-    let context_raw = ndk_context::android_context().context();
-    let context = unsafe { JObject::from_raw(context_raw as jni::sys::jobject) };
+    let context = application()?;
 
     let class = bridge_class(&mut env)?;
     env.call_static_method(
@@ -330,8 +499,7 @@ pub fn media_control_start() -> Result<(), String> {
     // thread (the Android main thread) the attach guard does not detach, so the
     // stale exception would poison every later call; clear it defensively.
     let _ = env.exception_clear();
-    let context_raw = ndk_context::android_context().context();
-    let context = unsafe { JObject::from_raw(context_raw as jni::sys::jobject) };
+    let context = application()?;
     let class = media_bridge_class(&mut env)?;
     env.call_static_method(
         class,
@@ -410,8 +578,7 @@ pub fn media_control_stop() -> Result<(), String> {
     // thread (the Android main thread) the attach guard does not detach, so the
     // stale exception would poison every later call; clear it defensively.
     let _ = env.exception_clear();
-    let context_raw = ndk_context::android_context().context();
-    let context = unsafe { JObject::from_raw(context_raw as jni::sys::jobject) };
+    let context = application()?;
     let class = media_bridge_class(&mut env)?;
     env.call_static_method(
         class,
@@ -558,12 +725,11 @@ pub fn network_status() -> crate::core::network::NetworkStatus {
 }
 
 fn query_network() -> Result<crate::core::network::NetworkStatus, String> {
-    use jni::objects::{JObject, JValue};
+    use jni::objects::JValue;
 
     let java_vm = JAVA_VM
         .get()
         .ok_or_else(|| "JNI_OnLoad has not run yet".to_string())?;
-    let context_raw = ndk_context::android_context().context();
     let mut env = java_vm
         .attach_current_thread()
         .map_err(|error| error.to_string())?;
@@ -571,7 +737,7 @@ fn query_network() -> Result<crate::core::network::NetworkStatus, String> {
     // thread (the Android main thread) the attach guard does not detach, so the
     // stale exception would poison every later call; clear it defensively.
     let _ = env.exception_clear();
-    let context = unsafe { JObject::from_raw(context_raw as jni::sys::jobject) };
+    let context = application()?;
 
     let service = env
         .new_string("connectivity")
@@ -645,10 +811,35 @@ pub fn initialize_keychain() -> Option<String> {
         return Some(format!("Android JNI 上下文不可用：{error}"));
     }
 
-    if let Err(error) = android_keyring::set_android_keyring_credential_builder() {
+    if let Err(error) = install_keychain_builder() {
         log::error!("failed to initialize android-keyring credential store: {error}");
         return Some(format!("android-keyring 初始化失败：{error}"));
     }
 
     None
+}
+
+/// Install android-keyring's Keystore-backed credential builder.
+///
+/// The builder is built from this module's cached `Application` instead of
+/// `android_keyring::set_android_keyring_credential_builder`, which reads the
+/// `ndk-context` slot directly: keeping every JNI handle in one place means the
+/// keychain never depends on who published that slot.
+fn install_keychain_builder() -> Result<(), String> {
+    let java_vm = JAVA_VM
+        .get()
+        .ok_or_else(|| "JNI_OnLoad has not run yet".to_string())?;
+    let env = java_vm
+        .attach_current_thread()
+        .map_err(|error| format!("failed to attach to the JVM: {error}"))?;
+    let _ = env.exception_clear();
+
+    let context = application()?;
+    let context = android_keyring::shared_preferences::Context::new(&env, context)
+        .map_err(|error| format!("failed to wrap the application context: {error}"))?;
+    let builder = android_keyring::credential::AndroidBuilder::new(&env, context)
+        .map_err(|error| format!("failed to build the Keystore credential builder: {error}"))?;
+    keyring::set_default_credential_builder(Box::new(builder));
+
+    Ok(())
 }

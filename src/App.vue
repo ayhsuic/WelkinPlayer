@@ -7,11 +7,14 @@
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch, watchEffect } from "vue";
 import { useI18n } from "vue-i18n";
 import { describeError, invoke } from "./api";
+import { listen } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import { initAudio, resumeAt } from "./lib/audio";
 import { accents } from "./lib/app";
 import type { Accent, Theme, View } from "./lib/app";
 import { albumKey, primaryArtist } from "./lib/grouping";
 import { trackKey } from "./lib/sources";
+import { flushReadings, loadReadings } from "./lib/readings";
 import { useLibrary } from "./composables/useLibrary";
 import { startDesktopLyrics, stopDesktopLyrics } from "./composables/useDesktopLyrics";
 import { startMediaControl, stopMediaControl } from "./lib/mediaControl";
@@ -35,7 +38,7 @@ function bootMediaControl() {
 }
 import { pushToast } from "./lib/toast";
 import { usePlayerStore } from "./stores/player";
-import type { Track } from "./stores/player";
+import type { Track, PlaybackSnapshot } from "./stores/player";
 import { useSourcesStore } from "./stores/sources";
 import { useProfileStore } from "./stores/profile";
 import { usePlaybackStore } from "./stores/playback";
@@ -49,6 +52,7 @@ import { useUpdateStore } from "./stores/update";
 import AppNavigation from "./components/AppNavigation.vue";
 import QueuePanel from "./components/QueuePanel.vue";
 import PlayerBar from "./components/PlayerBar.vue";
+import AudioQualityModal from "./components/AudioQualityModal.vue";
 import SetupWizard from "./components/SetupWizard.vue";
 import ToastStack from "./components/ToastStack.vue";
 import UpdateModal from "./components/UpdateModal.vue";
@@ -61,6 +65,7 @@ import FavoritesView from "./views/FavoritesView.vue";
 import StatsView from "./views/StatsView.vue";
 import GroupedLibraryView from "./views/GroupedLibraryView.vue";
 import SourcesView from "./views/SourcesView.vue";
+import SourceBrowserView from "./views/SourceBrowserView.vue";
 import PlaylistsView from "./views/PlaylistsView.vue";
 import PlaylistEditorView from "./views/PlaylistEditorView.vue";
 import LyricsEditorView from "./views/LyricsEditorView.vue";
@@ -84,7 +89,9 @@ const windowBehavior = useWindowBehaviorStore();
 const update = useUpdateStore();
 const { loadingLibrary, refreshing, friendlyError, loadCachedLibrary, loadRemoteLibrary, refreshLibrary, downloadTrackMetadata } = useLibrary();
 const view = ref<View>(getViewFromHash());
-const baseView = ref<View>(view.value === "player" || view.value === "track-info" ? "library" : view.value);
+/** Views that sit on top of the current page as overlays and must not replace `baseView`. */
+const OVERLAY_VIEWS: ReadonlySet<View> = new Set(["player", "track-info", "lyrics-edit", "track-edit", "sponsor"]);
+const baseView = ref<View>(OVERLAY_VIEWS.has(view.value) ? "library" : view.value);
 const theme = ref<Theme>(localStorage.getItem("welkin-theme") === "dark" ? "dark" : "light");
 const accent = ref<Accent>(readAccent());
 const sidebarCollapsed = ref(localStorage.getItem("welkin-sidebar-collapsed") === "1");
@@ -94,6 +101,7 @@ const playlistFilter = ref<string | null>(null);
 const artistFilter = ref<string | null>(null);
 const albumFilter = ref<string | null>(null);
 const sourceFilter = ref<string | null>(null);
+const browseSourceId = ref<string | null>(null);
 const sourceConfigReturn = ref<View>("sources");
 const editingPlaylist = ref<string | null>(null);
 const editingLyricsTrack = ref<Track | null>(null);
@@ -116,7 +124,15 @@ let resumedKey = "";
 /** Local-only safety-net cadence (ms) for periodic progress writes while playing. */
 const POSITION_SAVE_INTERVAL_MS = 30_000;
 
-watch(view, (next) => { if (next !== "player" && next !== "track-info") baseView.value = next; });
+/** Listener for the Rust `playback:changed` snapshot that mirrors into the store. */
+let unlistenPlayback: UnlistenFn | null = null;
+
+// The full-screen player, track-info, the track editors and the sponsor view are
+// overlays that sit on top of whatever page was open, so they must not change
+// `baseView`; everything else (including the folder browser) becomes the
+// underlying page when opened. Keeping the underlying page mounted preserves its
+// scroll position and the source browser's current folder across the overlay.
+watch(view, (next) => { if (!OVERLAY_VIEWS.has(next)) baseView.value = next; });
 
 // Reload the library shortly after a source is added, removed or reconfigured,
 // so configuring a source in Settings takes effect without a manual refresh.
@@ -149,12 +165,21 @@ watch(booted, (ready) => { if (ready) dismissSplash(); });
 watch(() => trackKey(player.currentTrack), (key) => { if (booted.value && key && player.isPlaying) profile.recordPlay(key); });
 
 // The playing track's metadata is wanted immediately, regardless of visibility.
-watch(() => player.currentTrack?.id, () => metadata.request(player.currentTrack));
+// Rust-created placeholders all use id=-1, so use the stable source/path key
+// to ensure every newly selected track gets a metadata request.
+watch(() => trackKey(player.currentTrack), () => metadata.request(player.currentTrack));
 
 // Resume the last track/position once the playback state and library are ready.
 // The local copy lands first; the authoritative remote copy may arrive later.
 // Keep accepting it until the user starts playing, then ignore any late reply
 // so it cannot yank playback out from under them.
+//
+// The play queue and selection now live in Rust: we hand the persisted queue to
+// `player.restoreQueue`, which pushes it into the Rust context via
+// `playback_restore`. Rust mirrors the result back through `playback:changed`,
+// which fills the store (currentTrack, queue, isPlaying, …). We only apply the
+// *resume position* here, which `audio.ts` clamps once the track's real
+// duration is known.
 watch(
   [() => playback.ready, () => player.tracks.length, () => playback.path, () => playback.position],
   () => {
@@ -175,22 +200,14 @@ watch(
     restoringPlayback = true;
     // Prefer the saved play queue so the exact playlist/context resumes; fall
     // back to just the track when no queue was stored (older state).
-    if (!(playback.queue.length > 0 && player.restoreQueue(playback.queue, playback.queueIndex, stored))) {
-      player.currentTrack = track;
-    } else {
-      const index = player.queue.findIndex((item) => trackKey(item) === stored);
-      if (index >= 0) {
-        player.queueIndex = index;
-        player.currentTrack = player.queue[index];
-      }
+    if (playback.queue.length > 0) {
+      void player.restoreQueue(playback.queue, playback.queueIndex, stored);
+    } else if (track) {
+      void player.playInQueue([track], track);
     }
-    player.isPlaying = false;
     const position = playback.position;
-    // The saved position belongs to the saved track. Applying it immediately
-    // used the previous track's duration, and an out-of-range seek could wedge
-    // the decoder at EOF (the queue index had shifted to a shorter track).
-    // Hand it to `audio.ts`, which applies it once the load reports the real
-    // duration and clamps it into range.
+    // Hand the saved position to `audio.ts`, which applies it once the load
+    // reports the real duration and clamps it into range.
     resumeAt(position);
     window.setTimeout(() => { restoringPlayback = false; }, 1200);
   },
@@ -210,7 +227,7 @@ function savePlaybackPosition(force = false) {
   playback.record(key, player.position);
   if (force) void playback.flush();
 }
-function savePlaybackPositionOnLeave() { savePlaybackPosition(true); }
+function savePlaybackPositionOnLeave() { savePlaybackPosition(true); void flushReadings(); }
 function onVisibilityChange() { if (document.visibilityState === "hidden") savePlaybackPosition(true); }
 
 watch(() => trackKey(player.currentTrack), (key) => {
@@ -246,14 +263,16 @@ watch([() => player.queue, () => player.queueIndex], () => {
 });
 
 function readAccent(): Accent { const value = localStorage.getItem("welkin-accent"); return (accents.some((item) => item.id === value) ? value : "amber") as Accent; }
-function getViewFromHash(): View { const route = window.location.hash.slice(1); return route === "settings" || route === "sponsor" || route === "player" || route === "tracks" || route === "favorites" || route === "stats" || route === "artists" || route === "albums" || route === "sources" || route === "source-config" || route === "playlists" || route === "playlist-new" || route === "lyrics-edit" || route === "track-edit" || route === "track-info" ? route : "library"; }
+function getViewFromHash(): View { const route = window.location.hash.slice(1); return route === "settings" || route === "sponsor" || route === "player" || route === "tracks" || route === "favorites" || route === "stats" || route === "artists" || route === "albums" || route === "sources" || route === "source-config" || route === "source-browser" || route === "playlists" || route === "playlist-new" || route === "lyrics-edit" || route === "track-edit" || route === "track-info" ? route : "library"; }
 function setView(nextView: View) { view.value = nextView; window.location.hash = nextView === "library" ? "" : nextView; }
 function clearCollectionFilters() { playlistFilter.value = null; artistFilter.value = null; albumFilter.value = null; sourceFilter.value = null; }
 function navigate(nextView: View) { clearCollectionFilters(); setView(nextView); }
 function syncViewFromHash() { view.value = getViewFromHash(); }
 function openUserPlaylist(id: string) { clearCollectionFilters(); playlistFilter.value = id; setView("tracks"); }
-function openSource(id: string) { clearCollectionFilters(); sourceFilter.value = id; setView("tracks"); }
+/** Open a source in the file-manager browser instead of the flat track list. */
+function browseSource(id: string) { clearCollectionFilters(); browseSourceId.value = id; setView("source-browser"); }
 function openSourceConfig(from: View) { sourceConfigReturn.value = from; setView("source-config"); }
+
 function closeSourceConfig() { setView(sourceConfigReturn.value); }
 function openGroup(kind: "artists" | "albums", key: string) { playlistFilter.value = null; artistFilter.value = kind === "artists" ? key : null; albumFilter.value = kind === "albums" ? key : null; sourceFilter.value = null; setView("tracks"); }
 function onOpenGroup(key: string) { openGroup(baseView.value === "albums" ? "albums" : "artists", key); }
@@ -266,7 +285,8 @@ function editPlaylist(id: string) { clearCollectionFilters(); editingPlaylist.va
 function editLyrics(track: Track) { if (!track.path) return; editingLyricsTrack.value = track; closeQueue(); setView("lyrics-edit"); }
 function editInfo(track: Track) { if (!track.path) return; editingTrack.value = track; closeQueue(); setView("track-edit"); }
 function showTrackInfo(track: Track) { if (!track.path) return; viewingTrack.value = track; closeQueue(); setView("track-info"); }
-function closeTrackInfo() { setView(baseView.value); }
+/** Close an overlay (track info, editors, sponsor) back to the page underneath. */
+function closeOverlay() { setView(baseView.value); }
 function onPlaylistSaved(id: string) { artistFilter.value = null; albumFilter.value = null; sourceFilter.value = null; playlistFilter.value = id; setView("tracks"); }
 function onPlaylistEditorCancel() { navigate("library"); }
 function onPlaylistDeleted(id: string) {
@@ -292,6 +312,8 @@ async function checkUpdatesOnBoot() {
 
 async function bootstrap() {
   await sources.hydrate();
+  // Title readings are cheap to read back and make the first title sort instant.
+  await loadReadings();
   const firstRun = await profile.hydrate();
   const seeded = await playback.hydrate({ path: profile.profile.lastTrack, position: profile.profile.lastPosition });
   if (seeded) profile.clearLegacyPlayback();
@@ -339,13 +361,25 @@ function onGlobalKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => { windowBehavior.sync(); window.addEventListener("hashchange", syncViewFromHash); window.addEventListener("keydown", onGlobalKeydown); window.addEventListener("beforeunload", savePlaybackPositionOnLeave); window.addEventListener("pagehide", savePlaybackPositionOnLeave); window.addEventListener("focus", recheckLicense); document.addEventListener("visibilitychange", onVisibilityChange); void initAudio(); void network.start(); void cache.start(); bootDesktopLyrics(); bootMediaControl(); void invoke<string>("ping").catch((error) => console.warn("[welkin] ping failed", describeError(error))); void bootstrap(); });
-onUnmounted(() => { savePlaybackPosition(true); stopDesktopLyrics(); stopMediaControl(); window.removeEventListener("hashchange", syncViewFromHash); window.removeEventListener("keydown", onGlobalKeydown); window.removeEventListener("beforeunload", savePlaybackPositionOnLeave); window.removeEventListener("pagehide", savePlaybackPositionOnLeave); window.removeEventListener("focus", recheckLicense); document.removeEventListener("visibilitychange", onVisibilityChange); void profile.flush(); });
+onUnmounted(() => { savePlaybackPosition(true); stopDesktopLyrics(); stopMediaControl(); window.removeEventListener("hashchange", syncViewFromHash); window.removeEventListener("keydown", onGlobalKeydown); window.removeEventListener("beforeunload", savePlaybackPositionOnLeave); window.removeEventListener("pagehide", savePlaybackPositionOnLeave); window.removeEventListener("focus", recheckLicense); document.removeEventListener("visibilitychange", onVisibilityChange); unlistenPlayback?.(); unlistenPlayback = null; void profile.flush(); });
+
+// Mirror the Rust playback context into the store. The queue / play intent / next
+// / previous all live in Rust now; this is the single channel that keeps the UI
+// in sync. Listening here (rather than in the store) keeps the store free of any
+// Tauri import and means a killed webview simply stops receiving mirrors — the
+// Rust side keeps playing and controlling itself.
+listen<PlaybackSnapshot>("playback:changed", (event) => {
+  player.applySnapshot(event.payload);
+}).then((stop) => { unlistenPlayback = stop; }).catch(() => {});
 </script>
 
 <template>
   <AmllPlayerView v-if="amllMounted && player.currentTrack" :active="amllActive" :return-view="baseView" @navigate="navigate" @closed="amllMounted = false" />
   <Transition name="slide"><PlayerView v-if="view === 'player' && player.currentTrack && !lyrics.useAmll" :return-view="baseView" @navigate="navigate" @queue="toggleQueue" @open-artist="openArtist" @open-album="openAlbum" /></Transition>
-  <Transition name="info"><TrackInfoView v-if="view === 'track-info' && viewingTrack" :path="viewingTrack.path ?? null" :source-id="viewingTrack.sourceId" @back="closeTrackInfo" /></Transition>
+  <Transition name="info"><TrackInfoView v-if="view === 'track-info' && viewingTrack" :path="viewingTrack.path ?? null" :source-id="viewingTrack.sourceId" @back="closeOverlay" /></Transition>
+  <Transition name="info"><LyricsEditorView v-if="view === 'lyrics-edit' && editingLyricsTrack" :path="editingLyricsTrack.path ?? null" :source-id="editingLyricsTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
+  <Transition name="info"><TrackEditorView v-if="view === 'track-edit' && editingTrack" :path="editingTrack.path ?? null" :source-id="editingTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
+  <Transition name="info"><SponsorView v-if="view === 'sponsor'" @back="closeOverlay" /></Transition>
   <SetupWizard v-if="booted && profile.firstRun" v-model:theme="theme" v-model:accent="accent" @finish="onWizardFinish" />
   <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg" :class="booted ? '' : 'opacity-0'">
     <AppNavigation placement="header" :active-view="baseView" @navigate="navigate" />
@@ -355,16 +389,14 @@ onUnmounted(() => { savePlaybackPosition(true); stopDesktopLyrics(); stopMediaCo
         <Transition name="page" mode="out-in">
           <LibraryView v-if="baseView === 'library'" key="library" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <TracksView v-else-if="baseView === 'tracks'" key="tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-          <SourcesView v-else-if="baseView === 'sources'" key="sources" :loading="loadingLibrary" @open="openSource" @manage="openSourceConfig('sources')" />
+          <SourcesView v-else-if="baseView === 'sources' || (baseView === 'source-browser' && !browseSourceId)" key="sources" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig('sources')" />
+          <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate('sources')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
           <SourceConfigView v-else-if="baseView === 'source-config'" key="source-config" @back="closeSourceConfig" />
           <GroupedLibraryView v-else-if="baseView === 'artists' || baseView === 'albums'" :key="baseView" :kind="baseView === 'artists' ? 'artists' : 'albums'" :loading="loadingLibrary" @open="onOpenGroup" />
           <FavoritesView v-else-if="baseView === 'favorites'" key="favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <PlaylistsView v-else-if="baseView === 'playlists'" key="playlists" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" />
           <StatsView v-else-if="baseView === 'stats'" key="stats" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
-          <LyricsEditorView v-else-if="baseView === 'lyrics-edit'" key="lyrics-edit" :path="editingLyricsTrack?.path ?? null" :source-id="editingLyricsTrack?.sourceId" @back="navigate('library')" @friendly-error="showError" />
-          <TrackEditorView v-else-if="baseView === 'track-edit'" key="track-edit" :path="editingTrack?.path ?? null" :source-id="editingTrack?.sourceId" @back="navigate('library')" @friendly-error="showError" />
-          <SponsorView v-else-if="baseView === 'sponsor'" key="sponsor" @back="navigate('library')" />
           <SettingsView v-else key="settings" v-model:theme="theme" v-model:accent="accent" @sponsor="navigate('sponsor')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
         </Transition>
       </main>
@@ -372,6 +404,7 @@ onUnmounted(() => { savePlaybackPosition(true); stopDesktopLyrics(); stopMediaCo
     </div>
     <PlayerBar v-if="player.currentTrack" @open="navigate('player')" @queue="toggleQueue" @open-artist="openArtist" @open-album="openAlbum" />
     <ToastStack />
+    <AudioQualityModal />
     <UpdateModal @friendly-error="showError" />
   </div>
 </template>

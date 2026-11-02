@@ -9,6 +9,8 @@
 //! `tauri::generate_handler!`.
 
 pub mod covers;
+pub mod neteasecover;
+pub mod qqcover;
 pub mod desktop_lyric;
 pub mod editor;
 pub mod fonts;
@@ -17,6 +19,7 @@ pub mod lyrics;
 pub mod media;
 pub mod playback;
 pub mod profile;
+pub mod sort;
 pub mod sources;
 pub mod sponsor;
 pub mod update;

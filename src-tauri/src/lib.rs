@@ -123,19 +123,40 @@ pub fn run() {
                     // The playback engine decodes in Rust and reads the
                     // stream/smart caches directly; it shares their handles.
                     #[cfg(any(desktop, target_os = "android"))]
-                    {
-                        let engine = playback::engine::start(
-                            app.handle().clone(),
-                            stream_state.cache.clone(),
-                            stream_state.smart.clone(),
+                    let engine = playback::engine::start(
+                        app.handle().clone(),
+                        stream_state.cache.clone(),
+                        stream_state.smart.clone(),
+                    );
+                    // The playback context (queue / shuffle / repeat) is owned
+                    // by Rust so playback survives a dead or throttled webview.
+                    // It wraps the engine and drives it directly. Build its clone
+                    // *before* moving `engine` into Tauri state, so the original
+                    // engine stays alive for the whole process (dropping it would
+                    // run `Engine::drop`, which stops the worker).
+                    #[cfg(any(desktop, target_os = "android"))]
+                    let context =
+                        playback::context::PlaybackContext::new(engine.clone());
+                    #[cfg(any(desktop, target_os = "android"))]
+                    if !app.manage(engine) {
+                        log::error!(
+                            "playback: Engine was already managed; the newly started worker was dropped"
                         );
-                        if !app.manage(engine) {
-                            log::error!(
-                                "playback: Engine was already managed; the newly started worker was dropped"
-                            );
-                        }
                     }
                     app.manage(stream_state);
+                    #[cfg(any(desktop, target_os = "android"))]
+                    if !app.manage(context) {
+                        log::error!("playback: PlaybackContext was already managed");
+                    }
+                    // Drain the native Android MediaSession action queue from a
+                    // Rust timer (the webview cannot be relied on to poll).
+                    #[cfg(any(desktop, target_os = "android"))]
+                    playback::context::start_media_control_poller(app.handle().clone());
+
+                    // The desktop-lyric tick driver runs from Rust (not the
+                    // main webview) so the floating layer keeps advancing even
+                    // after the main webview is hidden, backgrounded, or dead.
+                    commands::desktop_lyric::start_ticker(app.handle().clone());
                 }
                 Err(error) => log::error!("failed to initialize streaming caches: {error}"),
             }
@@ -193,6 +214,8 @@ pub fn run() {
             commands::sources::local_file_access_granted,
             commands::sources::request_local_file_access,
             commands::sources::list_source_audio,
+            commands::sources::list_source_directory,
+            commands::sources::list_source_audio_under,
             commands::sources::test_source_connection,
             commands::sources::test_source_write,
             commands::sponsor::get_install_id,
@@ -213,6 +236,10 @@ pub fn run() {
             commands::profile::load_local_profile,
             commands::profile::load_remote_profile,
             commands::profile::save_profile,
+            commands::neteasecover::netease_search_songs,
+            commands::neteasecover::netease_fetch_cover,
+            commands::qqcover::qq_search_songs,
+            commands::qqcover::qq_fetch_cover,
             commands::covers::upload_playlist_cover,
             commands::covers::resolve_playlist_covers,
             commands::covers::delete_playlist_cover,
@@ -236,6 +263,8 @@ pub fn run() {
             commands::media::cover_path,
             commands::media::get_cache_dir,
             commands::media::set_cache_dir,
+            commands::sort::load_sort_readings,
+            commands::sort::save_sort_readings,
             commands::media::load_library_cache,
             commands::media::save_library_cache,
             commands::media::refresh_source_library,
@@ -269,9 +298,41 @@ pub fn run() {
             #[cfg(any(desktop, target_os = "android"))]
             playback::commands::audio_set_speed,
             #[cfg(any(desktop, target_os = "android"))]
+            playback::commands::audio_device_info,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands::audio_devices,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands::audio_set_device,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands::audio_set_quality,
+            #[cfg(any(desktop, target_os = "android"))]
             playback::commands::audio_stop,
             #[cfg(any(desktop, target_os = "android"))]
             playback::commands::audio_state,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands_context::playback_set_queue,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands_context::playback_select,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands_context::playback_toggle,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands_context::playback_play,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands_context::playback_pause,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands_context::playback_next,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands_context::playback_previous,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands_context::playback_toggle_shuffle,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands_context::playback_set_shuffle,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands_context::playback_cycle_repeat,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands_context::playback_restore,
+            #[cfg(any(desktop, target_os = "android"))]
+            playback::commands_context::playback_state,
             commands::desktop_lyric::desktop_lyric_open,
             commands::desktop_lyric::desktop_lyric_close,
             commands::desktop_lyric::desktop_lyric_load,
@@ -280,6 +341,7 @@ pub fn run() {
             commands::desktop_lyric::desktop_lyric_status,
             commands::desktop_lyric::desktop_lyric_take_control,
             commands::desktop_lyric::desktop_lyric_request_permission,
+            commands::desktop_lyric::desktop_lyric_set_visible,
             platform::media_control::media_control_update,
             platform::media_control::media_control_position,
             platform::media_control::media_control_clear,

@@ -4,7 +4,7 @@
 -->
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, toRaw, watch } from "vue";
 import {
   ChevronDown,
   LoaderCircle,
@@ -22,14 +22,17 @@ import { useI18n } from "vue-i18n";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { usePlayerStore } from "../stores/player";
 import { useLyricsStore } from "../stores/lyrics";
+import type { LyricLine } from "../stores/lyrics";
 import { currentTime, seekPercent } from "../lib/audio";
 import { coverPending, initial, percent } from "../lib/format";
 import { cssFontFamily } from "../lib/fonts";
 import { useWakeLock } from "../composables/useWakeLock";
 import RealtimeWaveform from "../components/RealtimeWaveform.vue";
+import { Virtualizer } from "virtua/vue";
+import type { VirtualizerHandle } from "virtua/vue";
 import type { View } from "../lib/app";
 
-defineProps<{ returnView: View }>();
+const props = defineProps<{ returnView: View }>();
 const emit = defineEmits<{ navigate: [view: View]; queue: []; openArtist: [artist: string]; openAlbum: [album: string] }>();
 const { t } = useI18n();
 const player = usePlayerStore();
@@ -39,13 +42,32 @@ const lyrics = useLyricsStore();
 useWakeLock();
 
 const lyricsScroll = ref<HTMLElement | null>(null);
-const lyricsTrack = ref<HTMLElement | null>(null);
-const scrollOffset = ref(0);
-const manualScroll = ref(false);
+const lyricAtTop = ref(true);
+const lyricAtBottom = ref(false);
+const lyricsVirtualizer = ref<VirtualizerHandle | null>(null);
+/** Whether a user scroll is currently holding automatic line following. */
+let manualScroll = false;
 let lastScrolledIndex = -1;
 let frame = 0;
+let running = false;
 let lastLyricsSync = 0;
+let programmaticScroll = false;
+let programmaticTimer = 0;
+let followTarget = -1;
 let manualTimer = 0;
+let manualDeadline = 0;
+let settleTimer = 0;
+
+/** How long a manual scroll suspends automatic line following (ms). */
+const MANUAL_RESUME_MS = 2500;
+/** Fraction of the viewport the active lyric line is anchored at. */
+const ACTIVE_LINE_RATIO = 0.35;
+/** Minimum word-progress change before the gradient is rewritten. */
+const WORD_PROGRESS_EPSILON = 0.01;
+/** Playback/lyrics refresh cadence (ms). */
+const LYRICS_TICK_MS = 33;
+/** Retry delay while the active line is not mounted by the virtualizer (ms). */
+const WORD_CACHE_RETRY_MS = 100;
 
 /** CSS `font-family` value for the standard lyrics renderer, if configured. */
 const lyricFontFamily = computed(() => cssFontFamily(lyrics.classic.fontFamilies));
@@ -53,10 +75,30 @@ const lyricFontFamily = computed(() => cssFontFamily(lyrics.classic.fontFamilies
 const lyricActiveWeight = computed(() => Math.min(900, lyrics.classic.fontWeight + 200));
 /** Whether the per-word readings (注音 / ruby) carried by the lyrics are shown. */
 const showRuby = computed(() => lyrics.classic.ruby);
+/** Initial row height hint for the virtualizer, following the font settings. */
+const lyricItemSize = computed(() => {
+  const { lineSize, lineSpacing, translationSize, translate } = lyrics.classic;
+  const translation = translate ? translationSize * 1.5 + 6 : 0;
+  return Math.round(Math.min(220, Math.max(48, lineSize * 1.4 + lineSpacing + translation + 8)));
+});
 
 /** Join a word's ruby spans into the single label shown above it. */
 function rubyText(word: { ruby?: Array<{ word: string }> }): string {
   return (word.ruby ?? []).map((span) => span.word).join("");
+}
+
+/**
+ * A line carries genuine per-word timestamps only when its words have
+ * distinct, valid start times. Line-level timing (every word shares one
+ * timestamp) means there is no word-by-word sweep to run, so the whole line
+ * is highlighted instead of attempting a per-word animation.
+ */
+function lineHasWordTimestamps(line: LyricLine): boolean {
+  const words = line.words;
+  if (!words || words.length < 2) return false;
+  const starts = words.map((word) => Number(word.startTime)).filter(Number.isFinite);
+  if (starts.length !== words.length) return false;
+  return new Set(starts).size > 1;
 }
 
 /**
@@ -70,11 +112,30 @@ const activeSet = computed(() => {
   return set;
 });
 
+const activeKey = computed(() =>
+  Array.from(activeSet.value).sort((a, b) => a - b).join(",")
+);
+
+/** Line indices that carry genuine per-word timestamps. Lines without them
+ * (line-level timing only) get a whole-line highlight instead of a word sweep. */
+const wordTimestampLines = computed(() =>
+  new Set(
+    lyrics.lines
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => lineHasWordTimestamps(line))
+      .map(({ index }) => index),
+  ),
+);
+
 const controlsVisible = ref(true);
 const isFullscreen = ref(false);
 let controlsTimer = 0;
 
+let lastBump = 0;
 function bumpControls() {
+  const now = performance.now();
+  if (now - lastBump < 100) return;
+  lastBump = now;
   controlsVisible.value = true;
   window.clearTimeout(controlsTimer);
   controlsTimer = window.setTimeout(() => { controlsVisible.value = false; }, 1000);
@@ -84,12 +145,23 @@ const revealClass = computed(() => (controlsVisible.value
   ? "pointer-events-auto translate-y-0 opacity-100"
   : "pointer-events-none -translate-y-2 opacity-0"));
 
+let fullscreenTimer = 0;
+let fullscreenRequest = 0;
+
 async function syncFullscreen() {
+  const request = ++fullscreenRequest;
   try {
-    isFullscreen.value = await getCurrentWindow().isFullscreen();
+    const value = await getCurrentWindow().isFullscreen();
+    if (request === fullscreenRequest) isFullscreen.value = value;
   } catch {
-    isFullscreen.value = Boolean(document.fullscreenElement);
+    if (request === fullscreenRequest) isFullscreen.value = Boolean(document.fullscreenElement);
   }
+}
+
+/** Resize events are frequent; collapse them into one IPC round-trip. */
+function scheduleSyncFullscreen() {
+  window.clearTimeout(fullscreenTimer);
+  fullscreenTimer = window.setTimeout(() => { void syncFullscreen(); }, 150);
 }
 
 async function toggleFullscreen() {
@@ -99,15 +171,27 @@ async function toggleFullscreen() {
   } catch {
     if (document.fullscreenElement) await document.exitFullscreen();
     else await document.documentElement.requestFullscreen();
+    await syncFullscreen();
   }
 }
 
 const fullscreenTitle = computed(() => (isFullscreen.value ? t("controls.exitFullscreen") : t("controls.fullscreen")));
 
+/** Escape folds the page away, same as the return control. */
+function onKeydown(event: KeyboardEvent) {
+  if (event.key !== "Escape") return;
+  bumpControls();
+  event.preventDefault();
+  event.stopPropagation();
+  emit("navigate", props.returnView);
+}
+
 const repeatTitle = computed(() => player.repeat === "one" ? t("controls.repeatOne") : player.repeat === "all" ? t("controls.repeatAll") : t("controls.repeatOff"));
 const shuffleTitle = computed(() => player.shuffle ? t("controls.shuffleOn") : t("controls.shuffleOff"));
 /** Whether the total-time label toggles to show the remaining time instead. */
 const showRemaining = ref(false);
+/** True when the rate actually playing is Hi-Res (above the 48 kHz CD ceiling). */
+const isHiRes = computed(() => player.outputRate > 48000);
 
 /**
  * Scrub state. While the user drags, the slider shows `seekValue` instead of
@@ -120,12 +204,35 @@ const sliderValue = computed(() => seekValue.value ?? player.progress);
 let pointerSeeking = false;
 let pointerCommitDone = false;
 
+/** Seconds shown by the time labels while dragging, without touching the engine. */
+const previewPosition = computed(() => {
+  if (seekValue.value === null) return null;
+  return (Math.min(100, Math.max(0, seekValue.value)) / 100) * player.duration;
+});
+
+function formatClock(seconds: number): string {
+  const total = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+const elapsedDisplay = computed(() =>
+  previewPosition.value === null ? player.elapsedTime : formatClock(previewPosition.value),
+);
+const remainingDisplay = computed(() => {
+  if (previewPosition.value === null) return player.remainingTime;
+  return player.duration > 0
+    ? formatClock(Math.max(0, player.duration - previewPosition.value))
+    : player.totalTime;
+});
+
 function onSeek(event: Event) {
   const value = Number((event.target as HTMLInputElement).value);
   if (!Number.isFinite(value)) return;
+  // Keep the preview local: committing `player.position` (and the module-level
+  // playback clock) on every input event would re-render the app and send IPC
+  // logs at pointer frequency.
   seekValue.value = value;
   pointerCommitDone = false;
-  seekPercent(value, false);
 }
 
 function commitSeek(event: Event) {
@@ -165,215 +272,265 @@ function syncLyrics() {
   updateWordProgress(positionMs);
 }
 
-function updateWordProgress(positionMs: number) {
-  const container = lyricsScroll.value;
-  if (!container || activeSet.value.size === 0) return;
+// Cache active word elements + their (line, wordIndex) so we don't re-query
+// the DOM every frame. Invalidated when the active set changes, when a
+// virtualized row is remounted, or when the lyric data itself changes.
+//
+// `wholeLine` marks lines that carry only a line-level timestamp (no per-word
+// timing). They have no word-by-word sweep, so every word in the line shares
+// one progress derived from the line's own start/end instead.
+type CachedWord = { el: HTMLElement; rt: HTMLElement | null; line: LyricLine; wordIndex: number; wholeLine: boolean };
+let cachedWords: CachedWord[] | null = null;
+let cachedSet: Set<number> | null = null;
+let wordCacheDirty = true;
+let wordCacheRetryAt = 0;
+const wordProgressCache = new WeakMap<HTMLElement, number>();
+
+function invalidateWordCache() {
+  cachedWords = null;
+  cachedSet = null;
+  wordCacheDirty = true;
+  wordCacheRetryAt = 0;
+}
+
+function rebuildWordCache(container: HTMLElement) {
+  const words: CachedWord[] = [];
+  let hasMountedActiveLine = false;
   container.querySelectorAll<HTMLElement>('[data-lyric-active="true"]').forEach((element) => {
-    const line = lyrics.lines[Number(element.dataset.lyricIndex)];
+    const lineIndex = Number(element.dataset.lyricIndex);
+    const line = lyrics.lines[lineIndex];
     if (!line) return;
+    hasMountedActiveLine = true;
+    // Lines without genuine per-word timestamps have no word-by-word sweep to
+    // run; they are highlighted as a whole line instead, using the line's own
+    // start/end so they only light up while the line is actually being sung.
+    const wholeLine = !wordTimestampLines.value.has(lineIndex);
+    // Parsed lyrics are immutable; unwrap the reactive proxy once so the
+    // update loop does not pay a proxy `get` trap for every word.
+    const raw = toRaw(line);
     element.querySelectorAll<HTMLElement>(".lyric-word").forEach((word, wordIndex) => {
-      const progress = `${lyrics.wordProgress(line, wordIndex, positionMs) * 100}%`;
-      word.style.setProperty("--word-progress", progress);
-      // The reading is a sibling of the base word and `--word-progress` does not
-      // inherit, so write the same sweep onto it explicitly to keep them in step.
-      word
-        .closest("ruby")
-        ?.querySelector<HTMLElement>("rt")
-        ?.style.setProperty("--word-progress", progress);
+      words.push({ el: word, rt: word.closest("ruby")?.querySelector<HTMLElement>("rt") ?? null, line: raw, wordIndex, wholeLine });
     });
   });
+  cachedWords = words;
+  cachedSet = activeSet.value;
+  // Retry only when there are active lines mounted but none of them carry
+  // word timestamps yet; otherwise stop polling the DOM.
+  wordCacheDirty = hasMountedActiveLine && words.length === 0;
+  wordCacheRetryAt = wordCacheDirty ? performance.now() + WORD_CACHE_RETRY_MS : 0;
+}
+
+function updateWordProgress(positionMs: number) {
+  const container = lyricsScroll.value;
+  if (!container) return;
+  const set = activeSet.value;
+  if (set.size === 0) {
+    if (cachedWords) invalidateWordCache();
+    return;
+  }
+  const now = performance.now();
+  if (
+    !cachedWords ||
+    cachedSet !== set ||
+    (cachedWords.length > 0 && !cachedWords[0].el.isConnected) ||
+    (wordCacheDirty && now >= wordCacheRetryAt)
+  ) {
+    rebuildWordCache(container);
+  }
+  if (!cachedWords?.length) return;
+  for (const w of cachedWords) {
+    // A line-level-only line has no per-word timing; drive every word from the
+    // line's own start/end so the whole line lights up at once when sung.
+    const p = w.wholeLine
+      ? lyrics.lineProgress(w.line, positionMs)
+      : lyrics.wordProgress(w.line, w.wordIndex, positionMs);
+    const prev = wordProgressCache.get(w.el);
+    if (prev !== undefined && Math.abs(p - prev) < WORD_PROGRESS_EPSILON) continue;
+    wordProgressCache.set(w.el, p);
+    const progress = `${p * 100}%`;
+    w.el.style.setProperty("--word-progress", progress);
+    w.rt?.style.setProperty("--word-progress", progress);
+  }
+}
+
+/** Refresh the active words once the virtualizer has settled (paused seek). */
+function scheduleWordRefresh() {
+  if (running) return;
+  window.clearTimeout(settleTimer);
+  settleTimer = window.setTimeout(() => {
+    settleTimer = 0;
+    updateWordProgress(currentTime() * 1000);
+  }, 120);
 }
 
 function loop() {
+  if (!running) return;
+  frame = requestAnimationFrame(loop);
   const now = performance.now();
-  if (now - lastLyricsSync >= 33) {
+  const positionMs = currentTime() * 1000;
+  // `lyrics.sync` stays throttled (it re-derives the active set), but the
+  // per-word gradient is rewritten every frame so the sweep tracks the beat
+  // instead of stepping at ~30 Hz. The epsilon in updateWordProgress already
+  // skips DOM writes when a word barely changed.
+  if (now - lastLyricsSync >= LYRICS_TICK_MS) {
     lastLyricsSync = now;
-    const positionMs = currentTime() * 1000;
     lyrics.sync(positionMs / 1000);
   }
-  updateWordProgress(currentTime() * 1000);
+  updateWordProgress(positionMs);
+}
+
+function startLoop() {
+  if (running || document.hidden) return;
+  running = true;
+  lastLyricsSync = 0;
   frame = requestAnimationFrame(loop);
 }
 
-/** Fraction of the viewport height at which the active line sits. */
-const ACTIVE_LINE_RATIO = 0.35;
-
-/** Vertical offset (px) that puts the active line at 35% of the viewport. */
-function activeLineOffset(): number {
-  const container = lyricsScroll.value;
-  const track = lyricsTrack.value;
-  if (!container || !track) return scrollOffset.value;
-  // Anchor on the whole active block, not just the primary line: background
-  // vocals and duet counter-lines can sit several lines away, and anchoring on
-  // the primary alone pushes them off screen.
-  const active = Array.from(container.querySelectorAll<HTMLElement>('[data-lyric-active="true"]'));
-  if (active.length === 0) return scrollOffset.value;
-  let top = Number.POSITIVE_INFINITY;
-  let bottom = Number.NEGATIVE_INFINITY;
-  for (const element of active) {
-    top = Math.min(top, element.offsetTop);
-    bottom = Math.max(bottom, element.offsetTop + element.offsetHeight);
+function stopLoop() {
+  running = false;
+  if (frame) {
+    cancelAnimationFrame(frame);
+    frame = 0;
   }
-  const maxOffset = Math.max(0, track.offsetHeight - container.clientHeight);
-  const target = (top + bottom) / 2 - container.clientHeight * ACTIVE_LINE_RATIO;
-  return Math.min(maxOffset, Math.max(0, target));
 }
 
-/** Maximum scroll offset (px) before the track would leave the viewport. */
-function scrollLimit(): number {
-  const container = lyricsScroll.value;
-  const track = lyricsTrack.value;
-  if (!container || !track) return 0;
-  return Math.max(0, track.offsetHeight - container.clientHeight);
-}
-
-/** Clamp an offset to the valid scroll range. */
-function clampOffset(value: number): number {
-  return Math.min(scrollLimit(), Math.max(0, value));
-}
-
-/** Suspend auto-scroll and schedule the return to the active line. */
-function holdManualScroll(resumeMs: number) {
-  manualScroll.value = true;
-  window.clearTimeout(manualTimer);
-  manualTimer = window.setTimeout(() => { manualScroll.value = false; }, resumeMs);
-}
-
-function onWheel(event: WheelEvent) {
-  if (!lyricsScroll.value || !lyricsTrack.value) return;
-  holdManualScroll(160);
-  scrollOffset.value = clampOffset(scrollOffset.value + event.deltaY);
+function onVisibilityChange() {
+  if (document.hidden) stopLoop();
+  else if (player.isPlaying) startLoop();
 }
 
 /**
- * Touch (and pen) drag scrolling with release inertia. The track is moved
- * through a CSS transform, so the browser never scrolls the overflow-hidden
- * container itself and there is no native momentum to piggyback on — the
- * pointer stream and the glide that follows a flick are tracked by hand.
- * `touch-action: none` on `.lyrics-scroll` keeps the browser from hijacking
- * the gesture and cancelling our pointer events.
+ * Anchor the active line at {@link ACTIVE_LINE_RATIO} of the viewport. Smooth
+ * scrolling is only used for short hops: animating across hundreds of rows
+ * mounts/unmounts the whole window and defeats virtualization.
  */
-let touchActive = false;
-let touchStartY = 0;
-let touchStartOffset = 0;
-let touchLastTime = 0;
-let touchVelocity = 0;
-let momentumFrame = 0;
-
-const TOUCH_RESUME_MS = 2500;
-/** Fraction of the velocity retained per 60fps frame; lower stops sooner. */
-const TOUCH_FRICTION = 0.95;
-/** Speeds (px/ms) below this are treated as stopped. */
-const TOUCH_MIN_VELOCITY = 0.02;
-/** Exponential smoothing applied to the sampled drag velocity. */
-const TOUCH_VELOCITY_SMOOTHING = 0.7;
-/** A release after this long without movement is treated as a hold, not a flick. */
-const TOUCH_HOLD_MS = 120;
-
-function cancelMomentum() {
-  if (momentumFrame) {
-    cancelAnimationFrame(momentumFrame);
-    momentumFrame = 0;
-  }
+function followActiveLine(index: number) {
+  const handle = lyricsVirtualizer.value;
+  if (!handle || index < 0) return;
+  // A line change and a lyric refresh can both ask for the same anchor in one
+  // flush; don't restart the smooth scroll that is already in flight.
+  if (programmaticScroll && followTarget === index) return;
+  const viewport = handle.viewportSize;
+  const target = handle.getItemOffset(index) - viewport * ACTIVE_LINE_RATIO;
+  if (Math.abs(target - handle.scrollOffset) < 1) return;
+  window.clearTimeout(programmaticTimer);
+  programmaticScroll = true;
+  followTarget = index;
+  const smooth = Math.abs(target - handle.scrollOffset) < Math.max(viewport, 1) * 1.5;
+  handle.scrollToIndex(index, { align: "start", smooth, offset: -viewport * ACTIVE_LINE_RATIO });
+  programmaticTimer = window.setTimeout(() => {
+    programmaticScroll = false;
+    followTarget = -1;
+    programmaticTimer = 0;
+  }, 800);
 }
 
-/** Glide to a stop after a flick, then hand control back to auto-scroll. */
-function startMomentum() {
-  let velocity = touchVelocity;
-  if (Math.abs(velocity) < TOUCH_MIN_VELOCITY) {
-    holdManualScroll(TOUCH_RESUME_MS);
+/** Jump back to the start of a freshly loaded lyric sheet. */
+function resetScroll() {
+  const handle = lyricsVirtualizer.value;
+  if (!handle || handle.scrollOffset === 0) return;
+  window.clearTimeout(programmaticTimer);
+  programmaticScroll = true;
+  followTarget = -1;
+  handle.scrollTo(0);
+  programmaticTimer = window.setTimeout(() => {
+    programmaticScroll = false;
+    programmaticTimer = 0;
+  }, 800);
+}
+
+/** Clear the manual-scroll hold and cancel its pending resume. */
+function clearManualResume() {
+  window.clearTimeout(manualTimer);
+  manualTimer = 0;
+  manualDeadline = 0;
+  manualScroll = false;
+  followTarget = -1;
+}
+
+function releaseManualScroll() {
+  manualTimer = 0;
+  const remaining = manualDeadline - performance.now();
+  if (remaining > 0) {
+    manualTimer = window.setTimeout(releaseManualScroll, remaining);
     return;
   }
-
-  // Stay in manual mode while gliding so the CSS transition does not fight the
-  // per-frame transform, and keep the resume timer from firing mid-glide.
-  manualScroll.value = true;
-  window.clearTimeout(manualTimer);
-
-  let last = performance.now();
-  const step = (now: number) => {
-    const dt = Math.min(now - last, 64);
-    last = now;
-    const raw = scrollOffset.value + velocity * dt;
-    const clamped = clampOffset(raw);
-    scrollOffset.value = clamped;
-    if (clamped !== raw) {
-      // Reached the top or bottom: stop cleanly rather than overshoot.
-      momentumFrame = 0;
-      holdManualScroll(TOUCH_RESUME_MS);
-      return;
-    }
-    // Decay against real elapsed time so the glide feels the same at any fps.
-    velocity *= Math.pow(TOUCH_FRICTION, dt / (1000 / 60));
-    if (Math.abs(velocity) < TOUCH_MIN_VELOCITY) {
-      momentumFrame = 0;
-      holdManualScroll(TOUCH_RESUME_MS);
-      return;
-    }
-    momentumFrame = requestAnimationFrame(step);
-  };
-  momentumFrame = requestAnimationFrame(step);
-}
-
-function onTouchStart(event: PointerEvent) {
-  if (event.pointerType === "mouse") return;
-  const container = lyricsScroll.value;
-  if (!container) return;
-  cancelMomentum();
-  touchActive = true;
-  touchStartY = event.clientY;
-  touchStartOffset = scrollOffset.value;
-  touchLastTime = performance.now();
-  touchVelocity = 0;
-  holdManualScroll(TOUCH_RESUME_MS);
-  container.setPointerCapture(event.pointerId);
-}
-
-function onTouchMove(event: PointerEvent) {
-  if (!touchActive) return;
-  event.preventDefault();
-  const now = performance.now();
-  const delta = event.clientY - touchStartY;
-  const next = clampOffset(touchStartOffset - delta);
-  const dt = now - touchLastTime;
-  if (dt > 0) {
-    // Offset grows as the content moves up, so a flick upward keeps gliding up.
-    const instantaneous = (next - scrollOffset.value) / dt;
-    touchVelocity = touchVelocity * (1 - TOUCH_VELOCITY_SMOOTHING) + instantaneous * TOUCH_VELOCITY_SMOOTHING;
-    touchLastTime = now;
+  manualDeadline = 0;
+  manualScroll = false;
+  if (lyrics.activeIndex >= 0) {
+    lastScrolledIndex = lyrics.activeIndex;
+    followActiveLine(lyrics.activeIndex);
   }
-  scrollOffset.value = next;
-  holdManualScroll(TOUCH_RESUME_MS);
 }
 
-function onTouchEnd(event: PointerEvent) {
-  if (!touchActive) return;
-  touchActive = false;
-  const container = lyricsScroll.value;
-  if (container?.hasPointerCapture(event.pointerId)) container.releasePointerCapture(event.pointerId);
-  // Releasing after standing still should not fling the lyrics.
-  if (performance.now() - touchLastTime > TOUCH_HOLD_MS) touchVelocity = 0;
-  startMomentum();
+/** Suspend auto-follow while the user reads ahead, then glide back. */
+function holdManualScroll() {
+  manualScroll = true;
+  followTarget = -1;
+  manualDeadline = performance.now() + MANUAL_RESUME_MS;
+  if (!manualTimer) manualTimer = window.setTimeout(releaseManualScroll, MANUAL_RESUME_MS);
+}
+
+function updateLyricEdgeFlags() {
+  const handle = lyricsVirtualizer.value;
+  if (!handle) return;
+  const offset = handle.scrollOffset;
+  const viewport = handle.viewportSize;
+  const total = handle.scrollSize;
+  lyricAtTop.value = offset <= 1;
+  lyricAtBottom.value = offset + viewport >= total - 1;
+}
+
+function onVirtualScroll() {
+  if (programmaticScroll) return;
+  updateLyricEdgeFlags();
+  holdManualScroll();
+}
+
+function onVirtualScrollEnd() {
+  // Rows mount/unmount while scrolling, so cached word elements may belong to
+  // a detached instance; refresh them on the next tick.
+  wordCacheDirty = true;
+  wordCacheRetryAt = 0;
+  updateLyricEdgeFlags();
+  if (programmaticScroll) {
+    programmaticScroll = false;
+    followTarget = -1;
+    window.clearTimeout(programmaticTimer);
+    programmaticTimer = 0;
+  }
+  scheduleWordRefresh();
 }
 
 onMounted(() => {
-  frame = requestAnimationFrame(loop);
+  if (player.isPlaying) startLoop();
+  else syncLyrics();
   bumpControls();
+  window.setTimeout(updateLyricEdgeFlags, 100);
   void syncFullscreen();
+  window.addEventListener("keydown", onKeydown, true);
   window.addEventListener("pointermove", bumpControls);
   window.addEventListener("pointerdown", bumpControls);
   window.addEventListener("wheel", bumpControls, { passive: true });
-  window.addEventListener("resize", syncFullscreen);
+  window.addEventListener("resize", scheduleSyncFullscreen);
+  document.addEventListener("visibilitychange", onVisibilityChange);
 });
 onBeforeUnmount(() => {
-  cancelAnimationFrame(frame);
-  cancelMomentum();
-  window.clearTimeout(manualTimer);
+  stopLoop();
+  clearManualResume();
   window.clearTimeout(controlsTimer);
+  window.clearTimeout(programmaticTimer);
+  window.clearTimeout(fullscreenTimer);
+  window.clearTimeout(settleTimer);
+  fullscreenRequest += 1;
+  cachedWords = null;
+  cachedSet = null;
+  window.removeEventListener("keydown", onKeydown, true);
   window.removeEventListener("pointermove", bumpControls);
   window.removeEventListener("pointerdown", bumpControls);
   window.removeEventListener("wheel", bumpControls);
-  window.removeEventListener("resize", syncFullscreen);
+  window.removeEventListener("resize", scheduleSyncFullscreen);
+  document.removeEventListener("visibilitychange", onVisibilityChange);
 });
 
 watch(
@@ -382,44 +539,89 @@ watch(
     return track?.path ? `${track.sourceId ?? ""}::${track.path}` : "";
   },
   () => {
+    invalidateWordCache();
+    clearManualResume();
     lastScrolledIndex = -1;
-    scrollOffset.value = 0;
-    void lyrics.loadForTrack(player.currentTrack ?? undefined).then(syncLyrics);
+    seekValue.value = null;
+    void lyrics
+      .loadForTrack(player.currentTrack ?? undefined)
+      .then(() => {
+        // Re-sync on the early-return path too (same track, already loaded):
+        // the virtualizer is freshly mounted and still needs to find the line.
+        syncLyrics();
+        const index = lyrics.activeIndex;
+        if (index >= 0 && index !== lastScrolledIndex) {
+          lastScrolledIndex = index;
+          followActiveLine(index);
+        }
+      })
+      .catch(() => {});
   },
   { immediate: true },
 );
+
+watch(
+  () => lyrics.lines,
+  () => {
+    invalidateWordCache();
+    clearManualResume();
+    syncLyrics();
+    const index = lyrics.activeIndex;
+    lastScrolledIndex = index;
+    if (index >= 0) followActiveLine(index);
+    else resetScroll();
+  },
+  { flush: "post" },
+);
+
 watch(
   () => lyrics.activeIndex,
   (index) => {
     if (index < 0 || index === lastScrolledIndex) return;
     lastScrolledIndex = index;
-    // Don't yank the view back to the active line while the user is dragging.
-    if (manualScroll.value) return;
-    void nextTick(() => { scrollOffset.value = activeLineOffset(); });
-  },
-  { flush: "pre" },
-);
-
-/** Once a manual drag settles, glide back to the active line. */
-watch(manualScroll, (manual) => {
-  if (!manual) scrollOffset.value = activeLineOffset();
-});
-
-/**
- * The animation loop only writes `--word-progress` for elements that are
- * already marked active, so a line entering the active set would otherwise
- * paint one frame with a stale (or initial) progress. `flush: "post"` writes
- * the real progress right after the DOM patch, so the first painted frame is
- * already correct.
- */
-watch(
-  activeSet,
-  () => {
-    updateWordProgress(currentTime() * 1000);
-    // A new line joining the block (or an old one leaving) moves the anchor.
-    if (!manualScroll.value) scrollOffset.value = activeLineOffset();
+    if (!manualScroll) followActiveLine(index);
   },
   { flush: "post" },
+);
+
+watch(
+  activeKey,
+  () => {
+    invalidateWordCache();
+    updateWordProgress(currentTime() * 1000);
+  },
+  { flush: "post" },
+);
+
+// Toggling ruby replaces the word spans, so the cached element references are
+// no longer the ones painted on screen.
+watch(
+  showRuby,
+  () => {
+    invalidateWordCache();
+    updateWordProgress(currentTime() * 1000);
+  },
+  { flush: "post" },
+);
+
+watch(
+  () => player.isPlaying,
+  (playing) => {
+    if (playing) startLoop();
+    else {
+      stopLoop();
+      syncLyrics();
+    }
+  },
+);
+
+// While paused the animation loop is stopped, so a seek/resume still needs a
+// one-shot lyric sync to move the highlight.
+watch(
+  () => player.position,
+  () => {
+    if (!player.isPlaying) syncLyrics();
+  },
 );
 </script>
 
@@ -428,12 +630,36 @@ watch(
     <div class="pointer-events-none absolute inset-0 opacity-20" :style="{ background: `radial-gradient(circle at 20% 20%, ${player.currentTrack.color}, transparent 55%), radial-gradient(circle at 80% 80%, ${player.currentTrack.color}, transparent 55%)` }"></div>
     <div class="pointer-events-none absolute -right-32 top-1/2 h-[150%] w-40 rotate-[18deg] bg-accent/10"></div>
     <div class="pointer-events-none absolute -left-24 bottom-0 h-[60%] w-24 -rotate-[18deg] bg-accent/5"></div>
-    <header class="relative z-10 flex h-16 shrink-0 items-center px-5">
-      <div class="ml-auto flex items-center gap-3">
+    <header class="pointer-events-none absolute inset-x-0 top-[env(safe-area-inset-top)] z-20 h-16 px-4 md:hidden">
+      <div class="flex h-full min-w-0 items-center gap-3">
+        <span
+          class="ak-frame grid h-10 w-10 shrink-0 place-items-center overflow-hidden text-sm font-black text-white/90"
+          :style="{ backgroundColor: player.currentTrack.color }"
+        >
+          <img v-if="player.currentTrack.cover" :src="player.currentTrack.cover" alt="" decoding="async" class="h-full w-full object-cover" />
+          <LoaderCircle v-else-if="coverPending(player.currentTrack)" :size="16" :stroke-width="2" class="animate-spin" />
+          <template v-else>{{ initial(player.currentTrack) }}</template>
+        </span>
+        <span class="grid min-w-0 gap-0.5">
+          <strong class="truncate text-sm font-semibold leading-tight">{{ player.currentTrack.title }}</strong>
+          <button
+            v-if="player.currentTrack.artist"
+            type="button"
+            class="truncate text-left text-xs leading-tight text-dim transition-colors hover:text-accent"
+            :title="t('library.openArtist')"
+            @click="emit('openArtist', player.currentTrack.artist)"
+          >
+            {{ player.currentTrack.artist }}
+          </button>
+        </span>
+      </div>
+    </header>
+
+    <div class="pointer-events-none absolute right-8 top-[calc(env(safe-area-inset-top)+2rem)] z-30">
+      <div class="flex items-center gap-4 transition-all duration-300 ease-out" :class="revealClass">
         <button
           type="button"
-          class="grid h-10 w-10 place-items-center border border-line text-muted transition-all duration-300 ease-out hover:border-fg hover:text-fg"
-          :class="revealClass"
+          class="grid h-10 w-10 shrink-0 place-items-center border border-line bg-bg/60 text-muted backdrop-blur transition-all duration-300 ease-out hover:border-fg hover:text-fg"
           :title="t('controls.return')"
           :aria-label="t('controls.return')"
           @click="emit('navigate', returnView)"
@@ -442,8 +668,7 @@ watch(
         </button>
         <button
           type="button"
-          class="grid h-10 w-10 place-items-center border border-line text-muted transition-all duration-300 ease-out hover:border-fg hover:text-fg"
-          :class="revealClass"
+          class="grid h-10 w-10 shrink-0 place-items-center border border-line bg-bg/60 text-muted backdrop-blur transition-all duration-300 ease-out hover:border-fg hover:text-fg"
           :title="fullscreenTitle"
           :aria-label="fullscreenTitle"
           :aria-pressed="isFullscreen"
@@ -453,9 +678,9 @@ watch(
           <Maximize2 v-else :size="16" :stroke-width="2" />
         </button>
       </div>
-    </header>
-    <div class="relative z-10 grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-6 overflow-hidden px-5 py-4 md:grid-cols-[minmax(220px,0.34fr)_minmax(0,0.66fr)] md:grid-rows-1 md:gap-12 md:px-10 md:py-8 lg:grid-cols-[minmax(280px,0.32fr)_minmax(0,0.68fr)] lg:gap-16 lg:px-16">
-      <div class="order-2 flex min-h-0 flex-col justify-end md:order-none md:justify-center">
+    </div>
+    <div class="relative z-10 grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-6 overflow-hidden px-5 pt-[env(safe-area-inset-top)] py-4 md:grid-cols-[minmax(220px,0.34fr)_minmax(0,0.66fr)] md:grid-rows-1 md:gap-12 md:px-10 md:py-8 lg:grid-cols-[minmax(280px,0.32fr)_minmax(0,0.68fr)] lg:gap-16 lg:px-16">
+      <div class="amll-controls order-2 flex min-h-0 flex-col justify-end md:order-none md:justify-center" :data-collapsed="controlsVisible ? 'false' : 'true'">
         <div class="ak-frame mx-auto hidden aspect-square w-full max-w-[420px] overflow-hidden md:block" :style="{ backgroundColor: player.currentTrack.color }">
           <img v-if="player.currentTrack.cover" :src="player.currentTrack.cover" alt="" decoding="async" class="h-full w-full object-cover" />
           <span v-else-if="coverPending(player.currentTrack)" class="grid h-full w-full place-items-center text-white/90"><LoaderCircle :size="40" :stroke-width="1.8" class="animate-spin" /></span>
@@ -484,9 +709,11 @@ watch(
             />
           </div>
           <div class="mt-1.5 flex items-center justify-between font-mono text-[13px] tabular-nums text-muted">
-            <span>{{ player.elapsedTime }}</span>
+            <span>{{ elapsedDisplay }}</span>
+            <span v-if="isHiRes" class="select-none text-[12px] tracking-wide">Hi-Res</span>
+            <span v-else></span>
             <button type="button" class="transition-colors hover:text-fg" :aria-pressed="showRemaining" @click="showRemaining = !showRemaining">
-              <template v-if="showRemaining">-{{ player.remainingTime }}</template>
+              <template v-if="showRemaining">-{{ remainingDisplay }}</template>
               <template v-else>{{ player.totalTime }}</template>
             </button>
           </div>
@@ -513,18 +740,20 @@ watch(
           </div>
         </div>
       </div>
-      <div class="order-1 flex min-h-0 min-w-0 flex-col justify-center md:order-none">
-         <div class="mb-4 md:hidden">
-          <h1 class="mt-2 truncate text-xl font-black leading-none tracking-tight">{{ player.currentTrack.title }}</h1>
-         </div>
-         <div ref="lyricsScroll" class="lyrics-scroll min-h-0 flex-1 overflow-hidden border-l border-line pl-6 md:max-h-[76vh] md:pl-10" :style="{ '--active-index': lyrics.activeIndex, '--line-size': `${lyrics.classic.lineSize}px`, '--translation-size': `${lyrics.classic.translationSize}px`, '--line-spacing': `${lyrics.classic.lineSpacing}px`, '--line-weight': lyrics.classic.fontWeight, '--line-weight-active': lyricActiveWeight, fontFamily: lyricFontFamily }" @wheel.prevent="onWheel" @pointerdown="onTouchStart" @pointermove="onTouchMove" @pointerup="onTouchEnd" @pointercancel="onTouchEnd">
-          <div ref="lyricsTrack" class="lyrics-track" :class="{ 'is-manual': manualScroll }" :style="{ transform: `translate3d(0, ${-scrollOffset}px, 0)` }">
-          <div class="pt-[30vh] pb-[50vh]">
-            <p v-if="lyrics.status === 'loading'" class="text-muted">{{ t("lyrics.loading") }}</p>
-            <template v-else-if="lyrics.hasLyrics">
-              <div v-for="(line, lineIndex) in lyrics.lines" :key="`${line.startTime}-${lineIndex}`" class="lyric-line" :class="{ 'is-active': activeSet.has(lineIndex), 'text-muted': !activeSet.has(lineIndex), 'is-bg': line.isBG, 'is-duet': line.isDuet }" :data-lyric-active="activeSet.has(lineIndex)" :data-lyric-primary="lineIndex === lyrics.activeIndex" :data-lyric-index="lineIndex" :style="{ '--line-i': lineIndex }">
+      <div class="order-1 flex min-h-0 min-w-0 flex-col justify-center pt-16 md:order-none md:pt-0">
+         <div ref="lyricsScroll" class="lyrics-scroll min-h-0 flex-1 overflow-y-auto pl-6 md:max-h-[76vh] md:border-l md:border-line md:pl-10" :class="{ 'lyric-at-top': lyricAtTop, 'lyric-at-bottom': lyricAtBottom }" :style="{ '--line-size': `${lyrics.classic.lineSize}px`, '--translation-size': `${lyrics.classic.translationSize}px`, '--line-spacing': `${lyrics.classic.lineSpacing}px`, '--line-weight': lyrics.classic.fontWeight, '--line-weight-active': lyricActiveWeight, fontFamily: lyricFontFamily }">
+          <Virtualizer
+            ref="lyricsVirtualizer"
+            :data="lyrics.lines"
+            :buffer-size="400"
+            :item-size="lyricItemSize"
+            @scroll="onVirtualScroll"
+            @scroll-end="onVirtualScrollEnd"
+          >
+            <template #default="{ item: line, index: lineIndex }">
+              <div class="lyric-line" :class="{ 'is-active': activeSet.has(lineIndex), 'text-muted': !activeSet.has(lineIndex), 'is-bg': line.isBG, 'is-duet': line.isDuet }" :data-lyric-active="activeSet.has(lineIndex)" :data-lyric-primary="lineIndex === lyrics.activeIndex" :data-lyric-index="lineIndex" :data-lyric-word-timestamps="wordTimestampLines.has(lineIndex)">
                 <p class="lyric-primary">
-                  <template v-for="(word, wordIndex) in line.words" :key="`${word.startTime}-${wordIndex}`">
+                  <template v-for="(word, wordIndex) in line.words" :key="wordIndex">
                     <ruby v-if="showRuby && word.ruby?.length" class="lyric-ruby">
                       <span class="lyric-word">{{ word.word }}</span>
                       <rt class="lyric-ruby-text">{{ rubyText(word) }}</rt>
@@ -536,13 +765,13 @@ watch(
                 <p v-if="line.romanLyric" class="lyric-roman">{{ line.romanLyric }}</p>
               </div>
             </template>
-            <p v-else-if="!lyrics.suppressed" class="text-muted">{{ t("lyrics.empty") }}</p>
-          </div>
-          </div>
+          </Virtualizer>
+          <p v-if="lyrics.status === 'loading'" class="text-muted px-0 py-4">{{ t("lyrics.loading") }}</p>
+          <p v-else-if="!lyrics.hasLyrics && !lyrics.suppressed" class="text-muted px-0 py-4">{{ t("lyrics.empty") }}</p>
         </div>
       </div>
     </div>
-    <div class="player-waveform relative z-10 shrink-0">
+    <div class="player-waveform pointer-events-none relative z-30 shrink-0 text-accent md:absolute md:inset-x-0 md:bottom-0">
       <RealtimeWaveform fit class="text-accent" />
     </div>
   </div>
@@ -555,25 +784,12 @@ watch(
   initial-value: 0%;
 }
 
-@property --word-sung {
-  syntax: "<color>";
-  inherits: false;
-  initial-value: transparent;
-}
-
-@property --word-rest {
-  syntax: "<color>";
-  inherits: false;
-  initial-value: transparent;
-}
-
 .lyrics-scroll {
   scrollbar-width: none;
-  /* Dragging the lyrics is handled by pointer events, so stop the browser
-     from claiming the vertical gesture (which would cancel our pointermove). */
-  touch-action: none;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
   --lyric-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --lyric-duration: 560ms;
+  --lyric-duration: 800ms;
   -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 5%, #000 95%, transparent 100%);
   mask-image: linear-gradient(to bottom, transparent 0%, #000 5%, #000 95%, transparent 100%);
   -webkit-mask-repeat: no-repeat;
@@ -582,24 +798,30 @@ watch(
   mask-size: 100% 100%;
 }
 
+.lyrics-scroll.lyric-at-top {
+  -webkit-mask-image: linear-gradient(to bottom, #000 95%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 95%, transparent 100%);
+}
+
+.lyrics-scroll.lyric-at-bottom {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 5%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 5%);
+}
+
+.lyrics-scroll.lyric-at-top.lyric-at-bottom {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
 .lyrics-scroll::-webkit-scrollbar {
   display: none;
-}
-
-.lyrics-track {
-  position: relative;
-  transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
-}
-
-.lyrics-track.is-manual {
-  transition: none;
 }
 
 .lyric-line {
   opacity: 0.72;
   transition: opacity var(--lyric-duration) var(--lyric-ease);
   margin-bottom: var(--line-spacing, 16px);
+  contain: layout paint style;
 }
 
 .lyric-line.is-active {
@@ -610,7 +832,6 @@ watch(
   font-size: var(--line-size, 24px);
   font-weight: var(--line-weight, 600);
   line-height: 1.4;
-  transition: font-weight var(--lyric-duration) var(--lyric-ease);
 }
 
 .lyric-line.is-active .lyric-primary {
@@ -619,15 +840,24 @@ watch(
 }
 
 /*
- * The colours now switch instantly. Interpolating a registered custom property
- * that a `background-clip: text` gradient paints produced a visible flash while
- * the scroll transform was re-rasterising at the same moment; the line still
- * fades in and out through the `opacity` transition on `.lyric-line`.
+ * Only the active line needs the per-word sweep; inactive lines are flat text.
+ * Painting the gradient only where progress actually changes keeps most of the
+ * visible lyrics off the `background-clip: text` path.
  */
 .lyric-word {
-  --word-sung: var(--muted);
-  --word-rest: var(--muted);
   display: inline;
+  color: var(--muted);
+  -webkit-text-fill-color: currentColor;
+}
+
+.lyric-line.is-bg .lyric-word {
+  color: var(--dim);
+  -webkit-text-fill-color: currentColor;
+}
+
+.lyric-line.is-active .lyric-word {
+  --word-sung: var(--accent);
+  --word-rest: var(--fg);
   background: linear-gradient(90deg, var(--word-sung) var(--word-progress), var(--word-rest) var(--word-progress));
   -webkit-background-clip: text;
   background-clip: text;
@@ -635,9 +865,21 @@ watch(
   -webkit-text-fill-color: transparent;
 }
 
-.lyric-line.is-active .lyric-word {
+/*
+ * Lines that carry only a single line-level timestamp (no per-word timing)
+ * have no word sweep to run: lock --word-progress at 100% so the whole line
+ * paints in the accent ("sung") color instead of sitting flat at --word-rest.
+ */
+/*
+ * Lines that carry only a line-level timestamp (no per-word timing) are
+ * highlighted as a whole line: every word shares one progress value derived
+ * from the line's own start/end, so the line lights up at once when sung.
+ * The progress itself is written by updateWordProgress, not hardcoded here.
+ */
+
+.lyric-line.is-bg.is-active .lyric-word {
   --word-sung: var(--accent);
-  --word-rest: var(--fg);
+  --word-rest: var(--muted);
 }
 
 /*
@@ -650,25 +892,25 @@ watch(
 }
 
 .lyric-ruby-text {
-  --word-sung: var(--muted);
-  --word-rest: var(--muted);
   font-size: 0.5em;
   font-weight: calc(var(--line-weight, 600) - 200);
-  background: linear-gradient(90deg, var(--word-sung) var(--word-progress), var(--word-rest) var(--word-progress));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+  color: var(--muted);
+  -webkit-text-fill-color: currentColor;
+}
+
+.lyric-line.is-bg .lyric-ruby-text {
+  color: var(--dim);
+  -webkit-text-fill-color: currentColor;
 }
 
 .lyric-line.is-active .lyric-ruby-text {
   --word-sung: var(--accent);
   --word-rest: var(--fg);
-}
-
-.lyric-line.is-bg .lyric-ruby-text {
-  --word-sung: var(--dim);
-  --word-rest: var(--dim);
+  background: linear-gradient(90deg, var(--word-sung) var(--word-progress), var(--word-rest) var(--word-progress));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 
 .lyric-line.is-bg.is-active .lyric-ruby-text {
@@ -702,11 +944,6 @@ watch(
   opacity: 0.6;
 }
 
-.lyric-line.is-bg .lyric-word {
-  --word-sung: var(--dim);
-  --word-rest: var(--dim);
-}
-
 .lyric-line.is-bg .lyric-primary {
   font-size: calc(var(--line-size, 24px) * 0.68);
   font-weight: calc(var(--line-weight, 600) - 100);
@@ -720,11 +957,6 @@ watch(
   opacity: 0.85;
 }
 
-.lyric-line.is-bg.is-active .lyric-word {
-  --word-sung: var(--accent);
-  --word-rest: var(--muted);
-}
-
 .lyric-line.is-bg.is-active .lyric-primary {
   font-weight: calc(var(--line-weight-active, 800) - 200);
 }
@@ -732,6 +964,35 @@ watch(
 @media (min-width: 640px) {
   .lyric-primary {
     font-size: var(--line-size, 24px);
+  }
+}
+
+/*
+ * Mobile: the transport controls own a region below the lyrics. When they
+ * auto-hide the region collapses to zero height, so the lyrics reclaim the
+ * space instead of leaving a blank strip. A grid-row `0fr` collapse does NOT
+ * work here because the container's height is auto inside a flex column, so
+ * animate `max-height` instead.
+ */
+.amll-controls {
+  max-height: 230px;
+  overflow: hidden;
+  transition: max-height 320ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 220ms ease;
+}
+
+.amll-controls[data-collapsed="true"] {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (min-width: 768px) {
+  .amll-controls,
+  .amll-controls[data-collapsed="true"] {
+    max-height: none;
+    overflow: visible;
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 

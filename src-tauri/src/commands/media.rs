@@ -36,19 +36,19 @@ const LIBRARY_HASH_PREFIX: &str = "library-hash-";
 const HEAD_RANGES: [u64; 2] = [1_572_864, 6_291_456]; // 1.5 / 6 MiB
 
 pub(crate) fn lyric_path(track_path: &str) -> Result<String, AppError> {
-    let slash = track_path
-        .rfind('/')
-        .ok_or_else(|| AppError::invalid_argument("path", "must contain an audio file name"))?;
-    let file_name = &track_path[slash + 1..];
+    let slash = track_path.rfind('/').unwrap_or(usize::MAX);
+    // When the audio file sits at the source root there is no directory
+    // separator; treat the whole path as the file name.
+    let (dir, file_name) = if slash == usize::MAX {
+        ("", track_path)
+    } else {
+        (&track_path[..slash + 1], &track_path[slash + 1..])
+    };
     let dot = file_name.rfind('.').ok_or_else(|| {
         AppError::invalid_argument("path", "must include an audio file extension")
     })?;
 
-    Ok(format!(
-        "{}{}.lrc",
-        &track_path[..slash + 1],
-        &file_name[..dot]
-    ))
+    Ok(format!("{}{}.lrc", dir, &file_name[..dot]))
 }
 
 fn default_cache_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
@@ -107,7 +107,8 @@ fn meta_file(dir: &Path, hash: &str) -> PathBuf {
     dir.join("meta").join(format!("{hash}.json"))
 }
 
-fn read_meta(dir: &Path, hash: &str) -> Option<TrackMetadata> {
+/// Read a track's cached parsed metadata (title/artist/album) from disk.
+pub(crate) fn read_meta(dir: &Path, hash: &str) -> Option<TrackMetadata> {
     let bytes = std::fs::read(meta_file(dir, hash)).ok()?;
     serde_json::from_slice(&bytes).ok()
 }
@@ -337,10 +338,15 @@ async fn fetch_metadata(backend: &Backend, path: &str) -> Result<Option<ParsedMe
             Ok(bytes) if !bytes.is_empty() => match metadata::parse(&bytes) {
                 Ok(parsed) => {
                     let metadata = &parsed.metadata;
+                    // Duration comes from the container head (e.g. WAV `fmt`), so it
+                    // is present even when the tag blocks live further in the file.
+                    // It must NOT count as "useful", otherwise a ranged read that
+                    // only reached the audio header would stop escalating and we'd
+                    // return empty tags instead of widening the Range / reading the
+                    // whole file (see the trailing ID3/RiffInfo in large WAVs).
                     let useful = metadata.title.is_some()
                         || metadata.artist.is_some()
                         || metadata.album.is_some()
-                        || metadata.duration_secs.is_some()
                         || parsed.cover.is_some();
                     if useful {
                         log::debug!("read metadata for {path} from {size} bytes");
@@ -414,23 +420,28 @@ pub async fn read_track_metadata_batch(
     app: AppHandle,
     source_id: String,
     paths: Vec<String>,
-) -> Result<Vec<CachedTrack>, AppError> {
+    on_event: tauri::ipc::Channel<CachedTrack>,
+) -> Result<(), AppError> {
     let backend = backend_for(&app, &source_id)?;
     let dir = resolve_cache_dir(&app);
     let source = source_id.clone();
 
-    let results = stream::iter(paths)
+    stream::iter(paths)
         .map(|path| {
             let backend = &backend;
             let dir = &dir;
             let source = &source;
-            async move { read_or_fetch_metadata(backend, dir, source, path).await }
+            let on_event = &on_event;
+            async move {
+                let result = read_or_fetch_metadata(backend, dir, source, path).await;
+                let _ = on_event.send(result);
+            }
         })
         .buffer_unordered(METADATA_CONCURRENCY)
         .collect::<Vec<_>>()
         .await;
 
-    Ok(results)
+    Ok(())
 }
 
 /// Serve one track's cached metadata, fetching and caching it when missing.

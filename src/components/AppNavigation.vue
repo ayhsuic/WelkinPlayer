@@ -29,7 +29,7 @@ function navigateDrawer(view: View) { closeDrawer(); emit("navigate", view); }
 function isClassificationActive(id: View): boolean {
   if (id === "artists") return props.activeView === "artists" || !!props.activeArtist;
   if (id === "albums") return props.activeView === "albums" || !!props.activeAlbum;
-  if (id === "sources") return props.activeView === "sources" || props.activeView === "source-config" || !!props.activeSource;
+  if (id === "sources") return props.activeView === "sources" || props.activeView === "source-config" || props.activeView === "source-browser" || !!props.activeSource;
   return false;
 }
 </script>

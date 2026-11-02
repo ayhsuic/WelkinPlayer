@@ -1,12 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Welkin",
-  "version": "1.0.3-rc-1",
+  "version": "1.2.0",
   "identifier": "com.atemukesu.welkinplayer",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm build",
+    "beforeBundleCommand": "node scripts/patch-cef-angle-stubs.mjs",
     "frontendDist": "../dist"
   },
   "app": {
@@ -21,9 +22,10 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob: http://127.0.0.1:* http://localhost:*; media-src 'self' asset: http://asset.localhost blob: data: http://127.0.0.1:* http://localhost:*; font-src 'self' data: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost http://127.0.0.1:* http://localhost:* ws://localhost:* ws://127.0.0.1:*; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob: http://127.0.0.1:* http://localhost:*; media-src 'self' asset: http://asset.localhost blob: data: http://127.0.0.1:* http://localhost:*; font-src 'self' data: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost data: http://127.0.0.1:* http://localhost:* ws://localhost:* ws://127.0.0.1:*; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
       "assetProtocol": {
-        "enable": true
+        "enable": true,
+        "scope": ["$APPCACHE/**", "$APPDATA/**", "$APPLOCALDATA/**", "$RESOURCE/**", "**"]
       }
     }
   },
@@ -32,7 +34,8 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "android": {
-      "minSdkVersion": 26
+      "minSdkVersion": 26,
+      "debugApplicationIdSuffix": ".debug"
     },
     "icon": [
       "icons/32x32.png",
