@@ -62,20 +62,20 @@ function isActivePlaylist(id: string): boolean { return props.activePlaylistId =
     <span class="flex items-center gap-3"><span class="grid place-items-center text-dim" :title="networkLabel"><WifiOff v-if="!network.available" :size="16" :stroke-width="1.8" /><Wifi v-else-if="!network.metered" :size="16" :stroke-width="1.8" /><Signal v-else :size="16" :stroke-width="1.8" /></span><button type="button" class="bg-accent px-2 py-1 text-xs font-bold uppercase leading-none tracking-[0.2em] text-accent-fg transition-opacity hover:opacity-80" @click="emit('navigate', 'sponsor')">{{ editionLabel }}</button></span>
   </header>
   <aside v-if="placement === 'sidebar'" class="sidebar-shell hidden min-h-0 shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface md:flex" :class="{ 'is-collapsed': collapsed }">
-    <div class="sidebar-brand flex items-center border-b border-line pb-5" :class="collapsed ? 'justify-center' : 'gap-3'"><span class="grid h-9 w-9 shrink-0 place-items-center bg-accent text-accent-fg"><Music2 :size="18" :stroke-width="2.2" /></span><div class="sidebar-brand-copy"><p class="text-sm font-black uppercase tracking-[0.25em] leading-none">Welkin</p><button type="button" class="mt-2 w-fit bg-accent px-2 py-1 text-xs font-bold uppercase leading-none tracking-[0.2em] text-accent-fg transition-opacity hover:opacity-80" @click="emit('navigate', 'sponsor')">{{ editionLabel }}</button></div><span class="ml-auto grid shrink-0 self-center place-items-center text-dim" :class="collapsed ? 'hidden' : ''" :title="networkLabel"><WifiOff v-if="!network.available" :size="15" :stroke-width="1.8" /><Wifi v-else-if="!network.metered" :size="15" :stroke-width="1.8" /><Signal v-else :size="15" :stroke-width="1.8" /></span></div>
-    <nav class="flex flex-col gap-px" :class="collapsed ? 'mt-4' : 'mt-6'"><button v-for="item in navItems" :key="item.id" class="relative flex h-11 items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === item.id ? 'ak-select' : 'text-muted hover:bg-fg/5 hover:text-fg']" :title="collapsed ? t(item.labelKey) : undefined" @click="emit('navigate', item.id)"><component :is="item.icon" :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(item.labelKey) }}</span></button></nav>
+    <div class="sidebar-brand flex items-center border-b border-line pb-5" :class="collapsed ? 'justify-center' : 'gap-3'"><span class="sidebar-logo grid h-9 w-9 shrink-0 place-items-center bg-accent text-accent-fg" aria-hidden="true"><Music2 :size="18" :stroke-width="2.2" /></span><div class="sidebar-brand-copy"><p class="text-sm font-black uppercase tracking-[0.25em] leading-none">Welkin</p><button type="button" class="mt-2 w-fit bg-accent px-2 py-1 text-xs font-bold uppercase leading-none tracking-[0.2em] text-accent-fg transition-opacity hover:opacity-80" @click="emit('navigate', 'sponsor')">{{ editionLabel }}</button></div><span class="ml-auto grid shrink-0 self-center place-items-center text-dim" :class="collapsed ? 'hidden' : ''" :title="networkLabel"><WifiOff v-if="!network.available" :size="15" :stroke-width="1.8" /><Wifi v-else-if="!network.metered" :size="15" :stroke-width="1.8" /><Signal v-else :size="15" :stroke-width="1.8" /></span></div>
+    <nav class="flex flex-col gap-px" :class="collapsed ? 'mt-4' : 'mt-6'"><button v-for="item in navItems" :key="item.id" class="relative flex h-11 items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === item.id ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t(item.labelKey) : undefined" :aria-current="activeView === item.id ? 'page' : undefined" @click="emit('navigate', item.id)"><component :is="item.icon" :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(item.labelKey) }}</span></button></nav>
     <div class="mt-5 border-t border-line pt-4">
-      <button class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'favorites' ? 'ak-select' : 'text-muted hover:bg-fg/5 hover:text-fg']" :title="collapsed ? t('nav.favorites') : undefined" @click="emit('navigate', 'favorites')"><Heart :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.favorites") }}</span></button>
-      <button class="relative mt-1.5 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', playlistsActive ? 'ak-select' : 'text-muted hover:bg-fg/5 hover:text-fg']" :title="collapsed ? t('nav.playlists') : undefined" @click="emit('navigate', 'playlists')"><ListPlus :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.playlists") }}</span></button>
+      <button class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'favorites' ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t('nav.favorites') : undefined" :aria-current="activeView === 'favorites' ? 'page' : undefined" @click="emit('navigate', 'favorites')"><Heart :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.favorites") }}</span></button>
+      <button class="relative mt-1.5 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', playlistsActive ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t('nav.playlists') : undefined" :aria-current="playlistsActive ? 'page' : undefined" @click="emit('navigate', 'playlists')"><ListPlus :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.playlists") }}</span></button>
       <div class="my-3 border-t border-line"></div>
-      <button class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'tracks' && !activePlaylistId && !activeArtist && !activeAlbum && !activeSource ? 'ak-select' : 'text-muted hover:bg-fg/5 hover:text-fg']" :title="collapsed ? t('nav.tracks') : undefined" @click="emit('navigate', 'tracks')"><ListMusic :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.tracks") }}</span></button>
-      <button v-for="item in classificationNavItems" :key="item.id" class="relative mt-1.5 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', isClassificationActive(item.id) ? 'ak-select' : 'text-muted hover:bg-fg/5 hover:text-fg']" :title="collapsed ? t(item.labelKey) : undefined" @click="emit('navigate', item.id)"><component :is="item.icon" :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(item.labelKey) }}</span></button>
-      <button class="relative mt-1.5 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'stats' ? 'ak-select' : 'text-muted hover:bg-fg/5 hover:text-fg']" :title="collapsed ? t('nav.stats') : undefined" @click="emit('navigate', 'stats')"><Activity :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.stats") }}</span></button>
+      <button class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'tracks' && !activePlaylistId && !activeArtist && !activeAlbum && !activeSource ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t('nav.tracks') : undefined" :aria-current="activeView === 'tracks' && !activePlaylistId && !activeArtist && !activeAlbum && !activeSource ? 'page' : undefined" @click="emit('navigate', 'tracks')"><ListMusic :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.tracks") }}</span></button>
+      <button v-for="item in classificationNavItems" :key="item.id" class="relative mt-1.5 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', isClassificationActive(item.id) ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t(item.labelKey) : undefined" :aria-current="isClassificationActive(item.id) ? 'page' : undefined" @click="emit('navigate', item.id)"><component :is="item.icon" :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(item.labelKey) }}</span></button>
+      <button class="relative mt-1.5 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'stats' ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t('nav.stats') : undefined" :aria-current="activeView === 'stats' ? 'page' : undefined" @click="emit('navigate', 'stats')"><Activity :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.stats") }}</span></button>
     </div>
     <div class="mt-auto border-t border-line pt-3">
-      <button class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'settings' ? 'ak-select' : 'text-muted hover:bg-fg/5 hover:text-fg']" :title="collapsed ? t('nav.settings') : undefined" @click="emit('navigate', 'settings')"><Settings2 :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.settings") }}</span></button>
-      <button type="button" class="relative mt-1.5 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'sponsor' ? 'ak-select' : 'text-muted hover:bg-fg/5 hover:text-fg']" :title="collapsed ? t('nav.sponsor') : undefined" @click="emit('navigate', 'sponsor')"><HeartHandshake :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.sponsor") }}</span></button>
-      <button type="button" class="relative mt-1 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] text-muted transition-colors hover:bg-fg/5 hover:text-fg" :class="collapsed ? 'justify-center px-0' : 'gap-2 px-3'" :title="t(collapsed ? 'controls.expand' : 'controls.collapse')" @click="emit('toggle')"><ChevronRight v-if="collapsed" :size="16" :stroke-width="1.8" /><ChevronLeft v-else :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(collapsed ? 'controls.expand' : 'controls.collapse') }}</span></button>
+      <button class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'settings' ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t('nav.settings') : undefined" :aria-current="activeView === 'settings' ? 'page' : undefined" @click="emit('navigate', 'settings')"><Settings2 :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.settings") }}</span></button>
+      <button type="button" class="relative mt-1.5 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'sponsor' ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t('nav.sponsor') : undefined" :aria-current="activeView === 'sponsor' ? 'page' : undefined" @click="emit('navigate', 'sponsor')"><HeartHandshake :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.sponsor") }}</span></button>
+      <button type="button" class="sidebar-collapse-btn relative mt-1 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] text-muted transition-colors hover:text-fg" :class="collapsed ? 'justify-center px-0' : 'gap-2 px-3'" :title="t(collapsed ? 'controls.expand' : 'controls.collapse')" @click="emit('toggle')"><ChevronRight v-if="collapsed" :size="16" :stroke-width="1.8" /><ChevronLeft v-else :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(collapsed ? 'controls.expand' : 'controls.collapse') }}</span></button>
     </div>
   </aside>
   <template v-if="placement === 'mobile'">
@@ -139,6 +139,45 @@ function isActivePlaylist(id: string): boolean { return props.activePlaylistId =
 
 .sidebar-nav-label {
   max-width: 160px;
+}
+
+.sidebar-logo {
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+}
+
+/* 折叠态下隐藏选中块的重影偏移层，窄栏视觉更干净 */
+.sidebar-shell.is-collapsed .ak-select::after {
+  display: none;
+}
+
+/* 折叠按钮：展开态沿用切角悬停；折叠态改为居中小圆形悬停底 */
+.sidebar-collapse-btn {
+  isolation: isolate;
+}
+
+.sidebar-shell.is-collapsed .sidebar-collapse-btn::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40px;
+  height: 40px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  z-index: -1;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.92);
+  transition: opacity 180ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.sidebar-shell.is-collapsed .sidebar-collapse-btn:hover::before {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* 键盘焦点态：accent 内描边环（不破坏选中块） */
+.sidebar-shell button:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .sidebar-shell.is-collapsed .sidebar-brand-copy,
