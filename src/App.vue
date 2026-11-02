@@ -371,7 +371,6 @@ onUnmounted(() => { savePlaybackPosition(true); stopDesktopLyrics(); stopMediaCo
       <Transition name="queue-panel"><div v-if="showQueue" class="absolute inset-y-0 right-0 z-20 w-80 border-l border-line bg-surface"><QueuePanel @close="closeQueue" /></div></Transition>
     </div>
     <PlayerBar v-if="player.currentTrack" @open="navigate('player')" @queue="toggleQueue" @open-artist="openArtist" @open-album="openAlbum" />
-    <AppNavigation placement="mobile" :active-view="baseView" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-source="sourceFilter" @navigate="navigate" @create-playlist="createPlaylist" @open-playlist="openUserPlaylist" />
     <ToastStack />
     <UpdateModal @friendly-error="showError" />
   </div>
