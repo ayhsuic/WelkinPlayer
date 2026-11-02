@@ -5,7 +5,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Activity, ChevronLeft, ChevronRight, Ellipsis, Heart, HeartHandshake, Library, ListMusic, ListPlus, Music2, Plus, Settings2, Signal, Wifi, WifiOff, X } from "@lucide/vue";
+import { Activity, ChevronLeft, ChevronRight, Ellipsis, Heart, HeartHandshake, Library, ListMusic, ListPlus, Menu, Music2, Plus, Settings2, Signal, Wifi, WifiOff, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { classificationNavItems, navItems } from "../lib/app";
 import type { View } from "../lib/app";
@@ -39,6 +39,11 @@ function closeMobileSheet() { mobileSheet.value = null; }
 function navigateMobile(view: View) { closeMobileSheet(); emit("navigate", view); }
 function openMobilePlaylist(id: string) { closeMobileSheet(); emit("openPlaylist", id); }
 function createMobilePlaylist() { closeMobileSheet(); emit("createPlaylist"); }
+/** Drawer navigation (hamburger on the mobile header): overlay slide-in from the left. */
+const drawerOpen = ref(false);
+function toggleDrawer() { drawerOpen.value = !drawerOpen.value; }
+function closeDrawer() { drawerOpen.value = false; }
+function navigateDrawer(view: View) { closeDrawer(); emit("navigate", view); }
 function onMobileTab(key: string) { if (key === "playlists" || key === "more") toggleMobileSheet(key); else navigateMobile(key as View); }
 function isMobileTabActive(key: string): boolean {
   if (key === "library") return props.activeView === "library";
@@ -57,10 +62,42 @@ function isActivePlaylist(id: string): boolean { return props.activePlaylistId =
 </script>
 
 <template>
-  <header v-if="placement === 'header'" class="flex h-[calc(3.5rem_+_env(safe-area-inset-top))] items-center justify-between border-b border-line bg-surface px-4 pt-[env(safe-area-inset-top)] md:hidden">
-    <span class="flex items-center gap-2 text-sm font-black uppercase tracking-[0.25em]"><span class="h-3 w-3 bg-accent"></span>Welkin</span>
-    <span class="flex items-center gap-3"><span class="grid place-items-center text-dim" :title="networkLabel"><WifiOff v-if="!network.available" :size="16" :stroke-width="1.8" /><Wifi v-else-if="!network.metered" :size="16" :stroke-width="1.8" /><Signal v-else :size="16" :stroke-width="1.8" /></span><button type="button" class="bg-accent px-2 py-1 text-xs font-bold uppercase leading-none tracking-[0.2em] text-accent-fg transition-opacity hover:opacity-80" @click="emit('navigate', 'sponsor')">{{ editionLabel }}</button></span>
-  </header>
+  <template v-if="placement === 'header'">
+    <header class="flex h-[calc(3.5rem_+_env(safe-area-inset-top))] items-center justify-between border-b border-line bg-surface px-4 pt-[env(safe-area-inset-top)] md:hidden">
+      <span class="flex items-center gap-2">
+        <button type="button" class="header-drawer-btn grid h-10 w-10 place-items-center text-muted transition-colors hover:text-fg" :aria-label="t('nav.more')" :aria-expanded="drawerOpen" aria-haspopup="dialog" @click="toggleDrawer"><Menu :size="20" :stroke-width="1.8" /></button>
+        <span class="flex items-center gap-2 text-sm font-black uppercase tracking-[0.25em]"><span class="h-3 w-3 bg-accent"></span>Welkin</span>
+      </span>
+      <span class="flex items-center gap-3"><span class="grid place-items-center text-dim" :title="networkLabel"><WifiOff v-if="!network.available" :size="16" :stroke-width="1.8" /><Wifi v-else-if="!network.metered" :size="16" :stroke-width="1.8" /><Signal v-else :size="16" :stroke-width="1.8" /></span><button type="button" class="bg-accent px-2 py-1 text-xs font-bold uppercase leading-none tracking-[0.2em] text-accent-fg transition-opacity hover:opacity-80" @click="emit('navigate', 'sponsor')">{{ editionLabel }}</button></span>
+    </header>
+    <Teleport to="body">
+      <Transition name="sheet-backdrop"><div v-if="drawerOpen" class="fixed inset-0 z-[70] bg-black/40 md:hidden" @pointerdown="closeDrawer"></div></Transition>
+      <Transition name="drawer">
+        <section v-if="drawerOpen" class="drawer-shell fixed bottom-0 left-0 top-0 z-[71] flex w-[280px] flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface pb-3 md:hidden" role="dialog" aria-modal="true" aria-label="navigation">
+          <div class="flex items-center justify-between border-b border-line px-5 py-4">
+            <span class="flex items-center gap-2 text-sm font-black uppercase tracking-[0.25em]"><span class="sidebar-logo grid h-7 w-7 place-items-center bg-accent text-accent-fg" aria-hidden="true"><Music2 :size="14" :stroke-width="2.2" /></span>Welkin</span>
+            <button type="button" class="grid h-9 w-9 place-items-center text-dim transition-colors hover:text-fg" :aria-label="t('controls.close')" @click="closeDrawer"><X :size="16" :stroke-width="1.8" /></button>
+          </div>
+          <nav class="flex flex-col gap-px p-3">
+            <button v-for="item in navItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === item.id ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
+            <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'tracks' && !activePlaylistId && !activeArtist && !activeAlbum && !activeSource ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('tracks')"><ListMusic :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.tracks") }}</span></button>
+            <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'favorites' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('favorites')"><Heart :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.favorites") }}</span></button>
+            <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="playlistsActive ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('playlists')"><ListPlus :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.playlists") }}</span></button>
+          </nav>
+          <div class="mx-3 border-t border-line"></div>
+          <nav class="flex flex-col gap-px p-3">
+            <button v-for="item in classificationNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="isClassificationActive(item.id) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
+          </nav>
+          <div class="mx-3 border-t border-line"></div>
+          <nav class="flex flex-col gap-px p-3">
+            <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'stats' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('stats')"><Activity :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.stats") }}</span></button>
+            <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'settings' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('settings')"><Settings2 :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.settings") }}</span></button>
+            <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'sponsor' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('sponsor')"><HeartHandshake :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.sponsor") }}</span></button>
+          </nav>
+        </section>
+      </Transition>
+    </Teleport>
+  </template>
   <aside v-if="placement === 'sidebar'" class="sidebar-shell hidden min-h-0 shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface md:flex" :class="{ 'is-collapsed': collapsed }">
     <div class="sidebar-brand flex items-center border-b border-line pb-5" :class="collapsed ? 'justify-center' : 'gap-3'"><span class="sidebar-logo grid h-9 w-9 shrink-0 place-items-center bg-accent text-accent-fg" aria-hidden="true"><Music2 :size="18" :stroke-width="2.2" /></span><div class="sidebar-brand-copy"><p class="text-sm font-black uppercase tracking-[0.25em] leading-none">Welkin</p><button type="button" class="mt-2 w-fit bg-accent px-2 py-1 text-xs font-bold uppercase leading-none tracking-[0.2em] text-accent-fg transition-opacity hover:opacity-80" @click="emit('navigate', 'sponsor')">{{ editionLabel }}</button></div><span class="ml-auto grid shrink-0 self-center place-items-center text-dim" :class="collapsed ? 'hidden' : ''" :title="networkLabel"><WifiOff v-if="!network.available" :size="15" :stroke-width="1.8" /><Wifi v-else-if="!network.metered" :size="15" :stroke-width="1.8" /><Signal v-else :size="15" :stroke-width="1.8" /></span></div>
     <nav class="flex flex-col gap-px" :class="collapsed ? 'mt-4' : 'mt-6'"><button v-for="item in navItems" :key="item.id" class="relative flex h-11 items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === item.id ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t(item.labelKey) : undefined" :aria-current="activeView === item.id ? 'page' : undefined" @click="emit('navigate', item.id)"><component :is="item.icon" :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(item.labelKey) }}</span></button></nav>
@@ -196,6 +233,25 @@ function isActivePlaylist(id: string): boolean { return props.activePlaylistId =
 .sheet-enter-from,
 .sheet-leave-to {
   transform: translateY(100%);
+}
+
+.drawer-enter-active,
+.drawer-leave-active {
+  transition: transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.drawer-enter-from,
+.drawer-leave-to {
+  transform: translateX(-100%);
+}
+
+/* 汉堡按钮：切角悬停 + 焦点环（与侧栏一致） */
+.header-drawer-btn {
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+}
+
+.header-drawer-btn:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .sheet-backdrop-enter-active,
