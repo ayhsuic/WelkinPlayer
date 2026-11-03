@@ -4,7 +4,7 @@
  */
 
 import type { Component } from "vue";
-import { CalendarDays, Disc3, HardDrive, Heart, Library, ListMusic, Mic2, Music, Settings2 } from "@lucide/vue";
+import { Activity, CalendarDays, Disc3, HardDrive, Library, ListMusic, ListOrdered, ListPlus, Mic2, Music } from "@lucide/vue";
 
 export type View = "library" | "tracks" | "queue" | "favorites" | "stats" | "artists" | "albums" | "years" | "genres" | "sources" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "settings" | "sponsor" | "player";
 export type Theme = "light" | "dark";
@@ -17,27 +17,30 @@ export interface NavItem {
   icon: Component;
 }
 
-export const navItems: NavItem[] = [
+/** Primary group: home and the play queue. */
+export const primaryNavItems: NavItem[] = [
   { id: "library", labelKey: "nav.library", index: "01", icon: Library },
+  { id: "queue", labelKey: "nav.queue", index: "02", icon: ListOrdered },
 ];
 
-/** Settings entry, pinned to the bottom of the navigation. */
-export const settingsNavItem: NavItem = { id: "settings", labelKey: "nav.settings", index: "02", icon: Settings2 };
-
-/** Collections shown in a dedicated sidebar group, below the primary nav. */
-export const collectionNavItems: NavItem[] = [
-  { id: "favorites", labelKey: "nav.favorites", index: "F", icon: Heart },
-  { id: "tracks", labelKey: "nav.tracks", index: "A", icon: ListMusic },
+/** Library group: playlists plus the swipeable classifications. */
+export const libraryNavItems: NavItem[] = [
+  { id: "playlists", labelKey: "nav.playlists", index: "03", icon: ListPlus },
+  { id: "artists", labelKey: "nav.artists", index: "04", icon: Mic2 },
+  { id: "years", labelKey: "nav.years", index: "05", icon: CalendarDays },
+  { id: "genres", labelKey: "nav.genres", index: "06", icon: Music },
+  { id: "albums", labelKey: "nav.albums", index: "07", icon: Disc3 },
+  { id: "tracks", labelKey: "nav.tracks", index: "08", icon: ListMusic },
 ];
 
-/** Library classifications, grouped with the collections in the navigation. */
-export const classificationNavItems: NavItem[] = [
-  { id: "artists", labelKey: "nav.artists", index: "G", icon: Mic2 },
-  { id: "albums", labelKey: "nav.albums", index: "B", icon: Disc3 },
-  { id: "years", labelKey: "nav.years", index: "Y", icon: CalendarDays },
-  { id: "genres", labelKey: "nav.genres", index: "H", icon: Music },
-  { id: "sources", labelKey: "nav.sources", index: "S", icon: HardDrive },
+/** System group: sources and play ranking. */
+export const systemNavItems: NavItem[] = [
+  { id: "sources", labelKey: "nav.sources", index: "09", icon: HardDrive },
+  { id: "stats", labelKey: "nav.stats", index: "10", icon: Activity },
 ];
+
+/** The six swipeable category panels, in sidebar order. */
+export const categoryViews: View[] = ["playlists", "artists", "years", "genres", "albums", "tracks"];
 
 export const accents: { id: Accent; key: string; swatch: string }[] = [
   { id: "amber", key: "accent.amber", swatch: "#f0a500" },

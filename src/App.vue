@@ -63,11 +63,11 @@ import SponsorView from "./views/SponsorView.vue";
 import TracksView from "./views/TracksView.vue";
 import FavoritesView from "./views/FavoritesView.vue";
 import QueueView from "./views/QueueView.vue";
+import CategoriesView from "./views/CategoriesView.vue";
+import type { GroupKind } from "./lib/grouping";
 import StatsView from "./views/StatsView.vue";
-import GroupedLibraryView from "./views/GroupedLibraryView.vue";
 import SourcesView from "./views/SourcesView.vue";
 import SourceBrowserView from "./views/SourceBrowserView.vue";
-import PlaylistsView from "./views/PlaylistsView.vue";
 import PlaylistEditorView from "./views/PlaylistEditorView.vue";
 import LyricsEditorView from "./views/LyricsEditorView.vue";
 import TrackEditorView from "./views/TrackEditorView.vue";
@@ -104,6 +104,12 @@ const albumFilter = ref<string | null>(null);
 const yearFilter = ref<string | null>(null);
 const genreFilter = ref<string | null>(null);
 const sourceFilter = ref<string | null>(null);
+
+/** The swipeable category container owns playlists + the four grids + all tracks. */
+const categoryActive = computed(() =>
+  ["playlists", "artists", "years", "genres", "albums"].includes(baseView.value) ||
+  (baseView.value === "tracks" && !playlistFilter.value && !artistFilter.value && !albumFilter.value && !yearFilter.value && !genreFilter.value && !sourceFilter.value),
+);
 const browseSourceId = ref<string | null>(null);
 const sourceConfigReturn = ref<View>("sources");
 const editingPlaylist = ref<string | null>(null);
@@ -278,7 +284,8 @@ function openSourceConfig(from: View) { sourceConfigReturn.value = from; setView
 
 function closeSourceConfig() { setView(sourceConfigReturn.value); }
 function openGroup(kind: "artists" | "albums" | "years" | "genres", key: string) { playlistFilter.value = null; artistFilter.value = kind === "artists" ? key : null; albumFilter.value = kind === "albums" ? key : null; yearFilter.value = kind === "years" ? key : null; genreFilter.value = kind === "genres" ? key : null; sourceFilter.value = null; setView("tracks"); }
-function onOpenGroup(key: string) { const view = baseView.value; openGroup(view === "albums" ? "albums" : view === "years" ? "years" : view === "genres" ? "genres" : "artists", key); }
+/** A group card clicked inside the swipeable category panels carries its own kind. */
+function onOpenGroupFrom(kind: GroupKind, key: string) { openGroup(kind, key); }
 /** Clicking an artist name on a track opens that artist's collection. */
 function openArtist(artist: string) { const key = primaryArtist(artist); if (key) openGroup("artists", key); }
 /** Clicking an album name opens that album's collection. */
@@ -391,14 +398,13 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
       <main class="min-w-0 flex-1 overflow-y-auto">
         <Transition name="page" mode="out-in">
           <LibraryView v-if="baseView === 'library'" key="library" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-          <TracksView v-else-if="baseView === 'tracks'" key="tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
+          <TracksView v-else-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <SourcesView v-else-if="baseView === 'sources' || (baseView === 'source-browser' && !browseSourceId)" key="sources" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig('sources')" />
           <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate('sources')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
           <SourceConfigView v-else-if="baseView === 'source-config'" key="source-config" @back="closeSourceConfig" />
-          <GroupedLibraryView v-else-if="baseView === 'artists' || baseView === 'albums' || baseView === 'years' || baseView === 'genres'" :key="baseView" :kind="baseView === 'albums' ? 'albums' : baseView === 'years' ? 'years' : baseView === 'genres' ? 'genres' : 'artists'" :loading="loadingLibrary" @open="onOpenGroup" />
+          <CategoriesView v-else-if="categoryActive" key="categories" :kind="baseView" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @navigate="navigate" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @open-group="onOpenGroupFrom" @refresh="refreshLibrary" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
           <FavoritesView v-else-if="baseView === 'favorites'" key="favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <QueueView v-else-if="baseView === 'queue'" key="queue" />
-          <PlaylistsView v-else-if="baseView === 'playlists'" key="playlists" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @navigate="navigate" />
           <StatsView v-else-if="baseView === 'stats'" key="stats" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
           <SettingsView v-else key="settings" v-model:theme="theme" v-model:accent="accent" @sponsor="navigate('sponsor')" @sources="openSourceConfig('settings')" @friendly-error="showError" />

@@ -5,21 +5,14 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Activity, ChevronLeft, ChevronRight, HeartHandshake, ListMusic, ListOrdered, ListPlus, Menu, Music2, Settings2, Signal, Wifi, WifiOff } from "@lucide/vue";
+import { Bell, ChevronLeft, ChevronRight, HeartHandshake, Menu, Music2, Settings2 } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
-import { classificationNavItems, navItems } from "../lib/app";
+import { libraryNavItems, primaryNavItems, systemNavItems, type NavItem } from "../lib/app";
 import type { View } from "../lib/app";
-import { useNetworkStore } from "../stores/network";
-import { useLicenseStore } from "../stores/license";
 
 const props = withDefaults(defineProps<{ activeView: View; placement: "header" | "sidebar" | "mobile"; collapsed?: boolean; activePlaylistId?: string | null; activeArtist?: string | null; activeAlbum?: string | null; activeYear?: string | null; activeGenre?: string | null; activeSource?: string | null }>(), { collapsed: false, activePlaylistId: null, activeArtist: null, activeAlbum: null, activeYear: null, activeGenre: null, activeSource: null });
 const emit = defineEmits<{ navigate: [view: View]; toggle: []; createPlaylist: []; openPlaylist: [id: string] }>();
 const { t } = useI18n();
-const network = useNetworkStore();
-const license = useLicenseStore();
-const networkLabel = computed(() => (!network.available ? t("nav.networkOffline") : network.metered ? t("nav.networkCellular") : t("nav.networkWifi")));
-/** Edition shown on the badge that links to the sponsor page. */
-const editionLabel = computed(() => (license.isPro ? t("sponsor.compare.badgePro") : t("nav.freeEdition")));
 const playlistsActive = computed(() => props.activeView === "playlists" || (props.activeView === "tracks" && !!props.activePlaylistId));
 /** Drawer navigation (hamburger on the mobile header): overlay slide-in from the left. */
 const drawerOpen = ref(false);
@@ -34,11 +27,26 @@ function isClassificationActive(id: View): boolean {
   if (id === "sources") return props.activeView === "sources" || props.activeView === "source-config" || props.activeView === "source-browser" || !!props.activeSource;
   return false;
 }
+/** Highlight a sidebar/drawer entry per its own drill-down rules. */
+function navItemActive(item: NavItem): boolean {
+  switch (item.id) {
+    case "library": return props.activeView === "library";
+    case "queue": return props.activeView === "queue";
+    case "playlists": return playlistsActive.value;
+    case "tracks": return props.activeView === "tracks" && !props.activePlaylistId && !props.activeArtist && !props.activeAlbum && !props.activeYear && !props.activeGenre && !props.activeSource;
+    case "sources": return isClassificationActive("sources");
+    default: return isClassificationActive(item.id);
+  }
+}
 </script>
 
 <template>
   <template v-if="placement === 'header'">
-    <button type="button" class="header-drawer-btn fixed left-3 top-[calc(env(safe-area-inset-top)_+_0.5rem)] z-[60] grid h-10 w-10 place-items-center border border-line bg-surface text-fg transition-colors hover:text-accent md:hidden" :aria-label="t('nav.more')" :aria-expanded="drawerOpen" aria-haspopup="dialog" @click="toggleDrawer"><Menu :size="20" :stroke-width="1.8" /></button>
+    <header class="z-40 flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 md:hidden">
+      <button type="button" class="grid h-10 w-10 place-items-center text-fg transition-colors hover:text-accent" :aria-label="t('nav.more')" :aria-expanded="drawerOpen" aria-haspopup="dialog" @click="toggleDrawer"><Menu :size="20" :stroke-width="1.8" /></button>
+      <span class="flex-1"></span>
+      <button type="button" class="grid h-10 w-10 place-items-center text-dim" :title="t('nav.notifications')" aria-label="notifications" disabled><Bell :size="18" :stroke-width="1.8" /></button>
+    </header>
     <Teleport to="body">
       <Transition name="sheet-backdrop"><div v-if="drawerOpen" class="fixed inset-0 z-[70] bg-black/40 md:hidden" @pointerdown="closeDrawer"></div></Transition>
       <Transition name="drawer">
@@ -50,18 +58,15 @@ function isClassificationActive(id: View): boolean {
             </span>
           </div>
           <nav class="flex flex-col gap-px p-3">
-            <button v-for="item in navItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === item.id ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
-            <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'queue' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('queue')"><ListOrdered :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.queue") }}</span></button>
-            <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="playlistsActive ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('playlists')"><ListPlus :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.playlists") }}</span></button>
-            <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'tracks' && !activePlaylistId && !activeArtist && !activeAlbum && !activeYear && !activeGenre && !activeSource ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('tracks')"><ListMusic :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.tracks") }}</span></button>
+            <button v-for="item in primaryNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
           </nav>
           <div class="mx-3 border-t border-line"></div>
           <nav class="flex flex-col gap-px p-3">
-            <button v-for="item in classificationNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="isClassificationActive(item.id) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
+            <button v-for="item in libraryNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
           </nav>
           <div class="mx-3 border-t border-line"></div>
           <nav class="flex flex-col gap-px p-3">
-            <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'stats' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('stats')"><Activity :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.stats") }}</span></button>
+            <button v-for="item in systemNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
           </nav>
           <div class="mt-auto border-t border-line pt-3">
             <nav class="flex flex-col gap-px p-3">
@@ -75,15 +80,12 @@ function isClassificationActive(id: View): boolean {
     </Teleport>
   </template>
   <aside v-if="placement === 'sidebar'" class="sidebar-shell hidden min-h-0 shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface md:flex" :class="{ 'is-collapsed': collapsed }">
-    <div class="sidebar-brand flex items-center border-b border-line pb-5" :class="collapsed ? 'justify-center' : 'gap-3'"><span class="sidebar-logo grid h-9 w-9 shrink-0 place-items-center bg-accent text-accent-fg" aria-hidden="true"><Music2 :size="18" :stroke-width="2.2" /></span><div class="sidebar-brand-copy"><p class="text-sm font-black uppercase tracking-[0.25em] leading-none">Welkin</p><button type="button" class="mt-2 w-fit bg-accent px-2 py-1 text-xs font-bold uppercase leading-none tracking-[0.2em] text-accent-fg transition-opacity hover:opacity-80" @click="emit('navigate', 'sponsor')">{{ editionLabel }}</button></div><span class="ml-auto grid shrink-0 self-center place-items-center text-dim" :class="collapsed ? 'hidden' : ''" :title="networkLabel"><WifiOff v-if="!network.available" :size="15" :stroke-width="1.8" /><Wifi v-else-if="!network.metered" :size="15" :stroke-width="1.8" /><Signal v-else :size="15" :stroke-width="1.8" /></span></div>
-    <nav class="flex flex-col gap-px" :class="collapsed ? 'mt-4' : 'mt-6'"><button v-for="item in navItems" :key="item.id" class="relative flex h-11 items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === item.id ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t(item.labelKey) : undefined" :aria-current="activeView === item.id ? 'page' : undefined" @click="emit('navigate', item.id)"><component :is="item.icon" :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(item.labelKey) }}</span></button></nav>
+    <div class="sidebar-brand flex items-center border-b border-line pb-5" :class="collapsed ? 'justify-center' : 'gap-3'"><span class="sidebar-logo grid h-9 w-9 shrink-0 place-items-center bg-accent text-accent-fg" aria-hidden="true"><Music2 :size="18" :stroke-width="2.2" /></span><div class="sidebar-brand-copy"><p class="text-sm font-black uppercase tracking-[0.25em] leading-none">Welkin</p></div></div>
+    <nav class="flex flex-col gap-px" :class="collapsed ? 'mt-4' : 'mt-6'"><button v-for="item in primaryNavItems" :key="item.id" class="relative flex h-11 items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t(item.labelKey) : undefined" :aria-current="navItemActive(item) ? 'page' : undefined" @click="emit('navigate', item.id)"><component :is="item.icon" :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(item.labelKey) }}</span></button></nav>
     <div class="mt-5 border-t border-line pt-4">
-      <button class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'queue' ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t('nav.queue') : undefined" :aria-current="activeView === 'queue' ? 'page' : undefined" @click="emit('navigate', 'queue')"><ListOrdered :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.queue") }}</span></button>
-      <button class="relative mt-1.5 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', playlistsActive ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t('nav.playlists') : undefined" :aria-current="playlistsActive ? 'page' : undefined" @click="emit('navigate', 'playlists')"><ListPlus :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.playlists") }}</span></button>
+      <nav class="flex flex-col gap-px"><button v-for="item in libraryNavItems" :key="item.id" class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t(item.labelKey) : undefined" :aria-current="navItemActive(item) ? 'page' : undefined" @click="emit('navigate', item.id)"><component :is="item.icon" :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(item.labelKey) }}</span></button></nav>
       <div class="my-3 border-t border-line"></div>
-      <button class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'tracks' && !activePlaylistId && !activeArtist && !activeAlbum && !activeYear && !activeGenre && !activeSource ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t('nav.tracks') : undefined" :aria-current="activeView === 'tracks' && !activePlaylistId && !activeArtist && !activeAlbum && !activeYear && !activeGenre && !activeSource ? 'page' : undefined" @click="emit('navigate', 'tracks')"><ListMusic :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.tracks") }}</span></button>
-      <button v-for="item in classificationNavItems" :key="item.id" class="relative mt-1.5 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', isClassificationActive(item.id) ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t(item.labelKey) : undefined" :aria-current="isClassificationActive(item.id) ? 'page' : undefined" @click="emit('navigate', item.id)"><component :is="item.icon" :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(item.labelKey) }}</span></button>
-      <button class="relative mt-1.5 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'stats' ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t('nav.stats') : undefined" :aria-current="activeView === 'stats' ? 'page' : undefined" @click="emit('navigate', 'stats')"><Activity :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.stats") }}</span></button>
+      <nav class="flex flex-col gap-px"><button v-for="item in systemNavItems" :key="item.id" class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t(item.labelKey) : undefined" :aria-current="navItemActive(item) ? 'page' : undefined" @click="emit('navigate', item.id)"><component :is="item.icon" :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(item.labelKey) }}</span></button></nav>
     </div>
     <div class="mt-auto border-t border-line pt-3">
       <button class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'settings' ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t('nav.settings') : undefined" :aria-current="activeView === 'settings' ? 'page' : undefined" @click="emit('navigate', 'settings')"><Settings2 :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.settings") }}</span></button>
