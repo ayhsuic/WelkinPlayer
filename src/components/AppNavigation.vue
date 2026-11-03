@@ -5,7 +5,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Bell, ChevronLeft, ChevronRight, HeartHandshake, Menu, Music2, Settings2 } from "@lucide/vue";
+import { ChevronLeft, ChevronRight, HeartHandshake, Menu, Music2, Settings2 } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { libraryNavItems, primaryNavItems, systemNavItems, type NavItem } from "../lib/app";
 import type { View } from "../lib/app";
@@ -42,15 +42,16 @@ function navItemActive(item: NavItem): boolean {
 
 <template>
   <template v-if="placement === 'header'">
-    <header class="z-40 flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 md:hidden">
-      <button type="button" class="grid h-10 w-10 place-items-center text-fg transition-colors hover:text-accent" :aria-label="t('nav.more')" :aria-expanded="drawerOpen" aria-haspopup="dialog" @click="toggleDrawer"><Menu :size="20" :stroke-width="1.8" /></button>
-      <span class="flex-1"></span>
-      <button type="button" class="grid h-10 w-10 place-items-center text-dim" :title="t('nav.notifications')" aria-label="notifications" disabled><Bell :size="18" :stroke-width="1.8" /></button>
+    <header class="z-40 shrink-0 border-b border-line bg-surface md:hidden" style="padding-top: env(safe-area-inset-top)">
+      <div class="flex h-11 items-center gap-2 px-2">
+        <button type="button" class="grid h-9 w-9 place-items-center text-fg transition-colors hover:text-accent" :aria-label="t('nav.more')" :aria-expanded="drawerOpen" aria-haspopup="dialog" @click="toggleDrawer"><Menu :size="20" :stroke-width="1.8" /></button>
+        <span class="flex-1"></span>
+      </div>
     </header>
     <Teleport to="body">
       <Transition name="sheet-backdrop"><div v-if="drawerOpen" class="fixed inset-0 z-[70] bg-black/40 md:hidden" @pointerdown="closeDrawer"></div></Transition>
       <Transition name="drawer">
-        <section v-if="drawerOpen" class="drawer-shell fixed bottom-0 left-0 top-0 z-[71] flex w-[280px] flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface pb-3 md:hidden" role="dialog" aria-modal="true" aria-label="navigation">
+        <section v-if="drawerOpen" class="drawer-shell fixed bottom-0 left-0 top-0 z-[71] flex w-[280px] flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface pb-3 md:hidden" style="padding-top: env(safe-area-inset-top)" role="dialog" aria-modal="true" aria-label="navigation">
           <div class="flex items-center justify-between border-b border-line px-5 py-4">
             <span class="flex items-center gap-2">
               <span class="sidebar-logo grid h-7 w-7 shrink-0 place-items-center bg-accent text-accent-fg" aria-hidden="true"><Music2 :size="14" :stroke-width="2.2" /></span>
