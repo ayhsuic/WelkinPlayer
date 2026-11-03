@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ListMusic, Pencil, Plus, Search } from "@lucide/vue";
+import { Heart, ListMusic, Pencil, Plus, Search } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useProfileStore } from "../stores/profile";
+import type { View } from "../lib/app";
 import PlaylistCover from "../components/PlaylistCover.vue";
 
-const emit = defineEmits<{ openPlaylist: [id: string]; editPlaylist: [id: string]; createPlaylist: [] }>();
+const emit = defineEmits<{ openPlaylist: [id: string]; editPlaylist: [id: string]; createPlaylist: []; navigate: [view: View] }>();
 const { t } = useI18n();
 const profile = useProfileStore();
 const query = ref("");
@@ -14,6 +15,9 @@ const playlists = computed(() => {
   const value = query.value.trim().toLocaleLowerCase();
   return value ? profile.playlists.filter((item) => item.name.toLocaleLowerCase().includes(value)) : profile.playlists;
 });
+
+/** Favorites act as the default playlist; its card is pinned first in the grid. */
+const favoriteCount = computed(() => profile.favorites.length);
 </script>
 
 <template>
@@ -30,14 +34,26 @@ const playlists = computed(() => {
         </div>
       </header>
 
-      <div v-if="profile.playlists.length === 0" class="ak-frame mt-8 grid place-items-center gap-4 border border-dashed border-line bg-surface/50 px-6 py-20 text-center">
+      <div v-if="profile.playlists.length === 0 && favoriteCount === 0" class="ak-frame mt-8 grid place-items-center gap-4 border border-dashed border-line bg-surface/50 px-6 py-20 text-center">
         <ListMusic :size="36" class="text-dim" />
         <p class="max-w-md text-sm text-muted">{{ t("playlistsPage.empty") }}</p>
         <button type="button" class="ak-clip-tr h-10 bg-accent px-5 text-[13px] font-bold uppercase tracking-[0.25em] text-accent-fg" @click="emit('createPlaylist')">{{ t("playlistsPage.create") }}</button>
       </div>
-      <p v-else-if="playlists.length === 0" class="py-10 text-center text-sm text-muted">{{ t("playlistsPage.empty") }}</p>
+      <p v-else-if="playlists.length === 0 && (query.trim() !== '' || favoriteCount === 0)" class="py-10 text-center text-sm text-muted">{{ t("playlistsPage.empty") }}</p>
 
       <section v-else class="grid grid-cols-2 gap-4 pt-8 sm:grid-cols-3 lg:grid-cols-4">
+        <article v-if="!query" class="group ak-frame flex flex-col border border-line bg-surface p-3 transition-all hover:-translate-y-0.5 hover:border-accent">
+          <button type="button" class="relative aspect-square w-full overflow-hidden" :title="t('playlistsPage.open')" @click="emit('navigate', 'favorites')">
+            <span class="grid h-full w-full place-items-center bg-accent/15 text-accent"><Heart :size="40" :stroke-width="2" /></span>
+          </button>
+          <div class="mt-3 flex items-start gap-2">
+            <button type="button" class="min-w-0 flex-1 text-left" @click="emit('navigate', 'favorites')">
+              <p class="truncate text-sm font-semibold">{{ t("nav.favorites") }}</p>
+              <p class="font-mono text-[11px] uppercase tracking-[0.15em] text-dim">{{ t("playlistsPage.count", { count: favoriteCount }) }}</p>
+            </button>
+            <span class="grid h-8 w-8 shrink-0 place-items-center text-dim"><Heart :size="15" /></span>
+          </div>
+        </article>
         <article v-for="playlist in playlists" :key="playlist.id" class="group ak-frame flex flex-col border border-line bg-surface p-3 transition-all hover:-translate-y-0.5 hover:border-accent">
           <button type="button" class="relative aspect-square w-full overflow-hidden" :title="t('playlistsPage.open')" @click="emit('openPlaylist', playlist.id)">
             <PlaylistCover :playlist="playlist" class="h-full w-full text-4xl" :icon-size="40" />

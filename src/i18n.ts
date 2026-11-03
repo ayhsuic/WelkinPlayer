@@ -12,6 +12,7 @@ const messages = {
     nav: {
       library: "首页",
       favorites: "我喜欢",
+      queue: "当前播放列表",
       tracks: "全部曲目",
       artists: "歌手",
       albums: "专辑",
@@ -845,6 +846,7 @@ const messages = {
     nav: {
       library: "Home",
       favorites: "Favorites",
+      queue: "Now Playing",
       tracks: "All tracks",
       artists: "Artists",
       albums: "Albums",
