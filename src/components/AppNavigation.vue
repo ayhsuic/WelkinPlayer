@@ -43,7 +43,7 @@ function navItemActive(item: NavItem): boolean {
 <template>
   <template v-if="placement === 'header'">
     <header class="z-40 shrink-0 border-b border-line bg-surface md:hidden" style="padding-top: env(safe-area-inset-top)">
-      <div class="flex h-11 items-center gap-2 px-2">
+      <div class="flex h-[60px] items-center gap-2 px-2">
         <button type="button" class="grid h-9 w-9 place-items-center text-fg transition-colors hover:text-accent" :aria-label="t('nav.more')" :aria-expanded="drawerOpen" aria-haspopup="dialog" @click="toggleDrawer"><Menu :size="20" :stroke-width="1.8" /></button>
         <span class="flex-1"></span>
       </div>
