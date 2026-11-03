@@ -162,6 +162,10 @@ async function save() {
       patch.title = metadata.title ?? target.title;
       patch.artist = metadata.artist ?? target.artist;
       patch.album = metadata.album ?? target.album;
+      if (metadata.genre) patch.genre = metadata.genre;
+      else if (target.genre) patch.genre = undefined;
+      if (metadata.year) patch.year = String(metadata.year);
+      else if (target.year) patch.year = undefined;
       if (metadata.durationSecs) patch.duration = formatSeconds(metadata.durationSecs);
       if (pendingCover.value) patch.cover = pendingCover.value;
       else if (removeCover.value) patch.cover = undefined;

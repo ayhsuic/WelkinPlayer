@@ -158,9 +158,9 @@ export function titleLetterIndex(tracks: Track[]): LetterIndexEntry[] {
 
 // --- Grouped library (歌手 / 专辑 grid) sorting ---
 
-/** Cards on the artist and album grid pages sort by display name or track count only. */
+/** Cards on the artist, album, year and genre grid pages sort by display name or track count only. */
 export type GroupSortKey = "default" | "name" | "count";
-export type GroupSortContext = "artists" | "albums";
+export type GroupSortContext = "artists" | "albums" | "years" | "genres";
 
 function groupKeyStorage(context: GroupSortContext) {
   return `welkin-group-sort-${context}-key`;
@@ -190,6 +190,8 @@ function createGroupState(context: GroupSortContext): GroupSortState {
 const groupRegistry: Record<GroupSortContext, GroupSortState> = {
   artists: createGroupState("artists"),
   albums: createGroupState("albums"),
+  years: createGroupState("years"),
+  genres: createGroupState("genres"),
 };
 
 /** Returns the persistent, reactive sort state for a grid page; the same context shares one instance. */

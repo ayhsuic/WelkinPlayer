@@ -26,6 +26,10 @@ pub struct TrackMetadata {
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
+    /// Genre tag, when the file embeds one.
+    pub genre: Option<String>,
+    /// Release year tag, when the file embeds one.
+    pub year: Option<u32>,
     /// Track length in whole seconds, when the container advertises it.
     pub duration_secs: Option<u64>,
     /// Cache id of the generated cover thumbnail, when one was embedded.
@@ -82,6 +86,10 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedMetadata, AppError> {
     let album = tag
         .and_then(|tag| tag.album())
         .map(|value| value.into_owned());
+    let genre = tag
+        .and_then(|tag| tag.genre())
+        .map(|value| value.into_owned());
+    let year = tag.and_then(|tag| tag.year());
 
     let duration: Duration = tagged.properties().duration();
     let duration_secs = (duration.as_secs() > 0).then_some(duration.as_secs());
@@ -98,6 +106,8 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedMetadata, AppError> {
             title,
             artist,
             album,
+            genre,
+            year,
             duration_secs,
             cover_hash: None,
         },

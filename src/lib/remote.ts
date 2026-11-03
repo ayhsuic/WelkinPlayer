@@ -66,6 +66,8 @@ export interface TrackMetadata {
   title: string | null;
   artist: string | null;
   album: string | null;
+  genre: string | null;
+  year: number | null;
   durationSecs: number | null;
   coverHash: string | null;
 }

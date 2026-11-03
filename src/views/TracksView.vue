@@ -19,7 +19,7 @@ import TrackSortMenu from "../components/TrackSortMenu.vue";
 import ViewModeToggle from "../components/ViewModeToggle.vue";
 import PlaylistCover from "../components/PlaylistCover.vue";
 
-const props = withDefaults(defineProps<{ playlistId?: string | null; artist?: string | null; album?: string | null; sourceId?: string | null; loading: boolean; refreshing?: boolean; downloadingTrackId?: number | null }>(), { playlistId: null, artist: null, album: null, sourceId: null, refreshing: false, downloadingTrackId: null });
+const props = withDefaults(defineProps<{ playlistId?: string | null; artist?: string | null; album?: string | null; year?: string | null; genre?: string | null; sourceId?: string | null; loading: boolean; refreshing?: boolean; downloadingTrackId?: number | null }>(), { playlistId: null, artist: null, album: null, year: null, genre: null, sourceId: null, refreshing: false, downloadingTrackId: null });
 const emit = defineEmits<{ refresh: []; edit: [id: string]; openArtist: [artist: string]; openAlbum: [album: string]; downloadMetadata: [track: Track]; editLyrics: [track: Track]; editInfo: [track: Track]; showInfo: [track: Track] }>();
 const { t } = useI18n();
 const player = usePlayerStore();
@@ -34,8 +34,8 @@ const scrollEl = ref<HTMLElement | null>(null);
 
 const activePlaylist = computed(() => props.playlistId ? profile.playlists.find((item) => item.id === props.playlistId) ?? null : null);
 /** A generated artist/album collection, selected from the classification views. */
-const groupKind = computed<GroupKind>(() => (props.artist ? "artists" : "albums"));
-const groupKeyValue = computed(() => props.artist ?? props.album ?? null);
+const groupKind = computed<GroupKind>(() => (props.artist ? "artists" : props.album ? "albums" : props.year ? "years" : "genres"));
+const groupKeyValue = computed(() => props.artist ?? props.album ?? props.year ?? props.genre ?? null);
 const isGroup = computed(() => groupKeyValue.value !== null);
 const sourceFilter = computed(() => props.sourceId ?? null);
 const sourceName = computed(() => sources.sources.find((source) => source.id === sourceFilter.value)?.name ?? null);
@@ -48,7 +48,7 @@ const groupTracks = computed(() => {
 const groupTitle = computed(() => {
   const key = groupKeyValue.value;
   if (key === null) return "";
-  if (isUnknownGroup(key)) return t(props.artist ? "library.collections.unknownArtist" : "library.collections.unknownAlbum");
+  if (isUnknownGroup(key)) return t(props.artist ? "library.collections.unknownArtist" : props.album ? "library.collections.unknownAlbum" : props.year ? "library.collections.unknownYear" : "library.collections.unknownGenre");
   return key;
 });
 /** Representative cover for a generated collection: the first track that has artwork. */
@@ -60,8 +60,7 @@ const sourceTracks = computed(() => {
   return player.tracks;
 });
 /** Sort settings are per page: playlists, artists, albums and the full library remember their own. */
-const sortContext = computed<TrackSortContext>(() => activePlaylist.value ? "playlist" : isGroup.value ? (groupKind.value === "artists" ? "artist" : "album") : "tracks");
-const sortKey = computed(() => useTrackSort(sortContext.value).key.value);
+const sortContext = computed<TrackSortContext>(() => activePlaylist.value ? "playlist" : isGroup.value ? (groupKind.value === "artists" ? "artist" : "album") : "tracks");const sortKey = computed(() => useTrackSort(sortContext.value).key.value);
 const sortDir = computed(() => useTrackSort(sortContext.value).dir.value);
 /** Source order with the chosen sort applied; the play queue follows this so "next" matches the screen. */
 const orderedTracks = computed(() => sortTracks(sourceTracks.value, sortKey.value, sortDir.value));
@@ -72,7 +71,7 @@ const tracks = computed(() => {
 /** The A–Z rail, only on the pages that opted in while sorting by title. */
 const letterIndex = computed(() => (sortKey.value === "title" && !selectMode.value && (sortContext.value === "tracks" || sortContext.value === "playlist") ? titleLetterIndex(tracks.value) : null));
 
-watch([() => props.playlistId, () => props.artist, () => props.album], () => { selectMode.value = false; selected.value = new Set(); });
+watch([() => props.playlistId, () => props.artist, () => props.album, () => props.year, () => props.genre], () => { selectMode.value = false; selected.value = new Set(); });
 
 function toggleSelectMode() {
   selectMode.value = !selectMode.value;

@@ -5,8 +5,8 @@
 
 import type { Track } from "../stores/player";
 
-/** The two library classifications available from the navigation. */
-export type GroupKind = "artists" | "albums";
+/** The library classifications available from the navigation. */
+export type GroupKind = "artists" | "albums" | "years" | "genres";
 
 /**
  * Sentinel group keys for tracks whose artist/album tag is missing. They are
@@ -15,6 +15,8 @@ export type GroupKind = "artists" | "albums";
  */
 export const UNKNOWN_ARTIST = "\u0000welkin:unknown-artist";
 export const UNKNOWN_ALBUM = "\u0000welkin:unknown-album";
+export const UNKNOWN_YEAR = "\u0000welkin:unknown-year";
+export const UNKNOWN_GENRE = "\u0000welkin:unknown-genre";
 
 /**
  * Separators used between multiple artists in a single tag. Covers ASCII and
@@ -45,6 +47,14 @@ export function groupKeys(track: Track, kind: GroupKind): string[] {
     const keys = splitArtists(track.artist ?? "").map((name) => name || UNKNOWN_ARTIST);
     return [...new Set(keys)];
   }
+  if (kind === "years") {
+    const year = (track.year ?? "").trim();
+    return [year || UNKNOWN_YEAR];
+  }
+  if (kind === "genres") {
+    const keys = splitArtists(track.genre ?? "").map((name) => name || UNKNOWN_GENRE);
+    return [...new Set(keys)];
+  }
   const album = (track.album ?? "").trim();
   return [album || UNKNOWN_ALBUM];
 }
@@ -56,7 +66,7 @@ export function groupKey(track: Track, kind: GroupKind): string {
 
 /** True for the sentinel keys above, so the UI can localize "Unknown". */
 export function isUnknownGroup(key: string): boolean {
-  return key === UNKNOWN_ARTIST || key === UNKNOWN_ALBUM;
+  return key === UNKNOWN_ARTIST || key === UNKNOWN_ALBUM || key === UNKNOWN_YEAR || key === UNKNOWN_GENRE;
 }
 
 export interface TrackGroup {

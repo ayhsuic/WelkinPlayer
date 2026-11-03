@@ -101,6 +101,8 @@ const booted = ref(false);
 const playlistFilter = ref<string | null>(null);
 const artistFilter = ref<string | null>(null);
 const albumFilter = ref<string | null>(null);
+const yearFilter = ref<string | null>(null);
+const genreFilter = ref<string | null>(null);
 const sourceFilter = ref<string | null>(null);
 const browseSourceId = ref<string | null>(null);
 const sourceConfigReturn = ref<View>("sources");
@@ -264,9 +266,9 @@ watch([() => player.queue, () => player.queueIndex], () => {
 });
 
 function readAccent(): Accent { const value = localStorage.getItem("welkin-accent"); return (accents.some((item) => item.id === value) ? value : "amber") as Accent; }
-function getViewFromHash(): View { const route = window.location.hash.slice(1); return route === "settings" || route === "sponsor" || route === "player" || route === "tracks" || route === "queue" || route === "favorites" || route === "stats" || route === "artists" || route === "albums" || route === "sources" || route === "source-config" || route === "source-browser" || route === "playlists" || route === "playlist-new" || route === "lyrics-edit" || route === "track-edit" || route === "track-info" ? route : "library"; }
+function getViewFromHash(): View { const route = window.location.hash.slice(1); return route === "settings" || route === "sponsor" || route === "player" || route === "tracks" || route === "queue" || route === "favorites" || route === "stats" || route === "artists" || route === "albums" || route === "years" || route === "genres" || route === "sources" || route === "source-config" || route === "source-browser" || route === "playlists" || route === "playlist-new" || route === "lyrics-edit" || route === "track-edit" || route === "track-info" ? route : "library"; }
 function setView(nextView: View) { view.value = nextView; window.location.hash = nextView === "library" ? "" : nextView; }
-function clearCollectionFilters() { playlistFilter.value = null; artistFilter.value = null; albumFilter.value = null; sourceFilter.value = null; }
+function clearCollectionFilters() { playlistFilter.value = null; artistFilter.value = null; albumFilter.value = null; yearFilter.value = null; genreFilter.value = null; sourceFilter.value = null; }
 function navigate(nextView: View) { clearCollectionFilters(); setView(nextView); }
 function syncViewFromHash() { view.value = getViewFromHash(); }
 function openUserPlaylist(id: string) { clearCollectionFilters(); playlistFilter.value = id; setView("tracks"); }
@@ -275,8 +277,8 @@ function browseSource(id: string) { clearCollectionFilters(); browseSourceId.val
 function openSourceConfig(from: View) { sourceConfigReturn.value = from; setView("source-config"); }
 
 function closeSourceConfig() { setView(sourceConfigReturn.value); }
-function openGroup(kind: "artists" | "albums", key: string) { playlistFilter.value = null; artistFilter.value = kind === "artists" ? key : null; albumFilter.value = kind === "albums" ? key : null; sourceFilter.value = null; setView("tracks"); }
-function onOpenGroup(key: string) { openGroup(baseView.value === "albums" ? "albums" : "artists", key); }
+function openGroup(kind: "artists" | "albums" | "years" | "genres", key: string) { playlistFilter.value = null; artistFilter.value = kind === "artists" ? key : null; albumFilter.value = kind === "albums" ? key : null; yearFilter.value = kind === "years" ? key : null; genreFilter.value = kind === "genres" ? key : null; sourceFilter.value = null; setView("tracks"); }
+function onOpenGroup(key: string) { const view = baseView.value; openGroup(view === "albums" ? "albums" : view === "years" ? "years" : view === "genres" ? "genres" : "artists", key); }
 /** Clicking an artist name on a track opens that artist's collection. */
 function openArtist(artist: string) { const key = primaryArtist(artist); if (key) openGroup("artists", key); }
 /** Clicking an album name opens that album's collection. */
@@ -385,15 +387,15 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
   <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg" :class="booted ? '' : 'opacity-0'">
     <AppNavigation placement="header" :active-view="baseView" @navigate="navigate" />
     <div class="relative flex min-h-0 flex-1">
-      <AppNavigation placement="sidebar" :active-view="baseView" :collapsed="sidebarCollapsed" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-source="sourceFilter" @navigate="navigate" @toggle="toggleSidebar" @create-playlist="createPlaylist" @open-playlist="openUserPlaylist" />
+      <AppNavigation placement="sidebar" :active-view="baseView" :collapsed="sidebarCollapsed" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-year="yearFilter" :active-genre="genreFilter" :active-source="sourceFilter" @navigate="navigate" @toggle="toggleSidebar" @create-playlist="createPlaylist" @open-playlist="openUserPlaylist" />
       <main class="min-w-0 flex-1 overflow-y-auto">
         <Transition name="page" mode="out-in">
           <LibraryView v-if="baseView === 'library'" key="library" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-          <TracksView v-else-if="baseView === 'tracks'" key="tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
+          <TracksView v-else-if="baseView === 'tracks'" key="tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <SourcesView v-else-if="baseView === 'sources' || (baseView === 'source-browser' && !browseSourceId)" key="sources" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig('sources')" />
           <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate('sources')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
           <SourceConfigView v-else-if="baseView === 'source-config'" key="source-config" @back="closeSourceConfig" />
-          <GroupedLibraryView v-else-if="baseView === 'artists' || baseView === 'albums'" :key="baseView" :kind="baseView === 'artists' ? 'artists' : 'albums'" :loading="loadingLibrary" @open="onOpenGroup" />
+          <GroupedLibraryView v-else-if="baseView === 'artists' || baseView === 'albums' || baseView === 'years' || baseView === 'genres'" :key="baseView" :kind="baseView === 'albums' ? 'albums' : baseView === 'years' ? 'years' : baseView === 'genres' ? 'genres' : 'artists'" :loading="loadingLibrary" @open="onOpenGroup" />
           <FavoritesView v-else-if="baseView === 'favorites'" key="favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <QueueView v-else-if="baseView === 'queue'" key="queue" />
           <PlaylistsView v-else-if="baseView === 'playlists'" key="playlists" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @navigate="navigate" />

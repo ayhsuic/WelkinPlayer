@@ -69,6 +69,10 @@ export interface Track {
   title: string;
   artist: string;
   album: string;
+  /** Release year tag, once metadata has been loaded. */
+  year?: string;
+  /** Genre tag, once metadata has been loaded. */
+  genre?: string;
   duration: string;
   color: string;
   /** Path inside its source, used to fetch metadata, covers and the stream. */

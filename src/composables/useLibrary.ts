@@ -109,6 +109,8 @@ export function useLibrary() {
           if (meta.title) patch.title = meta.title;
           if (meta.artist) patch.artist = meta.artist;
           if (meta.album) patch.album = meta.album;
+          if (meta.genre) patch.genre = meta.genre;
+          if (meta.year) patch.year = String(meta.year);
           if (meta.durationSecs) patch.duration = formatDuration(meta.durationSecs);
           patch.metaLoaded = true;
         }
@@ -126,6 +128,8 @@ export function useLibrary() {
     if (meta.title) patch.title = meta.title;
     if (meta.artist) patch.artist = meta.artist;
     if (meta.album) patch.album = meta.album;
+    if (meta.genre) patch.genre = meta.genre;
+    if (meta.year) patch.year = String(meta.year);
     if (meta.durationSecs) patch.duration = formatDuration(meta.durationSecs);
     if (Object.keys(patch).length > 0) player.updateTrack(track.id, patch);
 

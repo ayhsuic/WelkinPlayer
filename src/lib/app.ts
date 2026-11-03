@@ -4,9 +4,9 @@
  */
 
 import type { Component } from "vue";
-import { Disc3, HardDrive, Heart, Library, ListMusic, Mic2, Settings2 } from "@lucide/vue";
+import { CalendarDays, Disc3, HardDrive, Heart, Library, ListMusic, Mic2, Music, Settings2 } from "@lucide/vue";
 
-export type View = "library" | "tracks" | "queue" | "favorites" | "stats" | "artists" | "albums" | "sources" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "settings" | "sponsor" | "player";
+export type View = "library" | "tracks" | "queue" | "favorites" | "stats" | "artists" | "albums" | "years" | "genres" | "sources" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "settings" | "sponsor" | "player";
 export type Theme = "light" | "dark";
 export type Accent = "amber" | "orange" | "cyan" | "red" | "green" | "blue";
 
@@ -34,6 +34,8 @@ export const collectionNavItems: NavItem[] = [
 export const classificationNavItems: NavItem[] = [
   { id: "artists", labelKey: "nav.artists", index: "G", icon: Mic2 },
   { id: "albums", labelKey: "nav.albums", index: "B", icon: Disc3 },
+  { id: "years", labelKey: "nav.years", index: "Y", icon: CalendarDays },
+  { id: "genres", labelKey: "nav.genres", index: "H", icon: Music },
   { id: "sources", labelKey: "nav.sources", index: "S", icon: HardDrive },
 ];
 

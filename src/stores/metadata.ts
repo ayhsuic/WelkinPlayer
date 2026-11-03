@@ -135,6 +135,8 @@ export const useMetadataStore = defineStore("metadata", () => {
     if (meta.title) patch.title = meta.title;
     if (meta.artist) patch.artist = meta.artist;
     if (meta.album) patch.album = meta.album;
+    if (meta.genre) patch.genre = meta.genre;
+    if (meta.year) patch.year = String(meta.year);
     if (meta.durationSecs) patch.duration = formatDuration(meta.durationSecs);
     const url = coverUrl(result?.coverPath, current?.modified);
     if (url) patch.cover = url;
