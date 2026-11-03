@@ -41,30 +41,30 @@ const favoriteCount = computed(() => profile.favorites.length);
       </div>
       <p v-else-if="playlists.length === 0 && (query.trim() !== '' || favoriteCount === 0)" class="py-10 text-center text-sm text-muted">{{ t("playlistsPage.empty") }}</p>
 
-      <section v-else class="grid grid-cols-2 gap-4 pt-8 sm:grid-cols-3 lg:grid-cols-4">
-        <article v-if="!query" class="group ak-frame flex flex-col border border-line bg-surface p-3 transition-all hover:-translate-y-0.5 hover:border-accent">
+      <section v-else class="grid grid-cols-3 gap-3 pt-8 sm:grid-cols-3 lg:grid-cols-4">
+        <article v-if="!query" class="group ak-frame flex flex-col border border-line bg-surface p-2.5 transition-all hover:-translate-y-0.5 hover:border-accent">
           <button type="button" class="relative aspect-square w-full overflow-hidden" :title="t('playlistsPage.open')" @click="emit('navigate', 'favorites')">
-            <span class="grid h-full w-full place-items-center bg-accent/15 text-accent"><Heart :size="40" :stroke-width="2" /></span>
+            <span class="grid h-full w-full place-items-center bg-accent/15 text-accent"><Heart :size="28" :stroke-width="2" /></span>
           </button>
-          <div class="mt-3 flex items-start gap-2">
+          <div class="mt-2.5 flex items-start gap-2">
             <button type="button" class="min-w-0 flex-1 text-left" @click="emit('navigate', 'favorites')">
-              <p class="truncate text-sm font-semibold">{{ t("nav.favorites") }}</p>
-              <p class="font-mono text-[11px] uppercase tracking-[0.15em] text-dim">{{ t("playlistsPage.count", { count: favoriteCount }) }}</p>
+              <p class="truncate text-xs font-semibold">{{ t("nav.favorites") }}</p>
+              <p class="font-mono text-[10px] uppercase tracking-[0.15em] text-dim">{{ t("playlistsPage.count", { count: favoriteCount }) }}</p>
             </button>
-            <span class="grid h-8 w-8 shrink-0 place-items-center text-dim"><Heart :size="15" /></span>
+            <span class="grid h-7 w-7 shrink-0 place-items-center text-dim"><Heart :size="13" /></span>
           </div>
         </article>
-        <article v-for="playlist in playlists" :key="playlist.id" class="group ak-frame flex flex-col border border-line bg-surface p-3 transition-all hover:-translate-y-0.5 hover:border-accent">
+        <article v-for="playlist in playlists" :key="playlist.id" class="group ak-frame flex flex-col border border-line bg-surface p-2.5 transition-all hover:-translate-y-0.5 hover:border-accent">
           <button type="button" class="relative aspect-square w-full overflow-hidden" :title="t('playlistsPage.open')" @click="emit('openPlaylist', playlist.id)">
-            <PlaylistCover :playlist="playlist" class="h-full w-full text-4xl" :icon-size="40" />
+            <PlaylistCover :playlist="playlist" class="h-full w-full text-3xl" :icon-size="28" />
           </button>
-          <div class="mt-3 flex items-start gap-2">
+          <div class="mt-2.5 flex items-start gap-2">
             <button type="button" class="min-w-0 flex-1 text-left" @click="emit('openPlaylist', playlist.id)">
-              <p class="truncate text-sm font-semibold">{{ playlist.name }}</p>
-              <p class="font-mono text-[11px] uppercase tracking-[0.15em] text-dim">{{ t("playlistsPage.count", { count: playlist.tracks.length }) }}</p>
+              <p class="truncate text-xs font-semibold">{{ playlist.name }}</p>
+              <p class="font-mono text-[10px] uppercase tracking-[0.15em] text-dim">{{ t("playlistsPage.count", { count: playlist.tracks.length }) }}</p>
             </button>
             <div class="flex shrink-0 items-center gap-0.5">
-              <button type="button" class="grid h-8 w-8 place-items-center text-dim transition-colors hover:text-fg" :title="t('playlistsPage.edit')" @click="emit('editPlaylist', playlist.id)"><Pencil :size="15" /></button>
+              <button type="button" class="grid h-7 w-7 place-items-center text-dim transition-colors hover:text-fg" :title="t('playlistsPage.edit')" @click="emit('editPlaylist', playlist.id)"><Pencil :size="13" /></button>
             </div>
           </div>
         </article>

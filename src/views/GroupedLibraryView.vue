@@ -72,11 +72,11 @@ const cards = computed<GroupCard[]>(() => {
       </div>
       <p v-else-if="cards.length === 0" class="py-10 text-center text-sm text-muted">{{ t("library.collections.empty") }}</p>
 
-      <section v-else class="grid grid-cols-2 gap-4 pt-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        <button v-for="card in cards" :key="card.key" type="button" class="group ak-frame flex flex-col border border-line bg-surface p-3 text-left transition-all hover:-translate-y-0.5 hover:border-accent" @click="emit('open', card.key)">
+      <section v-else class="grid grid-cols-3 gap-3 pt-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <button v-for="card in cards" :key="card.key" type="button" class="group ak-frame flex flex-col border border-line bg-surface p-2.5 text-left transition-all hover:-translate-y-0.5 hover:border-accent" @click="emit('open', card.key)">
           <span class="relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: card.coverTrack?.color ?? 'var(--accent)' }">
             <img v-if="card.coverTrack?.cover" :src="card.coverTrack.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-            <span v-else class="absolute inset-0 grid place-items-center text-5xl font-black text-white/90">{{ card.name.charAt(0) }}</span>
+            <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ card.name.charAt(0) }}</span>
           </span>
           <p class="mt-3 truncate text-sm font-semibold tracking-wide">{{ card.name }}</p>
           <p class="truncate text-xs text-muted">{{ card.secondary }}</p>
