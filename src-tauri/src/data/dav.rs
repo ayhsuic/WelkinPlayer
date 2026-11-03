@@ -18,7 +18,7 @@ use futures_util::stream::{self, StreamExt};
 use percent_encoding::percent_decode_str;
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::Reader;
-use reqwest::{header, Client, Method, StatusCode, Url};
+use reqwest::{header, redirect::Policy, Client, Method, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
@@ -37,6 +37,11 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// This is an *inactivity* timeout, not a total-transfer deadline, so a long
 /// but healthy upload/download is never aborted mid-flight.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Maximum redirect hops chased manually for one PROPFIND. Three is plenty for
+/// the real chains (http → https, bare-domain → www, directory → trailing
+/// slash), and stops a misconfigured server from spinning us.
+const MAX_REDIRECT_HOPS: usize = 3;
 
 /// The `Depth` header for a PROPFIND request (RFC 4918 §10.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,9 +158,18 @@ impl WebDavClient {
         // No global request timeout: a fixed total deadline would abort a long
         // but healthy upload/download. A connect timeout plus an inactivity
         // (read) timeout bound failures without capping the transfer size.
+        //
+        // Redirects are followed manually, not by reqwest: its default policy
+        // rewrites 301/302/303 to GET, which turns a WebDAV PROPFIND (or any
+        // custom method) into a plain GET the server rejects — a very common
+        // failure against Nextcloud and reverse proxies that answer http with a
+        // 301 to https, or that redirect a directory without a trailing slash.
+        // Each method below chases the Location itself and retries with the
+        // original method.
         let http = Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
             .read_timeout(IDLE_TIMEOUT)
+            .redirect(Policy::none())
             .build()?;
 
         Ok(WebDavClient {
@@ -178,23 +192,57 @@ impl WebDavClient {
     }
 
     /// Issue a `PROPFIND` request and return the raw multistatus XML body.
+    ///
+    /// Redirects are chased manually with the original method — see the
+    /// [`Policy`] note in [`WebDavClient::new`]. A 301/302 `Location` is
+    /// resolved under the collection root and retried with PROPFIND, up to
+    /// [`MAX_REDIRECT_HOPS`] hops.
     pub async fn propfind(&self, path: &str, depth: Depth) -> Result<String, AppError> {
-        let url = self.resolve(path)?;
-        let body = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\
+        let mut url = self.resolve(path)?;
+        let body: &'static str = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\
             <d:propfind xmlns:d=\"DAV:\"><d:prop>\
             <d:displayname/><d:getcontentlength/><d:getlastmodified/>\
             <d:getcontenttype/><d:resourcetype/>\
             </d:prop></d:propfind>";
 
-        let response = self
-            .request(propfind_method(), url)
-            .header("Depth", depth.as_header())
-            .header(header::CONTENT_TYPE, "application/xml; charset=utf-8")
-            .body(body)
-            .send()
-            .await?;
+        for _ in 0..MAX_REDIRECT_HOPS {
+            let response = self
+                .request(propfind_method(), url.clone())
+                .header("Depth", depth.as_header())
+                .header(header::CONTENT_TYPE, "application/xml; charset=utf-8")
+                .body(body)
+                .send()
+                .await?;
 
-        Ok(self.finish(response).await?.text().await?)
+            if !response.status().is_redirection() {
+                return Ok(self.finish(response).await?.text().await?);
+            }
+
+            let location = response
+                .headers()
+                .get(header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default();
+            if location.trim().is_empty() {
+                return Err(AppError::Http {
+                    status: response.status().as_u16(),
+                    message: "服务器重定向但未提供 Location".to_string(),
+                });
+            }
+            let next = resolve_under_base(&self.base, location)?;
+            if next == url {
+                return Err(AppError::Http {
+                    status: response.status().as_u16(),
+                    message: "服务器重定向循环".to_string(),
+                });
+            }
+            url = next;
+        }
+
+        Err(AppError::Http {
+            status: 0,
+            message: "PROPFIND 重定向次数过多".to_string(),
+        })
     }
 
     /// `GET` a resource; the caller decides how to consume the body.
