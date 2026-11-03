@@ -5,7 +5,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Activity, ChevronLeft, ChevronRight, Heart, HeartHandshake, ListMusic, ListPlus, Menu, Music2, Settings2, Signal, Wifi, WifiOff, X } from "@lucide/vue";
+import { Activity, ChevronLeft, ChevronRight, Heart, HeartHandshake, ListMusic, ListPlus, Menu, Music2, Settings2, Signal, Wifi, WifiOff } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { classificationNavItems, navItems } from "../lib/app";
 import type { View } from "../lib/app";
@@ -44,11 +44,7 @@ function isClassificationActive(id: View): boolean {
           <div class="flex items-center justify-between border-b border-line px-5 py-4">
             <span class="flex items-center gap-2">
               <span class="sidebar-logo grid h-7 w-7 shrink-0 place-items-center bg-accent text-accent-fg" aria-hidden="true"><Music2 :size="14" :stroke-width="2.2" /></span>
-              <span class="flex items-center gap-2 text-sm font-black uppercase tracking-[0.25em]">Welkin<button type="button" class="bg-accent px-2 py-1 text-xs font-bold uppercase leading-none tracking-[0.2em] text-accent-fg transition-opacity hover:opacity-80" @click="closeDrawer(); emit('navigate', 'sponsor')">{{ editionLabel }}</button></span>
-            </span>
-            <span class="flex items-center gap-2">
-              <span class="grid place-items-center text-dim" :title="networkLabel"><WifiOff v-if="!network.available" :size="15" :stroke-width="1.8" /><Wifi v-else-if="!network.metered" :size="15" :stroke-width="1.8" /><Signal v-else :size="15" :stroke-width="1.8" /></span>
-              <button type="button" class="grid h-9 w-9 place-items-center text-dim transition-colors hover:text-fg" :aria-label="t('controls.close')" @click="closeDrawer"><X :size="16" :stroke-width="1.8" /></button>
+              <span class="text-sm font-black uppercase tracking-[0.25em]">Welkin</span>
             </span>
           </div>
           <nav class="flex flex-col gap-px p-3">
