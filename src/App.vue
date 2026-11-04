@@ -315,7 +315,7 @@ function onHeaderScrollCapture(event: Event) {
 }
 
 function navigate(nextView: View) { clearCollectionFilters(); setView(nextView); headerHidden.value = false; }
-function syncViewFromHash() { view.value = getViewFromHash(); }
+function syncViewFromHash() { view.value = getViewFromHash(); headerHidden.value = false; }
 function openUserPlaylist(id: string) { clearCollectionFilters(); playlistFilter.value = id; setView("tracks"); }
 /** Open a source in the file-manager browser instead of the flat track list. */
 function browseSource(id: string) { clearCollectionFilters(); browseSourceId.value = id; setView("source-browser"); }

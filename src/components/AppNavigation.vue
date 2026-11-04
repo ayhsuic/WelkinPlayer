@@ -4,7 +4,7 @@
 -->
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { ChevronLeft, ChevronRight, HeartHandshake, Menu, Music2, Settings2 } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { libraryNavItems, primaryNavItems, systemNavItems, type NavItem } from "../lib/app";
@@ -16,9 +16,44 @@ const { t } = useI18n();
 const playlistsActive = computed(() => props.activeView === "playlists" || (props.activeView === "tracks" && !!props.activePlaylistId));
 /** Drawer navigation (hamburger on the mobile header): overlay slide-in from the left. */
 const drawerOpen = ref(false);
-function toggleDrawer() { drawerOpen.value = !drawerOpen.value; emit("drawer", drawerOpen.value); }
-function closeDrawer() { drawerOpen.value = false; emit("drawer", false); }
-function navigateDrawer(view: View) { closeDrawer(); emit("navigate", view); }
+/** Handles for the focus hand-off between the hamburger and the drawer. */
+const drawerRoot = ref<HTMLElement | null>(null);
+const drawerTrigger = ref<HTMLButtonElement | null>(null);
+
+async function openDrawer() {
+  if (drawerOpen.value) return;
+  drawerOpen.value = true;
+  emit("drawer", true);
+  // Move focus into the panel so keyboard and screen-reader users land in it.
+  await nextTick();
+  drawerRoot.value?.querySelector<HTMLButtonElement>("button")?.focus();
+}
+
+async function closeDrawer() {
+  if (!drawerOpen.value) return;
+  drawerOpen.value = false;
+  emit("drawer", false);
+  await nextTick();
+  // Return focus where the drawer was opened from instead of dropping it.
+  drawerTrigger.value?.focus();
+}
+
+function toggleDrawer() { if (drawerOpen.value) void closeDrawer(); else void openDrawer(); }
+function navigateDrawer(view: View) { void closeDrawer(); emit("navigate", view); }
+
+/** Escape closes the drawer, matching every other overlay in the app. */
+function onDrawerKeydown(event: KeyboardEvent) {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  event.stopPropagation();
+  void closeDrawer();
+}
+
+watch(drawerOpen, (open) => {
+  if (open) document.addEventListener("keydown", onDrawerKeydown, true);
+  else document.removeEventListener("keydown", onDrawerKeydown, true);
+});
+onBeforeUnmount(() => document.removeEventListener("keydown", onDrawerKeydown, true));
 
 function isClassificationActive(id: View): boolean {
   if (id === "artists") return props.activeView === "artists" || !!props.activeArtist;
@@ -45,14 +80,14 @@ function navItemActive(item: NavItem): boolean {
   <template v-if="placement === 'header'">
     <header class="z-40 shrink-0 border-b border-line bg-surface md:hidden" :class="headerHidden && !drawerOpen ? 'header-hidden' : ''" :style="{ paddingTop: headerHidden && !drawerOpen ? '0px' : 'env(safe-area-inset-top)' }">
       <div class="flex h-[60px] items-center gap-2 px-2">
-        <button type="button" class="grid h-9 w-9 place-items-center text-fg transition-colors hover:text-accent" :aria-label="t('nav.more')" :aria-expanded="drawerOpen" aria-haspopup="dialog" @click="toggleDrawer"><Menu :size="20" :stroke-width="1.8" /></button>
+        <button ref="drawerTrigger" type="button" class="grid h-9 w-9 place-items-center text-fg transition-colors hover:text-accent" :aria-label="t('nav.more')" :aria-expanded="drawerOpen" aria-haspopup="dialog" @click="toggleDrawer"><Menu :size="20" :stroke-width="1.8" /></button>
         <span class="flex-1"></span>
       </div>
     </header>
     <Teleport to="body">
       <Transition name="sheet-backdrop"><div v-if="drawerOpen" class="fixed inset-0 z-[70] bg-black/40 md:hidden" @pointerdown="closeDrawer"></div></Transition>
       <Transition name="drawer">
-        <section v-if="drawerOpen" class="drawer-shell fixed bottom-0 left-0 top-0 z-[71] flex w-[280px] flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface pb-3 md:hidden" style="padding-top: env(safe-area-inset-top)" role="dialog" aria-modal="true" aria-label="navigation">
+        <section v-if="drawerOpen" ref="drawerRoot" class="drawer-shell fixed bottom-0 left-0 top-0 z-[71] flex w-[280px] flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface pb-3 md:hidden" style="padding-top: env(safe-area-inset-top)" role="dialog" aria-modal="true" :aria-label="t('nav.navigation')">
           <div class="flex items-center justify-between border-b border-line px-5 py-4">
             <span class="flex items-center gap-2">
               <span class="sidebar-logo grid h-7 w-7 shrink-0 place-items-center bg-accent text-accent-fg" aria-hidden="true"><Music2 :size="14" :stroke-width="2.2" /></span>
@@ -60,20 +95,20 @@ function navItemActive(item: NavItem): boolean {
             </span>
           </div>
           <nav class="flex flex-col gap-px p-3">
-            <button v-for="item in primaryNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
+            <button v-for="item in primaryNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" :aria-current="navItemActive(item) ? 'page' : undefined" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
           </nav>
           <div class="mx-3 border-t border-line"></div>
           <nav class="flex flex-col gap-px p-3">
-            <button v-for="item in libraryNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
+            <button v-for="item in libraryNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" :aria-current="navItemActive(item) ? 'page' : undefined" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
           </nav>
           <div class="mx-3 border-t border-line"></div>
           <nav class="flex flex-col gap-px p-3">
-            <button v-for="item in systemNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
+            <button v-for="item in systemNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" :aria-current="navItemActive(item) ? 'page' : undefined" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
           </nav>
           <div class="mt-auto border-t border-line pt-3">
             <nav class="flex flex-col gap-px p-3">
-              <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'settings' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('settings')"><Settings2 :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.settings") }}</span></button>
-              <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'sponsor' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="navigateDrawer('sponsor')"><HeartHandshake :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.sponsor") }}</span></button>
+              <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'settings' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" :aria-current="activeView === 'settings' ? 'page' : undefined" @click="navigateDrawer('settings')"><Settings2 :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.settings") }}</span></button>
+              <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'sponsor' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" :aria-current="activeView === 'sponsor' ? 'page' : undefined" @click="navigateDrawer('sponsor')"><HeartHandshake :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.sponsor") }}</span></button>
               <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] text-muted transition-colors ak-hover hover:text-fg" @click="closeDrawer"><ChevronLeft :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("controls.collapse") }}</span></button>
             </nav>
           </div>
