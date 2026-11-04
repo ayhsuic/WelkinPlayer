@@ -19,8 +19,17 @@ const dragging = ref(false);
 let hideTimer = 0;
 /** Idle hide: the rail fades out after a quiet period and reappears on scroll or touch. */
 const hidden = ref(false);
+/** The pointer is resting on the rail (mouse/pen) — never hide it from under the cursor. */
+const hovering = ref(false);
 let idleTimer = 0;
 const IDLE_HIDE_MS = 2000;
+/**
+ * Idle fading is a touch affordance: phones have no hover, so a rail that stays
+ * put would permanently cover the list edge. On a pointer device it is a
+ * persistent affordance instead — fading it out makes it unreachable, because a
+ * fully hidden rail has `pointer-events: none` and can no longer be hovered.
+ */
+const idleHideEnabled = typeof window.matchMedia === "function" && window.matchMedia("(hover: none)").matches;
 /** Dedupes a tap, whose pointerdown and click both resolve to the same label. */
 let lastPick: { label: string; at: number } | null = null;
 
@@ -33,8 +42,9 @@ function reveal() {
 
 function scheduleHide() {
   window.clearTimeout(idleTimer);
+  if (!idleHideEnabled) return;
   idleTimer = window.setTimeout(() => {
-    if (!dragging.value) hidden.value = true;
+    if (!dragging.value && !hovering.value) hidden.value = true;
   }, IDLE_HIDE_MS);
 }
 
@@ -100,10 +110,23 @@ function onPointerMove(event: PointerEvent) {
   if (dragging.value) pickAt(event.clientY);
 }
 
-function onPointerUp(event: PointerEvent) {
+function onPointerEnter() {
+  hovering.value = true;
+  reveal();
+}
+
+function onPointerLeave() {
+  hovering.value = false;
+  // Leaving the rail ends a scrub that started on it.
+  onPointerUp();
+}
+
+function onPointerUp(event?: PointerEvent) {
   dragging.value = false;
-  const el = event.currentTarget as HTMLElement;
-  if (el.hasPointerCapture?.(event.pointerId)) el.releasePointerCapture(event.pointerId);
+  if (event) {
+    const el = event.currentTarget as HTMLElement;
+    if (el.hasPointerCapture?.(event.pointerId)) el.releasePointerCapture(event.pointerId);
+  }
   clearPreview();
   scheduleHide();
 }
@@ -116,11 +139,12 @@ function onPointerUp(event: PointerEvent) {
     :class="[dragging ? 'track-index--dragging' : '', hidden ? 'track-index--hidden' : '']"
     role="listbox"
     :aria-label="t('library.titleIndex')"
+    @pointerenter="onPointerEnter"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
     @pointercancel="onPointerUp"
-    @pointerleave="onPointerUp"
+    @pointerleave="onPointerLeave"
   >
     <span class="track-index__bubble" :style="{ top: activeTop }" :class="active ? 'track-index__bubble--visible' : ''">{{ active }}</span>
     <button
