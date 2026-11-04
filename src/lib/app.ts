@@ -27,10 +27,10 @@ export const primaryNavItems: NavItem[] = [
 export const libraryNavItems: NavItem[] = [
   { id: "playlists", labelKey: "nav.playlists", index: "03", icon: ListPlus },
   { id: "artists", labelKey: "nav.artists", index: "04", icon: Mic2 },
-  { id: "years", labelKey: "nav.years", index: "05", icon: CalendarDays },
-  { id: "genres", labelKey: "nav.genres", index: "06", icon: Music },
-  { id: "albums", labelKey: "nav.albums", index: "07", icon: Disc3 },
-  { id: "tracks", labelKey: "nav.tracks", index: "08", icon: ListMusic },
+  { id: "albums", labelKey: "nav.albums", index: "05", icon: Disc3 },
+  { id: "tracks", labelKey: "nav.tracks", index: "06", icon: ListMusic },
+  { id: "genres", labelKey: "nav.genres", index: "07", icon: Music },
+  { id: "years", labelKey: "nav.years", index: "08", icon: CalendarDays },
 ];
 
 /** System group: sources and play ranking. */
@@ -40,7 +40,7 @@ export const systemNavItems: NavItem[] = [
 ];
 
 /** The six swipeable category panels, in sidebar order. */
-export const categoryViews: View[] = ["playlists", "artists", "years", "genres", "albums", "tracks"];
+export const categoryViews: View[] = ["playlists", "artists", "albums", "tracks", "genres", "years"];
 
 export const accents: { id: Accent; key: string; swatch: string }[] = [
   { id: "amber", key: "accent.amber", swatch: "#f0a500" },
