@@ -4,66 +4,21 @@
 -->
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { ChevronLeft, ChevronRight, HeartHandshake, Menu, Music2, Settings2 } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { libraryNavItems, primaryNavItems, systemNavItems, type NavItem } from "../lib/app";
 import type { View } from "../lib/app";
 
-const props = withDefaults(defineProps<{ activeView: View; placement: "header" | "sidebar" | "mobile"; collapsed?: boolean; activePlaylistId?: string | null; activeArtist?: string | null; activeAlbum?: string | null; activeYear?: string | null; activeGenre?: string | null; activeSource?: string | null }>(), { collapsed: false, activePlaylistId: null, activeArtist: null, activeAlbum: null, activeYear: null, activeGenre: null, activeSource: null });
-const emit = defineEmits<{ navigate: [view: View]; toggle: []; createPlaylist: []; openPlaylist: [id: string] }>();
+const props = withDefaults(defineProps<{ activeView: View; placement: "header" | "sidebar" | "mobile"; collapsed?: boolean; headerHidden?: boolean; activePlaylistId?: string | null; activeArtist?: string | null; activeAlbum?: string | null; activeYear?: string | null; activeGenre?: string | null; activeSource?: string | null }>(), { collapsed: false, headerHidden: false, activePlaylistId: null, activeArtist: null, activeAlbum: null, activeYear: null, activeGenre: null, activeSource: null });
+const emit = defineEmits<{ navigate: [view: View]; toggle: []; createPlaylist: []; openPlaylist: [id: string]; drawer: [open: boolean] }>();
 const { t } = useI18n();
 const playlistsActive = computed(() => props.activeView === "playlists" || (props.activeView === "tracks" && !!props.activePlaylistId));
 /** Drawer navigation (hamburger on the mobile header): overlay slide-in from the left. */
 const drawerOpen = ref(false);
-function toggleDrawer() { drawerOpen.value = !drawerOpen.value; }
-function closeDrawer() { drawerOpen.value = false; }
+function toggleDrawer() { drawerOpen.value = !drawerOpen.value; emit("drawer", drawerOpen.value); }
+function closeDrawer() { drawerOpen.value = false; emit("drawer", false); }
 function navigateDrawer(view: View) { closeDrawer(); emit("navigate", view); }
-
-/**
- * Mobile header auto-hide: scrolling any content area down slides the header
- * away so the category tabs sit directly under the status bar; scrolling up
- * (or opening the drawer) brings it back. Uses a capture-phase scroll listener
- * so nested scroll containers (main, category panels, track lists) are all
- * covered without wiring scroll events through every view.
- */
-const headerHidden = ref(false);
-let headerLastTop = 0;
-let headerLastEl: Element | null = null;
-let headerScrollTick = false;
-
-function handleHeaderScroll(event: Event) {
-  const el = event.target as Element | null;
-  if (!el || !(el instanceof Element)) return;
-  // Scrolling inside the drawer overlay must not hide the header behind it.
-  if (el.closest?.(".drawer-shell")) return;
-  if (headerLastEl !== el) {
-    headerLastEl = el;
-    headerLastTop = el.scrollTop ?? 0;
-    return;
-  }
-  const top = el.scrollTop ?? 0;
-  const delta = top - headerLastTop;
-  headerLastTop = top;
-  if (Math.abs(delta) < 6) return;
-  headerHidden.value = delta > 0 && top > 40;
-}
-
-function onHeaderScrollCapture(event: Event) {
-  if (headerScrollTick) return;
-  headerScrollTick = true;
-  requestAnimationFrame(() => {
-    headerScrollTick = false;
-    handleHeaderScroll(event);
-  });
-}
-
-onMounted(() => {
-  if (props.placement === "header") document.addEventListener("scroll", onHeaderScrollCapture, true);
-});
-onBeforeUnmount(() => {
-  document.removeEventListener("scroll", onHeaderScrollCapture, true);
-});
 
 function isClassificationActive(id: View): boolean {
   if (id === "artists") return props.activeView === "artists" || !!props.activeArtist;
@@ -88,7 +43,7 @@ function navItemActive(item: NavItem): boolean {
 
 <template>
   <template v-if="placement === 'header'">
-    <header class="z-40 shrink-0 border-b border-line bg-surface md:hidden" :class="headerHidden && !drawerOpen ? 'header-hidden' : ''" style="padding-top: env(safe-area-inset-top)">
+    <header class="z-40 shrink-0 border-b border-line bg-surface md:hidden" :class="headerHidden && !drawerOpen ? 'header-hidden' : ''" :style="{ paddingTop: headerHidden && !drawerOpen ? '0px' : 'env(safe-area-inset-top)' }">
       <div class="flex h-[60px] items-center gap-2 px-2">
         <button type="button" class="grid h-9 w-9 place-items-center text-fg transition-colors hover:text-accent" :aria-label="t('nav.more')" :aria-expanded="drawerOpen" aria-haspopup="dialog" @click="toggleDrawer"><Menu :size="20" :stroke-width="1.8" /></button>
         <span class="flex-1"></span>
@@ -143,13 +98,27 @@ function navItemActive(item: NavItem): boolean {
 </template>
 
 <style scoped>
-/* Mobile header: slides away on scroll-down, returns on scroll-up. */
+/*
+ * Mobile header: explicit height (content row + safe-area inset) so hiding can
+ * collapse the layout — transform alone would leave the 60px row occupying
+ * space and the tabs would not glide up to the status bar. When hidden the
+ * safe-area is transferred to <main> by App.vue, so the tabs land exactly
+ * below the status bar.
+ */
 header {
-  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  height: calc(60px + env(safe-area-inset-top));
+  transition:
+    height 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    padding-top 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 header.header-hidden {
+  height: 0;
+  padding-top: 0;
+  overflow: hidden;
   transform: translateY(-100%);
+  border-bottom-width: 0;
 }
 
 .sidebar-shell {
