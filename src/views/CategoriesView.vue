@@ -36,6 +36,11 @@ const emit = defineEmits<{
  * nearest page and then publishes the settled page. Clicking a tab or sidebar
  * item animates the strip to that page. No native horizontal scrolling is used,
  * so scroll events can never fight the animation.
+ *
+ * Events: touch (primary, reliably interceptable in Android WebView with a
+ * non-passive touchmove) and pointer for mouse drags on desktop. A tap that
+ * never crossed the horizontal threshold is left alone so clicks (tabs, cards)
+ * behave normally and never snap the strip back.
  */
 const strip = ref<HTMLElement | null>(null);
 const position = ref(0); // translateX px of the strip (0 or negative)
@@ -73,7 +78,11 @@ function settleAndPublish() {
   }, 360);
 }
 
-// --- Drag state (whole component area, touch / pen / mouse) ---
+function cancelSettle() {
+  if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+}
+
+// --- Drag state (whole component area) ---
 let dragging = false;
 let dragStartX = 0;
 let dragStartY = 0;
@@ -86,7 +95,7 @@ function startDrag(clientX: number, clientY: number) {
   dragStartX = clientX;
   dragStartY = clientY;
   dragStartPosition = position.value;
-  if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+  cancelSettle();
   setTransition(false);
 }
 
@@ -95,10 +104,11 @@ function moveDrag(clientX: number, clientY: number, event: { preventDefault(): v
   const dx = clientX - dragStartX;
   const dy = clientY - dragStartY;
   if (dragAxis === null) {
-    if (Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy)) {
+    // Horizontal wins as soon as it dominates; vertical keeps page scrolling.
+    if (Math.abs(dx) > 5 && Math.abs(dx) >= Math.abs(dy)) {
       dragAxis = "x";
       event.preventDefault();
-    } else if (Math.abs(dy) > 6) {
+    } else if (Math.abs(dy) > 5) {
       dragAxis = "y";
     }
   }
@@ -110,26 +120,32 @@ function moveDrag(clientX: number, clientY: number, event: { preventDefault(): v
 
 function endDrag() {
   if (!dragging) return;
+  const wasHorizontal = dragAxis === "x";
   dragging = false;
   dragAxis = null;
-  settleAndPublish();
+  // A tap (no horizontal travel) must not snap the strip back to the old page.
+  if (wasHorizontal) settleAndPublish();
 }
 
-// --- Event wiring: Pointer Events where available (desktop + modern WebView),
-// classic Touch Events otherwise (older Android WebView). Touch/pen ignores
-// the button field, which some WebViews leave unset on synthesized pointers.
+// --- Event wiring ---
+// Touch events drive the swipe on mobile (non-passive touchmove so we can
+// preventDefault and stop the WebView from stealing the gesture); Pointer
+// events only handle mouse drags on desktop. Pointer+touch both firing is
+// therefore impossible.
 const rootEl = ref<HTMLElement | null>(null);
-const usePointer = typeof window !== "undefined" && "PointerEvent" in window;
 let unbind: (() => void) | null = null;
 
 function onPointerDown(event: PointerEvent) {
-  if (event.pointerType === "mouse" && event.button !== 0) return;
+  if (event.pointerType !== "mouse") return;
+  if (event.button !== 0) return;
   startDrag(event.clientX, event.clientY);
 }
 function onPointerMove(event: PointerEvent) {
+  if (event.pointerType !== "mouse") return;
   moveDrag(event.clientX, event.clientY, event);
 }
-function onPointerEnd() {
+function onPointerEnd(event: PointerEvent) {
+  if (event.pointerType !== "mouse") return;
   endDrag();
 }
 
@@ -148,33 +164,30 @@ function onTouchEnd() {
 }
 
 function bindDragEvents(el: HTMLElement) {
-  if (usePointer) {
-    el.addEventListener("pointerdown", onPointerDown);
-    el.addEventListener("pointermove", onPointerMove);
-    el.addEventListener("pointerup", onPointerEnd);
-    el.addEventListener("pointercancel", onPointerEnd);
-    unbind = () => {
-      el.removeEventListener("pointerdown", onPointerDown);
-      el.removeEventListener("pointermove", onPointerMove);
-      el.removeEventListener("pointerup", onPointerEnd);
-      el.removeEventListener("pointercancel", onPointerEnd);
-    };
-  } else {
-    el.addEventListener("touchstart", onTouchStart, { passive: true });
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    el.addEventListener("touchend", onTouchEnd);
-    el.addEventListener("touchcancel", onTouchEnd);
-    unbind = () => {
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("touchend", onTouchEnd);
-      el.removeEventListener("touchcancel", onTouchEnd);
-    };
-  }
+  el.addEventListener("pointerdown", onPointerDown);
+  el.addEventListener("pointermove", onPointerMove);
+  el.addEventListener("pointerup", onPointerEnd);
+  el.addEventListener("pointercancel", onPointerEnd);
+  el.addEventListener("touchstart", onTouchStart, { passive: true });
+  el.addEventListener("touchmove", onTouchMove, { passive: false });
+  el.addEventListener("touchend", onTouchEnd);
+  el.addEventListener("touchcancel", onTouchEnd);
+  unbind = () => {
+    el.removeEventListener("pointerdown", onPointerDown);
+    el.removeEventListener("pointermove", onPointerMove);
+    el.removeEventListener("pointerup", onPointerEnd);
+    el.removeEventListener("pointercancel", onPointerEnd);
+    el.removeEventListener("touchstart", onTouchStart);
+    el.removeEventListener("touchmove", onTouchMove);
+    el.removeEventListener("touchend", onTouchEnd);
+    el.removeEventListener("touchcancel", onTouchEnd);
+  };
 }
 
-// External navigation (tab click / sidebar click) animates the strip.
+// External navigation (tab click / sidebar click) animates the strip and must
+// cancel any pending settle publish so an older page never snaps back.
 watch(() => props.kind, (view) => {
+  cancelSettle();
   const index = categoryViews.indexOf(view);
   if (index >= 0) goTo(index, true);
 });
@@ -197,7 +210,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   unbind?.();
   resizeObserver?.disconnect();
-  if (settleTimer) clearTimeout(settleTimer);
+  cancelSettle();
 });
 
 const stripStyle = computed(() => ({ transform: `translateX(${position.value}px)` }));
