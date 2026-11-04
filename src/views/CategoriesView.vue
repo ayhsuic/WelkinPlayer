@@ -63,24 +63,39 @@ function goTo(index: number, animate: boolean) {
 }
 
 /**
+ * Resolve the page a release settles on.
+ *
+ * `delta` is the strip offset measured in pages (positive = dragged towards
+ * later pages) and `velocity` the last horizontal speed in px/ms (positive =
+ * towards earlier pages). A slow drag snaps to the nearest page; a fling moves
+ * exactly one page further in the fling direction, but only when the drag
+ * already travelled a small fraction that way.
+ *
+ * The one-page cap matters: rounding first and then adding a page made a fast
+ * 80% drag settle two pages away, silently skipping the page the user was
+ * dragging towards.
+ */
+const FLING_PX_PER_MS = 0.35;
+/** Minimum travel a fling must cover before it counts, so jitter cannot turn a page. */
+const FLING_MIN_TRAVEL = 0.08;
+function resolveSettleIndex(delta: number, speed: number, count: number): number {
+  const base = Math.floor(delta);
+  const frac = delta - base;
+  let index = Math.round(delta);
+  if (speed <= -FLING_PX_PER_MS && frac >= FLING_MIN_TRAVEL) index = base + 1;
+  else if (speed >= FLING_PX_PER_MS && frac <= 1 - FLING_MIN_TRAVEL) index = base;
+  return Math.max(0, Math.min(count - 1, index));
+}
+
+/**
  * Publish the settled page once its settle animation has finished.
  *
- * The landing page combines the release position with the fling velocity:
- * a quick swipe turns the page even when the strip has not crossed half a
- * screen (as long as it travelled at least ~20% in that direction), while a
- * slow drag still needs to pass the midpoint. This makes small, fast swipes
- * switch pages without making slow half-drags over-sensitive.
+ * A quick swipe turns the page even when the strip has not crossed half a
+ * screen, while a slow drag still needs to pass the midpoint.
  */
 let settleTimer: ReturnType<typeof setTimeout> | null = null;
-const FLING_PX_PER_MS = 0.35;
 function settleAndPublish() {
-  const delta = -position.value / stripWidth;
-  const current = Math.round(delta);
-  const frac = delta - current;
-  let index = current;
-  if (velocity <= -FLING_PX_PER_MS && frac >= -0.3) index = current + 1;
-  else if (velocity >= FLING_PX_PER_MS && frac <= 0.3) index = current - 1;
-  index = Math.max(0, Math.min(categoryViews.length - 1, index));
+  const index = resolveSettleIndex(-position.value / stripWidth, velocity, categoryViews.length);
   goTo(index, true);
   if (settleTimer) clearTimeout(settleTimer);
   settleTimer = setTimeout(() => {
@@ -104,6 +119,27 @@ let velocity = 0;
 let lastSampleX = 0;
 let lastSampleT = 0;
 
+/**
+ * A horizontal drag ends with a click on whatever sits under the pointer
+ * (mouse drags always do; WebViews sometimes do after a short swipe). Swallow
+ * that one click so dragging across a track row or a tab does not activate it
+ * — the gesture was a page swipe, not a tap. The window is short and a fresh
+ * pointer press clears it, so deliberate taps right after a swipe still work.
+ */
+const CLICK_SUPPRESS_MS = 350;
+let suppressClickUntil = 0;
+
+function suppressNextClick() {
+  suppressClickUntil = performance.now() + CLICK_SUPPRESS_MS;
+}
+
+function onClickCapture(event: MouseEvent) {
+  if (performance.now() >= suppressClickUntil) return;
+  suppressClickUntil = 0;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
 function startDrag(clientX: number, clientY: number) {
   dragging = true;
   dragAxis = null;
@@ -113,8 +149,21 @@ function startDrag(clientX: number, clientY: number) {
   velocity = 0;
   lastSampleX = clientX;
   lastSampleT = performance.now();
-  cancelSettle();
-  setTransition(false);
+  suppressClickUntil = 0;
+}
+
+/**
+ * The strip's painted offset, which differs from `position` while a settle
+ * animation is still running.
+ */
+function paintedTranslateX(): number {
+  const el = strip.value;
+  if (!el || typeof getComputedStyle !== "function") return position.value;
+  const transform = getComputedStyle(el).transform;
+  const match = transform && transform.match(/matrix(3d)?\(([^)]+)\)/);
+  if (!match) return position.value;
+  const parts = match[2].split(",").map(Number);
+  return match[1] ? parts[12] : parts[4];
 }
 
 function moveDrag(clientX: number, clientY: number, event: { preventDefault(): void }) {
@@ -125,6 +174,12 @@ function moveDrag(clientX: number, clientY: number, event: { preventDefault(): v
     // Horizontal wins as soon as it dominates; vertical keeps page scrolling.
     if (Math.abs(dx) > 5 && Math.abs(dx) >= Math.abs(dy)) {
       dragAxis = "x";
+      // The user can grab the strip while it is still settling from the last
+      // swipe. Take over from the painted offset so the strip does not jump to
+      // the pending target, and drop the settle publish meant for that page.
+      dragStartPosition = paintedTranslateX() - dx;
+      cancelSettle();
+      setTransition(false);
       event.preventDefault();
     } else if (Math.abs(dy) > 5) {
       dragAxis = "y";
@@ -150,7 +205,10 @@ function endDrag() {
   dragging = false;
   dragAxis = null;
   // A tap (no horizontal travel) must not snap the strip back to the old page.
-  if (wasHorizontal) settleAndPublish();
+  if (wasHorizontal) {
+    suppressNextClick();
+    settleAndPublish();
+  }
 }
 
 // --- Event wiring ---
@@ -190,6 +248,8 @@ function onTouchEnd() {
 }
 
 function bindDragEvents(el: HTMLElement) {
+  // Capture phase: the guard must run before the row/tab handler underneath.
+  el.addEventListener("click", onClickCapture, true);
   el.addEventListener("pointerdown", onPointerDown);
   el.addEventListener("pointermove", onPointerMove);
   el.addEventListener("pointerup", onPointerEnd);
@@ -199,6 +259,7 @@ function bindDragEvents(el: HTMLElement) {
   el.addEventListener("touchend", onTouchEnd);
   el.addEventListener("touchcancel", onTouchEnd);
   unbind = () => {
+    el.removeEventListener("click", onClickCapture, true);
     el.removeEventListener("pointerdown", onPointerDown);
     el.removeEventListener("pointermove", onPointerMove);
     el.removeEventListener("pointerup", onPointerEnd);
