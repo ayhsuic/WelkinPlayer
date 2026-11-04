@@ -51,10 +51,6 @@ function measure() {
   stripWidth = strip.value?.clientWidth ?? 1;
 }
 
-function currentIndexFromPosition() {
-  return Math.max(0, Math.min(categoryViews.length - 1, Math.round(-position.value / stripWidth)));
-}
-
 function setTransition(enable: boolean) {
   const el = strip.value;
   if (el) el.style.transition = enable ? "transform 0.32s cubic-bezier(0.22, 1, 0.36, 1)" : "none";
@@ -66,10 +62,25 @@ function goTo(index: number, animate: boolean) {
   position.value = -(targetIndex.value * stripWidth);
 }
 
-/** Publish the settled page once its settle animation has finished. */
+/**
+ * Publish the settled page once its settle animation has finished.
+ *
+ * The landing page combines the release position with the fling velocity:
+ * a quick swipe turns the page even when the strip has not crossed half a
+ * screen (as long as it travelled at least ~20% in that direction), while a
+ * slow drag still needs to pass the midpoint. This makes small, fast swipes
+ * switch pages without making slow half-drags over-sensitive.
+ */
 let settleTimer: ReturnType<typeof setTimeout> | null = null;
+const FLING_PX_PER_MS = 0.35;
 function settleAndPublish() {
-  const index = currentIndexFromPosition();
+  const delta = -position.value / stripWidth;
+  const current = Math.round(delta);
+  const frac = delta - current;
+  let index = current;
+  if (velocity <= -FLING_PX_PER_MS && frac >= -0.3) index = current + 1;
+  else if (velocity >= FLING_PX_PER_MS && frac <= 0.3) index = current - 1;
+  index = Math.max(0, Math.min(categoryViews.length - 1, index));
   goTo(index, true);
   if (settleTimer) clearTimeout(settleTimer);
   settleTimer = setTimeout(() => {
@@ -88,6 +99,10 @@ let dragStartX = 0;
 let dragStartY = 0;
 let dragStartPosition = 0;
 let dragAxis: "x" | "y" | null = null;
+// --- Fling sampling: last horizontal velocity (px/ms, right positive) ---
+let velocity = 0;
+let lastSampleX = 0;
+let lastSampleT = 0;
 
 function startDrag(clientX: number, clientY: number) {
   dragging = true;
@@ -95,6 +110,9 @@ function startDrag(clientX: number, clientY: number) {
   dragStartX = clientX;
   dragStartY = clientY;
   dragStartPosition = position.value;
+  velocity = 0;
+  lastSampleX = clientX;
+  lastSampleT = performance.now();
   cancelSettle();
   setTransition(false);
 }
@@ -115,6 +133,14 @@ function moveDrag(clientX: number, clientY: number, event: { preventDefault(): v
   if (dragAxis === "x") {
     event.preventDefault();
     position.value = dragStartPosition + dx;
+    // Sample the instantaneous velocity from the most recent movement segment;
+    // a gap longer than 120ms means the finger paused, so velocity resets.
+    const now = performance.now();
+    const dt = now - lastSampleT;
+    if (dt > 0 && dt < 120) velocity = (clientX - lastSampleX) / dt;
+    else velocity = 0;
+    lastSampleX = clientX;
+    lastSampleT = now;
   }
 }
 
