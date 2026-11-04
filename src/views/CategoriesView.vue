@@ -73,28 +73,27 @@ function settleAndPublish() {
   }, 360);
 }
 
-// --- Pointer-driven drag (whole component area, touch / pen / mouse) ---
+// --- Drag state (whole component area, touch / pen / mouse) ---
 let dragging = false;
 let dragStartX = 0;
 let dragStartY = 0;
 let dragStartPosition = 0;
 let dragAxis: "x" | "y" | null = null;
 
-function onPointerDown(event: PointerEvent) {
-  if (event.button !== 0) return;
+function startDrag(clientX: number, clientY: number) {
   dragging = true;
   dragAxis = null;
-  dragStartX = event.clientX;
-  dragStartY = event.clientY;
+  dragStartX = clientX;
+  dragStartY = clientY;
   dragStartPosition = position.value;
   if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
   setTransition(false);
 }
 
-function onPointerMove(event: PointerEvent) {
+function moveDrag(clientX: number, clientY: number, event: { preventDefault(): void }) {
   if (!dragging) return;
-  const dx = event.clientX - dragStartX;
-  const dy = event.clientY - dragStartY;
+  const dx = clientX - dragStartX;
+  const dy = clientY - dragStartY;
   if (dragAxis === null) {
     if (Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy)) {
       dragAxis = "x";
@@ -109,11 +108,69 @@ function onPointerMove(event: PointerEvent) {
   }
 }
 
-function onPointerEnd() {
+function endDrag() {
   if (!dragging) return;
   dragging = false;
   dragAxis = null;
   settleAndPublish();
+}
+
+// --- Event wiring: Pointer Events where available (desktop + modern WebView),
+// classic Touch Events otherwise (older Android WebView). Touch/pen ignores
+// the button field, which some WebViews leave unset on synthesized pointers.
+const rootEl = ref<HTMLElement | null>(null);
+const usePointer = typeof window !== "undefined" && "PointerEvent" in window;
+let unbind: (() => void) | null = null;
+
+function onPointerDown(event: PointerEvent) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  startDrag(event.clientX, event.clientY);
+}
+function onPointerMove(event: PointerEvent) {
+  moveDrag(event.clientX, event.clientY, event);
+}
+function onPointerEnd() {
+  endDrag();
+}
+
+function onTouchStart(event: TouchEvent) {
+  const touch = event.touches[0];
+  if (!touch) return;
+  startDrag(touch.clientX, touch.clientY);
+}
+function onTouchMove(event: TouchEvent) {
+  const touch = event.touches[0];
+  if (!touch) return;
+  moveDrag(touch.clientX, touch.clientY, event);
+}
+function onTouchEnd() {
+  endDrag();
+}
+
+function bindDragEvents(el: HTMLElement) {
+  if (usePointer) {
+    el.addEventListener("pointerdown", onPointerDown);
+    el.addEventListener("pointermove", onPointerMove);
+    el.addEventListener("pointerup", onPointerEnd);
+    el.addEventListener("pointercancel", onPointerEnd);
+    unbind = () => {
+      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("pointermove", onPointerMove);
+      el.removeEventListener("pointerup", onPointerEnd);
+      el.removeEventListener("pointercancel", onPointerEnd);
+    };
+  } else {
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd);
+    el.addEventListener("touchcancel", onTouchEnd);
+    unbind = () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }
 }
 
 // External navigation (tab click / sidebar click) animates the strip.
@@ -128,6 +185,7 @@ onMounted(() => {
   measure();
   const index = categoryViews.indexOf(props.kind);
   if (index >= 0) goTo(index, false);
+  if (rootEl.value) bindDragEvents(rootEl.value);
   if (typeof ResizeObserver !== "undefined") {
     resizeObserver = new ResizeObserver(() => {
       measure();
@@ -137,6 +195,7 @@ onMounted(() => {
   }
 });
 onBeforeUnmount(() => {
+  unbind?.();
   resizeObserver?.disconnect();
   if (settleTimer) clearTimeout(settleTimer);
 });
@@ -149,7 +208,7 @@ function openGroupFromPanel(view: View, key: string) {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col" style="touch-action: pan-y" @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerup="onPointerEnd" @pointercancel="onPointerEnd">
+  <div ref="rootEl" class="flex h-full min-h-0 flex-col" style="touch-action: pan-y">
     <CategoryTabs :active="kind" @navigate="emit('navigate', $event)" />
     <div class="relative min-h-0 w-full flex-1 overflow-hidden">
       <div ref="strip" class="flex h-full w-full" :style="stripStyle">
