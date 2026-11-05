@@ -13,7 +13,7 @@ import { initAudio, resumeAt } from "./lib/audio";
 import { accents } from "./lib/app";
 import type { Accent, Theme, View } from "./lib/app";
 import { albumKey, primaryArtist } from "./lib/grouping";
-import { trackKey } from "./lib/sources";
+import { trackKey, type SourceKind } from "./lib/sources";
 import { flushReadings, loadReadings } from "./lib/readings";
 import { useLibrary } from "./composables/useLibrary";
 import { startDesktopLyrics, stopDesktopLyrics } from "./composables/useDesktopLyrics";
@@ -104,6 +104,21 @@ const albumFilter = ref<string | null>(null);
 const yearFilter = ref<string | null>(null);
 const genreFilter = ref<string | null>(null);
 const sourceFilter = ref<string | null>(null);
+/** Kind of the source being browsed, so "back" returns to the split page it came from. */
+const browseSourceKind = ref<SourceKind>("local");
+/** Kind the source editor is scoped to; `null` means every source (Settings). */
+const sourceConfigKind = ref<SourceKind | null>(null);
+/** Which split source page a source-scoped view belongs to, for nav highlighting. */
+const activeSourceKind = computed<SourceKind | null>(() => {
+  if (baseView.value === "source-config") return sourceConfigKind.value;
+  if (baseView.value === "source-browser") return browseSourceKind.value;
+  if (sourceFilter.value) return sources.sources.find((source) => source.id === sourceFilter.value)?.kind ?? null;
+  return null;
+});
+/** The kind the current 文件夹 / WebDAV page shows. */
+const sourcesPageKind = computed<SourceKind>(() =>
+  baseView.value === "webdav" ? "webdav" : baseView.value === "source-browser" ? browseSourceKind.value : "local",
+);
 
 /** The six library categories share one swipeable container while one of them is active (no drill-down). */
 const categoryActive = computed(() =>
@@ -111,7 +126,7 @@ const categoryActive = computed(() =>
   (baseView.value === "tracks" && !playlistFilter.value && !artistFilter.value && !albumFilter.value && !yearFilter.value && !genreFilter.value && !sourceFilter.value),
 );
 const browseSourceId = ref<string | null>(null);
-const sourceConfigReturn = ref<View>("sources");
+const sourceConfigReturn = ref<View>("settings");
 const editingPlaylist = ref<string | null>(null);
 const editingLyricsTrack = ref<Track | null>(null);
 const editingTrack = ref<Track | null>(null);
@@ -272,7 +287,13 @@ watch([() => player.queue, () => player.queueIndex], () => {
 });
 
 function readAccent(): Accent { const value = localStorage.getItem("welkin-accent"); return (accents.some((item) => item.id === value) ? value : "amber") as Accent; }
-function getViewFromHash(): View { const route = window.location.hash.slice(1); return route === "settings" || route === "sponsor" || route === "player" || route === "tracks" || route === "queue" || route === "favorites" || route === "stats" || route === "artists" || route === "albums" || route === "years" || route === "genres" || route === "sources" || route === "source-config" || route === "source-browser" || route === "playlists" || route === "playlist-new" || route === "lyrics-edit" || route === "track-edit" || route === "track-info" ? route : "library"; }
+const VIEW_ROUTES: ReadonlySet<string> = new Set(["settings", "sponsor", "player", "tracks", "queue", "favorites", "stats", "artists", "albums", "years", "genres", "folders", "webdav", "source-config", "source-browser", "playlists", "playlist-new", "lyrics-edit", "track-edit", "track-info"]);
+function getViewFromHash(): View {
+  const route = window.location.hash.slice(1);
+  // `#sources` predates the folder / WebDAV split; keep old links working.
+  if (route === "sources") return "folders";
+  return VIEW_ROUTES.has(route) ? (route as View) : "library";
+}
 function setView(nextView: View) { view.value = nextView; window.location.hash = nextView === "library" ? "" : nextView; }
 function clearCollectionFilters() { playlistFilter.value = null; artistFilter.value = null; albumFilter.value = null; yearFilter.value = null; genreFilter.value = null; sourceFilter.value = null; }
 /**
@@ -318,10 +339,20 @@ function navigate(nextView: View) { clearCollectionFilters(); setView(nextView);
 function syncViewFromHash() { view.value = getViewFromHash(); headerHidden.value = false; }
 function openUserPlaylist(id: string) { clearCollectionFilters(); playlistFilter.value = id; setView("tracks"); }
 /** Open a source in the file-manager browser instead of the flat track list. */
-function browseSource(id: string) { clearCollectionFilters(); browseSourceId.value = id; setView("source-browser"); }
-function openSourceConfig(from: View) { sourceConfigReturn.value = from; setView("source-config"); }
+function browseSource(id: string) {
+  clearCollectionFilters();
+  const kind = sources.sources.find((source) => source.id === id)?.kind;
+  if (kind) browseSourceKind.value = kind;
+  browseSourceId.value = id;
+  setView("source-browser");
+}
+function openSourceConfig(from: View) {
+  sourceConfigReturn.value = from;
+  sourceConfigKind.value = from === "folders" ? "local" : from === "webdav" ? "webdav" : null;
+  setView("source-config");
+}
 
-function closeSourceConfig() { setView(sourceConfigReturn.value); }
+function closeSourceConfig() { sourceConfigKind.value = null; setView(sourceConfigReturn.value); }
 function openGroup(kind: "artists" | "albums" | "years" | "genres", key: string) { playlistFilter.value = null; artistFilter.value = kind === "artists" ? key : null; albumFilter.value = kind === "albums" ? key : null; yearFilter.value = kind === "years" ? key : null; genreFilter.value = kind === "genres" ? key : null; sourceFilter.value = null; setView("tracks"); }
 /** A group card clicked inside the swipeable category panels carries its own kind. */
 function onOpenGroupFrom(kind: GroupKind, key: string) { openGroup(kind, key); }
@@ -431,16 +462,16 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
   <Transition name="info"><SponsorView v-if="view === 'sponsor'" @back="closeOverlay" /></Transition>
   <SetupWizard v-if="booted && profile.firstRun" v-model:theme="theme" v-model:accent="accent" @finish="onWizardFinish" />
   <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg" :class="booted ? '' : 'opacity-0'">
-    <AppNavigation placement="header" :active-view="baseView" :header-hidden="headerHidden" @navigate="navigate" @drawer="drawerOpen = $event" />
+    <AppNavigation placement="header" :active-view="baseView" :header-hidden="headerHidden" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-year="yearFilter" :active-genre="genreFilter" :active-source-kind="activeSourceKind" @navigate="navigate" @drawer="drawerOpen = $event" />
     <div class="relative flex min-h-0 flex-1">
-      <AppNavigation placement="sidebar" :active-view="baseView" :collapsed="sidebarCollapsed" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-year="yearFilter" :active-genre="genreFilter" :active-source="sourceFilter" @navigate="navigate" @toggle="toggleSidebar" @create-playlist="createPlaylist" @open-playlist="openUserPlaylist" />
+      <AppNavigation placement="sidebar" :active-view="baseView" :collapsed="sidebarCollapsed" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-year="yearFilter" :active-genre="genreFilter" :active-source-kind="activeSourceKind" @navigate="navigate" @toggle="toggleSidebar" @create-playlist="createPlaylist" @open-playlist="openUserPlaylist" />
       <main class="min-w-0 flex-1 overflow-y-auto" :style="headerHidden && !drawerOpen ? { paddingTop: 'env(safe-area-inset-top)' } : undefined">
         <Transition name="page" mode="out-in">
           <LibraryView v-if="baseView === 'library'" key="library" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <TracksView v-else-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-          <SourcesView v-else-if="baseView === 'sources' || (baseView === 'source-browser' && !browseSourceId)" key="sources" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig('sources')" />
-          <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate('sources')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
-          <SourceConfigView v-else-if="baseView === 'source-config'" key="source-config" @back="closeSourceConfig" />
+          <SourcesView v-else-if="baseView === 'folders' || baseView === 'webdav' || (baseView === 'source-browser' && !browseSourceId)" :key="`sources-${sourcesPageKind}`" :kind="sourcesPageKind" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig(sourcesPageKind === 'webdav' ? 'webdav' : 'folders')" />
+          <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate(browseSourceKind === 'webdav' ? 'webdav' : 'folders')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
+          <SourceConfigView v-else-if="baseView === 'source-config'" key="source-config" :kind="sourceConfigKind" @back="closeSourceConfig" />
           <CategoriesView v-else-if="categoryActive" key="categories" :kind="baseView" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @navigate="navigate" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @open-group="onOpenGroupFrom" @refresh="refreshLibrary" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
           <FavoritesView v-else-if="baseView === 'favorites'" key="favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <QueueView v-else-if="baseView === 'queue'" key="queue" />

@@ -34,6 +34,8 @@ const sources = useSourcesStore();
 const vRequestMeta = requestMeta;
 const source = computed(() => sources.sources.find((item) => item.id === props.sourceId) ?? null);
 const sourceName = computed(() => source.value ? sourceLabel(source.value) : "");
+/** The split source page this browser belongs to, used for the eyebrow / root crumb. */
+const kindLabel = computed(() => (source.value?.kind === "webdav" ? t("nav.webdav") : t("nav.folders")));
 
 /** The current directory path ("" is the source root). */
 const currentPath = ref("");
@@ -47,7 +49,7 @@ const contextPosition = ref({ x: 0, y: 0 });
 /** Build the breadcrumb trail from the current path segments. */
 const crumbs = computed<Crumb[]>(() => {
   const segments = currentPath.value.split("/").filter(Boolean);
-  const trail: Crumb[] = [{ name: sourceName.value || t("nav.sources"), path: "" }];
+  const trail: Crumb[] = [{ name: sourceName.value || kindLabel.value, path: "" }];
   let accumulated = "";
   for (const segment of segments) {
     accumulated = accumulated ? `${accumulated}/${segment}` : segment;
@@ -182,7 +184,7 @@ watch(() => currentPath.value, () => void nextTick(() => scrollEl.value?.scrollT
       <header class="shrink-0 border-b border-line pb-6">
         <div class="flex flex-wrap items-end justify-between gap-4">
           <div class="min-w-0">
-            <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ t("nav.sources") }}</p>
+            <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ kindLabel }}</p>
             <h1 class="mt-4 flex items-center gap-3 text-3xl font-black leading-tight tracking-tight sm:text-4xl">
               <Server v-if="source?.kind === 'webdav'" :size="26" :stroke-width="2" class="text-accent" />
               <HardDrive v-else :size="26" :stroke-width="2" class="text-accent" />

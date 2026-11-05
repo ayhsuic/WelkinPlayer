@@ -4,7 +4,7 @@
 -->
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { Check, FolderOpen, HardDrive, LoaderCircle, Plus, Server, Trash2 } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { describeError } from "../api";
@@ -17,6 +17,12 @@ import LayeredSelect from "./LayeredSelect.vue";
 
 const { t } = useI18n();
 const sources = useSourcesStore();
+/**
+ * Scopes the editor to one source kind (the 文件夹 / WebDAV pages): the kind
+ * picker disappears and only that kind's sources are listed. Left empty from
+ * Settings, where every source is managed together.
+ */
+const props = withDefaults(defineProps<{ onlyKind?: SourceKind | null }>(), { onlyKind: null });
 const android = isAndroid();
 /** Android needs "all files access" before local folders can be listed. */
 const needsFileAccess = computed(() => android && !sources.fileAccessGranted);
@@ -36,9 +42,21 @@ onBeforeUnmount(() => {
 });
 
 const sourceKindOptions = computed(() => SOURCE_KINDS.map((item) => ({ value: item.kind, label: t(item.labelKey) })));
-const newKind = ref<SourceKind>("webdav");
+const newKind = ref<SourceKind>(props.onlyKind ?? "webdav");
 const passwordDrafts = reactive<Record<string, string>>({});
 const status = reactive<Record<string, { testing: boolean; writeTesting: boolean; readOk: boolean; writeOk: boolean }>>({});
+
+/** A scoped editor only ever lists its own kind. */
+const visibleSources = computed(() =>
+  props.onlyKind ? sources.sources.filter((source) => source.kind === props.onlyKind) : sources.sources,
+);
+
+/** Kind-aware empty hint so a scoped page does not talk about the other kind. */
+const emptyLabel = computed(() =>
+  props.onlyKind === "local" ? t("sources.foldersEmptyTitle") : props.onlyKind === "webdav" ? t("sources.webdavEmptyTitle") : t("settings.sources.empty"),
+);
+
+watch(() => props.onlyKind, (kind) => { if (kind) newKind.value = kind; });
 
 function stateFor(id: string) {
   status[id] ??= { testing: false, writeTesting: false, readOk: false, writeOk: false };
@@ -117,17 +135,17 @@ async function remove(source: SongSource) {
 <template>
   <section class="ak-frame grid gap-6 border border-line bg-surface p-6">
     <div class="flex flex-wrap items-center justify-end gap-2">
-      <LayeredSelect v-model="newKind" :options="sourceKindOptions" :label="t('settings.sources.kind')" class="w-40" />
+      <LayeredSelect v-if="!onlyKind" v-model="newKind" :options="sourceKindOptions" :label="t('settings.sources.kind')" class="w-40" />
       <button type="button" class="ak-clip-tr inline-flex h-10 items-center gap-2 border border-line px-4 text-[12px] font-semibold uppercase tracking-[0.2em] whitespace-nowrap" @click="add"><Plus :size="14" />{{ t("settings.sources.add") }}</button>
     </div>
 
-    <p v-if="!sources.hasCloudSync" class="border-l-2 border-accent/60 pl-3 text-xs text-muted">{{ t("settings.sources.localOnly") }}</p>
+    <p v-if="!sources.hasCloudSync && (!onlyKind || onlyKind === 'local')" class="border-l-2 border-accent/60 pl-3 text-xs text-muted">{{ t("settings.sources.localOnly") }}</p>
     <p v-if="sources.hasSources && !sources.syncId" class="border-l-2 border-accent/60 pl-3 text-xs text-muted">{{ t("settings.sources.syncMissing") }}</p>
 
-    <p v-if="sources.sources.length === 0" class="text-sm text-muted">{{ t("settings.sources.empty") }}</p>
+    <p v-if="visibleSources.length === 0" class="text-sm text-muted">{{ emptyLabel }}</p>
 
     <div v-else class="grid gap-4">
-      <article v-for="source in sources.sources" :key="source.id" class="grid gap-4 border border-line bg-bg p-4">
+      <article v-for="source in visibleSources" :key="source.id" class="grid gap-4 border border-line bg-bg p-4">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
           <div class="flex min-w-[12rem] flex-1 items-center gap-3">
             <span class="grid h-10 w-10 shrink-0 place-items-center bg-accent/10 text-accent"><Server v-if="source.kind === 'webdav'" :size="17" /><HardDrive v-else :size="17" /></span>

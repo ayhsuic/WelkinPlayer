@@ -4,9 +4,9 @@
  */
 
 import type { Component } from "vue";
-import { Activity, CalendarDays, Disc3, HardDrive, Library, ListMusic, ListOrdered, ListPlus, Mic2, Music } from "@lucide/vue";
+import { Activity, CalendarDays, Disc3, Folder, Library, ListMusic, ListOrdered, ListPlus, Mic2, Music, Server } from "@lucide/vue";
 
-export type View = "library" | "tracks" | "queue" | "favorites" | "stats" | "artists" | "albums" | "years" | "genres" | "sources" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "settings" | "sponsor" | "player";
+export type View = "library" | "tracks" | "queue" | "favorites" | "stats" | "artists" | "albums" | "years" | "genres" | "folders" | "webdav" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "settings" | "sponsor" | "player";
 export type Theme = "light" | "dark";
 export type Accent = "amber" | "orange" | "cyan" | "red" | "green" | "blue";
 
@@ -33,10 +33,11 @@ export const libraryNavItems: NavItem[] = [
   { id: "years", labelKey: "nav.years", index: "08", icon: CalendarDays },
 ];
 
-/** System group: sources and play ranking. */
+/** System group: the two source kinds (kept separate on purpose) and play ranking. */
 export const systemNavItems: NavItem[] = [
-  { id: "sources", labelKey: "nav.sources", index: "09", icon: HardDrive },
-  { id: "stats", labelKey: "nav.stats", index: "10", icon: Activity },
+  { id: "folders", labelKey: "nav.folders", index: "09", icon: Folder },
+  { id: "webdav", labelKey: "nav.webdav", index: "10", icon: Server },
+  { id: "stats", labelKey: "nav.stats", index: "11", icon: Activity },
 ];
 
 /** The six swipeable category panels, in sidebar order. */

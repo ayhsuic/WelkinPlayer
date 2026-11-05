@@ -9,8 +9,9 @@ import { ChevronLeft, ChevronRight, HeartHandshake, Menu, Music2, Settings2 } fr
 import { useI18n } from "vue-i18n";
 import { libraryNavItems, primaryNavItems, systemNavItems, type NavItem } from "../lib/app";
 import type { View } from "../lib/app";
+import type { SourceKind } from "../lib/sources";
 
-const props = withDefaults(defineProps<{ activeView: View; placement: "header" | "sidebar" | "mobile"; collapsed?: boolean; headerHidden?: boolean; activePlaylistId?: string | null; activeArtist?: string | null; activeAlbum?: string | null; activeYear?: string | null; activeGenre?: string | null; activeSource?: string | null }>(), { collapsed: false, headerHidden: false, activePlaylistId: null, activeArtist: null, activeAlbum: null, activeYear: null, activeGenre: null, activeSource: null });
+const props = withDefaults(defineProps<{ activeView: View; placement: "header" | "sidebar" | "mobile"; collapsed?: boolean; headerHidden?: boolean; activePlaylistId?: string | null; activeArtist?: string | null; activeAlbum?: string | null; activeYear?: string | null; activeGenre?: string | null; activeSourceKind?: SourceKind | null }>(), { collapsed: false, headerHidden: false, activePlaylistId: null, activeArtist: null, activeAlbum: null, activeYear: null, activeGenre: null, activeSourceKind: null });
 const emit = defineEmits<{ navigate: [view: View]; toggle: []; createPlaylist: []; openPlaylist: [id: string]; drawer: [open: boolean] }>();
 const { t } = useI18n();
 const playlistsActive = computed(() => props.activeView === "playlists" || (props.activeView === "tracks" && !!props.activePlaylistId));
@@ -60,7 +61,10 @@ function isClassificationActive(id: View): boolean {
   if (id === "albums") return props.activeView === "albums" || !!props.activeAlbum;
   if (id === "years") return props.activeView === "years" || !!props.activeYear;
   if (id === "genres") return props.activeView === "genres" || !!props.activeGenre;
-  if (id === "sources") return props.activeView === "sources" || props.activeView === "source-config" || props.activeView === "source-browser" || !!props.activeSource;
+  // The two source kinds are separate entries: a source-scoped page highlights
+  // only the entry matching that source's kind, never both.
+  if (id === "folders") return props.activeView === "folders" || props.activeSourceKind === "local";
+  if (id === "webdav") return props.activeView === "webdav" || props.activeSourceKind === "webdav";
   return false;
 }
 /** Highlight a sidebar/drawer entry per its own drill-down rules. */
@@ -69,8 +73,9 @@ function navItemActive(item: NavItem): boolean {
     case "library": return props.activeView === "library";
     case "queue": return props.activeView === "queue";
     case "playlists": return playlistsActive.value;
-    case "tracks": return props.activeView === "tracks" && !props.activePlaylistId && !props.activeArtist && !props.activeAlbum && !props.activeYear && !props.activeGenre && !props.activeSource;
-    case "sources": return isClassificationActive("sources");
+    case "tracks": return props.activeView === "tracks" && !props.activePlaylistId && !props.activeArtist && !props.activeAlbum && !props.activeYear && !props.activeGenre && !props.activeSourceKind;
+    case "folders":
+    case "webdav": return isClassificationActive(item.id);
     default: return isClassificationActive(item.id);
   }
 }
