@@ -310,9 +310,29 @@ let headerLastTop = 0;
 let headerLastEl: Element | null = null;
 let headerScrollTick = false;
 
+/** How long a scroll container keeps its auto-hiding scrollbar visible after the last scroll. */
+const SCROLLBAR_IDLE_MS = 700;
+const scrollbarTimers = new WeakMap<Element, number>();
+
+/**
+ * Reveal the scrolled container's scrollbar, then hide it again once scrolling
+ * stops. Paired with the `.is-scrolling` rules in style.css; the sidebar,
+ * drawer and home page opt out of scrollbars entirely.
+ */
+function markScrolling(el: Element) {
+  el.classList.add("is-scrolling");
+  const pending = scrollbarTimers.get(el);
+  if (pending !== undefined) window.clearTimeout(pending);
+  scrollbarTimers.set(el, window.setTimeout(() => {
+    el.classList.remove("is-scrolling");
+    scrollbarTimers.delete(el);
+  }, SCROLLBAR_IDLE_MS));
+}
+
 function handleHeaderScroll(event: Event) {
   const el = event.target as Element | null;
   if (!el || !(el instanceof Element)) return;
+  markScrolling(el);
   // Scrolling inside the drawer overlay must not hide the header behind it.
   if (el.closest?.(".drawer-shell")) return;
   if (headerLastEl !== el) {
@@ -466,7 +486,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
     <AppNavigation placement="header" :active-view="baseView" :header-hidden="headerHidden" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-year="yearFilter" :active-genre="genreFilter" :active-source-kind="activeSourceKind" @navigate="navigate" @drawer="drawerOpen = $event" />
     <div class="relative flex min-h-0 flex-1">
       <AppNavigation placement="sidebar" :active-view="baseView" :collapsed="sidebarCollapsed" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-year="yearFilter" :active-genre="genreFilter" :active-source-kind="activeSourceKind" @navigate="navigate" @toggle="toggleSidebar" @create-playlist="createPlaylist" @open-playlist="openUserPlaylist" />
-      <main class="min-w-0 flex-1 overflow-y-auto" :style="headerHidden && !drawerOpen ? { paddingTop: 'env(safe-area-inset-top)' } : undefined">
+      <main class="min-w-0 flex-1 overflow-y-auto" :class="{ 'no-scrollbar': baseView === 'library' }" :style="headerHidden && !drawerOpen ? { paddingTop: 'env(safe-area-inset-top)' } : undefined">
         <Transition name="page" mode="out-in">
           <LibraryView v-if="baseView === 'library'" key="library" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <TracksView v-else-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
@@ -495,5 +515,16 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
    so the category tabs glide up to the status bar instead of jumping. */
 main {
   transition: padding-top 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* The home page never draws a scrollbar; other pages get the auto-hiding one. */
+main.no-scrollbar {
+  scrollbar-width: none;
+}
+
+main.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 </style>

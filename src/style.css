@@ -516,6 +516,13 @@ html[data-accent="blue"] {
     opacity: 0;
   }
 
+  /*
+   * Scrollbars auto-hide: the thumb stays transparent until its container is
+   * actually scrolling, so the bar shows up while scrolling and disappears
+   * shortly after. `markScrolling` in App.vue toggles `.is-scrolling` on the
+   * scrolled element. The sidebar, drawer and home page opt out completely and
+   * never draw a scrollbar (see AppNavigation.vue / App.vue).
+   */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -526,10 +533,14 @@ html[data-accent="blue"] {
   }
 
   ::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+
+  .is-scrolling::-webkit-scrollbar-thumb {
     background: var(--line-strong);
   }
 
-  ::-webkit-scrollbar-thumb:hover {
+  .is-scrolling::-webkit-scrollbar-thumb:hover {
     background: var(--accent);
   }
 }

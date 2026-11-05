@@ -161,6 +161,24 @@ header.header-hidden {
   border-bottom-width: 0;
 }
 
+/*
+ * The sidebar and the mobile drawer are fixed chrome: never draw a scrollbar
+ * there. `scrollbar-width` covers current Chromium WebViews, the WebKit
+ * pseudo-element covers older ones; both are needed because Android WebView
+ * versions differ in which one they honour.
+ */
+.sidebar-shell,
+.drawer-shell {
+  scrollbar-width: none;
+}
+
+.sidebar-shell::-webkit-scrollbar,
+.drawer-shell::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 .sidebar-shell {
   width: 248px;
   padding: 1.25rem;
