@@ -89,6 +89,8 @@ const license = useLicenseStore();
 const windowBehavior = useWindowBehaviorStore();
 const update = useUpdateStore();
 const { loadingLibrary, refreshing, friendlyError, loadCachedLibrary, loadRemoteLibrary, refreshLibrary, downloadTrackMetadata } = useLibrary();
+/** Hash routes the app can restore on boot; declared before `getViewFromHash` is first called. */
+const VIEW_ROUTES: ReadonlySet<string> = new Set(["settings", "sponsor", "player", "tracks", "queue", "favorites", "stats", "artists", "albums", "years", "genres", "folders", "webdav", "source-config", "source-browser", "playlists", "playlist-new", "lyrics-edit", "track-edit", "track-info"]);
 const view = ref<View>(getViewFromHash());
 /** Views that sit on top of the current page as overlays and must not replace `baseView`. */
 const OVERLAY_VIEWS: ReadonlySet<View> = new Set(["player", "track-info", "lyrics-edit", "track-edit", "sponsor"]);
@@ -287,7 +289,6 @@ watch([() => player.queue, () => player.queueIndex], () => {
 });
 
 function readAccent(): Accent { const value = localStorage.getItem("welkin-accent"); return (accents.some((item) => item.id === value) ? value : "amber") as Accent; }
-const VIEW_ROUTES: ReadonlySet<string> = new Set(["settings", "sponsor", "player", "tracks", "queue", "favorites", "stats", "artists", "albums", "years", "genres", "folders", "webdav", "source-config", "source-browser", "playlists", "playlist-new", "lyrics-edit", "track-edit", "track-info"]);
 function getViewFromHash(): View {
   const route = window.location.hash.slice(1);
   // `#sources` predates the folder / WebDAV split; keep old links working.
