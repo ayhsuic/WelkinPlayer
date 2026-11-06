@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ChevronRight, Heart, ListMusic, Pencil, Plus, Search } from "@lucide/vue";
+import { ChevronRight, Heart, ListMusic, Pencil, Plus, Search, TrendingUp } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useProfileStore } from "../stores/profile";
+import { usePlayerStore } from "../stores/player";
+import { RECENT_PLAYS_ID } from "../lib/app";
+import { rankTracksByPlayCount } from "../lib/playRanking";
 import type { View } from "../lib/app";
 import PlaylistCover from "../components/PlaylistCover.vue";
 
 const emit = defineEmits<{ openPlaylist: [id: string]; editPlaylist: [id: string]; createPlaylist: []; navigate: [view: View] }>();
 const { t } = useI18n();
 const profile = useProfileStore();
+const player = usePlayerStore();
 const query = ref("");
 
 const playlists = computed(() => {
@@ -18,6 +22,8 @@ const playlists = computed(() => {
 
 /** Favorites act as the default playlist; its card is pinned first in the grid. */
 const favoriteCount = computed(() => profile.favorites.length);
+/** The generated play-ranking playlist: library tracks ordered by play count. */
+const rankedCount = computed(() => rankTracksByPlayCount(player.tracks, profile.profile.playCounts).length);
 </script>
 
 <template>
@@ -34,12 +40,12 @@ const favoriteCount = computed(() => profile.favorites.length);
         </div>
       </header>
 
-      <div v-if="profile.playlists.length === 0 && favoriteCount === 0" class="ak-frame mt-8 grid place-items-center gap-4 border border-dashed border-line bg-surface/50 px-6 py-20 text-center">
+      <div v-if="profile.playlists.length === 0 && favoriteCount === 0 && rankedCount === 0" class="ak-frame mt-8 grid place-items-center gap-4 border border-dashed border-line bg-surface/50 px-6 py-20 text-center">
         <ListMusic :size="36" class="text-dim" />
         <p class="max-w-md text-sm text-muted">{{ t("playlistsPage.empty") }}</p>
         <button type="button" class="ak-clip-tr h-10 bg-accent px-5 text-[13px] font-bold uppercase tracking-[0.25em] text-accent-fg" @click="emit('createPlaylist')">{{ t("playlistsPage.create") }}</button>
       </div>
-      <p v-else-if="playlists.length === 0 && (query.trim() !== '' || favoriteCount === 0)" class="py-10 text-center text-sm text-muted">{{ t("playlistsPage.empty") }}</p>
+      <p v-else-if="playlists.length === 0 && query.trim() !== ''" class="py-10 text-center text-sm text-muted">{{ t("playlistsPage.empty") }}</p>
 
       <section v-else class="pt-4">
         <button v-if="!query" type="button" class="flex w-full items-center gap-4 border-t border-line px-3 py-2 text-left transition-colors hover:bg-surface/60" :title="t('playlistsPage.open')" @click="emit('navigate', 'favorites')">
@@ -47,6 +53,14 @@ const favoriteCount = computed(() => profile.favorites.length);
           <span class="grid min-w-0 flex-1 gap-0.5">
             <strong class="truncate text-sm font-semibold tracking-wide">{{ t("nav.favorites") }}</strong>
             <small class="font-mono text-xs uppercase tracking-[0.15em] text-dim">{{ t("playlistsPage.count", { count: favoriteCount }) }}</small>
+          </span>
+          <ChevronRight :size="16" class="shrink-0 text-dim" />
+        </button>
+        <button v-if="!query" type="button" class="flex w-full items-center gap-4 border-t border-line px-3 py-2 text-left transition-colors hover:bg-surface/60" :title="t('playlistsPage.open')" @click="emit('openPlaylist', RECENT_PLAYS_ID)">
+          <span class="grid h-11 w-11 shrink-0 place-items-center overflow-hidden bg-accent/15 text-accent"><TrendingUp :size="18" :stroke-width="2" /></span>
+          <span class="grid min-w-0 flex-1 gap-0.5">
+            <strong class="truncate text-sm font-semibold tracking-wide">{{ t("playlistsPage.recentTitle") }}</strong>
+            <small class="font-mono text-xs uppercase tracking-[0.15em] text-dim">{{ t("playlistsPage.count", { count: rankedCount }) }}</small>
           </span>
           <ChevronRight :size="16" class="shrink-0 text-dim" />
         </button>

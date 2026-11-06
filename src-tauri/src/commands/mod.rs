@@ -83,6 +83,16 @@ pub fn log_message(level: String, message: String) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Terminates the app from the sidebar's quit button.
+///
+/// Closing the window can be intercepted by the tray / close-to-tray handler,
+/// which only hides it. "Quit" must always end the process, so it exits the
+/// application directly instead of asking the window to close.
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

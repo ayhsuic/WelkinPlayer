@@ -205,6 +205,7 @@ pub fn run() {
             commands::ping,
             commands::echo,
             commands::log_message,
+            commands::quit_app,
             commands::fonts::list_system_fonts,
             commands::webdav::load_source_password,
             commands::webdav::save_source_password,

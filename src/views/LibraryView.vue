@@ -9,6 +9,7 @@ import { tracksForPaths, useProfileStore, profileKeyForTrack } from "../stores/p
 import { coverPending, initial } from "../lib/format";
 import { trackKey } from "../lib/sources";
 import type { View } from "../lib/app";
+import { RECENT_PLAYS_ID } from "../lib/app";
 import PlaylistCover from "../components/PlaylistCover.vue";
 import TrackCard from "../components/TrackCard.vue";
 import TrackContextMenu from "../components/TrackContextMenu.vue";
@@ -52,11 +53,12 @@ const playedTracks = computed(() => {
 });
 const totalPlays = computed(() => playedTracks.value.reduce((sum, item) => sum + item.count, 0));
 const topTracks = computed(() => playedTracks.value.slice(0, TOP_LIMIT).map((item) => item.track));
-const stats = computed<{ key: string; value: number; icon: Component; view?: View }[]>(() => [
+const stats = computed<{ key: string; value: number; icon: Component; view?: View; playlist?: string }[]>(() => [
   { key: "home.statsTracks", value: player.tracks.length, icon: Library, view: "tracks" },
   { key: "home.statsPlaylists", value: profile.playlists.length, icon: ListMusic },
   { key: "home.statsFavorites", value: favoriteTracks.value.length, icon: Heart, view: "favorites" },
-  { key: "home.statsPlays", value: totalPlays.value, icon: Activity, view: "stats" },
+  // The play ranking is a generated playlist now, so this card opens that list.
+  { key: "home.statsPlays", value: totalPlays.value, icon: Activity, playlist: RECENT_PLAYS_ID },
 ]);
 
 function pickRandom(list: Track[], count: number): Track[] {
@@ -137,7 +139,7 @@ function confirmCreate() { const name = newName.value.trim(); if (name) profile.
       </section>
 
       <section class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <button v-for="stat in stats" :key="stat.key" type="button" :disabled="!stat.view" class="ak-frame flex items-center gap-4 border border-line bg-surface p-4 text-left transition-colors" :class="stat.view ? 'hover:border-accent' : 'cursor-default'" @click="stat.view && emit('navigate', stat.view)">
+        <button v-for="stat in stats" :key="stat.key" type="button" :disabled="!stat.view && !stat.playlist" class="ak-frame flex items-center gap-4 border border-line bg-surface p-4 text-left transition-colors" :class="stat.view || stat.playlist ? 'hover:border-accent' : 'cursor-default'" @click="stat.playlist ? emit('openPlaylist', stat.playlist) : stat.view && emit('navigate', stat.view)">
           <span class="grid h-10 w-10 shrink-0 place-items-center bg-accent/10 text-accent"><component :is="stat.icon" :size="18" :stroke-width="2" /></span>
           <div class="min-w-0">
             <p class="font-mono text-2xl font-black tabular-nums leading-none">{{ stat.value }}</p>

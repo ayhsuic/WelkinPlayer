@@ -184,7 +184,7 @@ watch(() => currentPath.value, () => void nextTick(() => scrollEl.value?.scrollT
       <header class="shrink-0 border-b border-line pb-6">
         <div class="flex flex-wrap items-end justify-between gap-4">
           <div class="min-w-0">
-            <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ kindLabel }}</p>
+            <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent" :class="source?.kind === 'webdav' ? 'normal-case' : ''"><span class="h-2 w-2 bg-accent"></span>{{ kindLabel }}</p>
             <h1 class="mt-4 flex items-center gap-3 text-3xl font-black leading-tight tracking-tight sm:text-4xl">
               <Server v-if="source?.kind === 'webdav'" :size="26" :stroke-width="2" class="text-accent" />
               <HardDrive v-else :size="26" :stroke-width="2" class="text-accent" />

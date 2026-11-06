@@ -67,7 +67,7 @@ function kindLabel(kind: SourceKind): string {
     <header class="flex flex-wrap items-end justify-between gap-4 border-b border-line pb-6">
       <div class="min-w-0">
         <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ t("sources.eyebrow") }}</p>
-        <h1 class="mt-4 text-4xl font-black uppercase leading-none tracking-tight sm:text-5xl">{{ copy.title }}</h1>
+        <h1 class="mt-4 text-4xl font-black uppercase leading-none tracking-tight sm:text-5xl" :class="kind === 'webdav' ? 'normal-case' : ''">{{ copy.title }}</h1>
         <p class="mt-4 max-w-2xl text-sm text-muted">{{ copy.desc }}</p>
       </div>
       <button type="button" class="ak-clip-tr flex h-10 items-center gap-2 border border-line px-5 text-[13px] font-semibold uppercase tracking-[0.25em]" @click="emit('manage')"><Settings2 :size="15" />{{ t("sources.manage") }}</button>

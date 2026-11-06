@@ -65,7 +65,6 @@ import FavoritesView from "./views/FavoritesView.vue";
 import QueueView from "./views/QueueView.vue";
 import CategoriesView from "./views/CategoriesView.vue";
 import type { GroupKind } from "./lib/grouping";
-import StatsView from "./views/StatsView.vue";
 import SourcesView from "./views/SourcesView.vue";
 import SourceBrowserView from "./views/SourceBrowserView.vue";
 import PlaylistEditorView from "./views/PlaylistEditorView.vue";
@@ -90,14 +89,13 @@ const windowBehavior = useWindowBehaviorStore();
 const update = useUpdateStore();
 const { loadingLibrary, refreshing, friendlyError, loadCachedLibrary, loadRemoteLibrary, refreshLibrary, downloadTrackMetadata } = useLibrary();
 /** Hash routes the app can restore on boot; declared before `getViewFromHash` is first called. */
-const VIEW_ROUTES: ReadonlySet<string> = new Set(["settings", "sponsor", "player", "tracks", "queue", "favorites", "stats", "artists", "albums", "years", "genres", "folders", "webdav", "source-config", "source-browser", "playlists", "playlist-new", "lyrics-edit", "track-edit", "track-info"]);
+const VIEW_ROUTES: ReadonlySet<string> = new Set(["settings", "sponsor", "player", "tracks", "queue", "favorites", "artists", "albums", "years", "genres", "folders", "webdav", "source-config", "source-browser", "playlists", "playlist-new", "lyrics-edit", "track-edit", "track-info"]);
 const view = ref<View>(getViewFromHash());
 /** Views that sit on top of the current page as overlays and must not replace `baseView`. */
 const OVERLAY_VIEWS: ReadonlySet<View> = new Set(["player", "track-info", "lyrics-edit", "track-edit", "sponsor"]);
 const baseView = ref<View>(OVERLAY_VIEWS.has(view.value) ? "library" : view.value);
 const theme = ref<Theme>(localStorage.getItem("welkin-theme") === "dark" ? "dark" : "light");
 const accent = ref<Accent>(readAccent());
-const sidebarCollapsed = ref(localStorage.getItem("welkin-sidebar-collapsed") === "1");
 const downloadingTrackId = ref<number | null>(null);
 const booted = ref(false);
 const playlistFilter = ref<string | null>(null);
@@ -293,6 +291,8 @@ function getViewFromHash(): View {
   const route = window.location.hash.slice(1);
   // `#sources` predates the folder / WebDAV split; keep old links working.
   if (route === "sources") return "folders";
+  // The play ranking moved into the playlists page as a generated playlist.
+  if (route === "stats") return "playlists";
   return VIEW_ROUTES.has(route) ? (route as View) : "library";
 }
 function setView(nextView: View) { view.value = nextView; window.location.hash = nextView === "library" ? "" : nextView; }
@@ -446,7 +446,13 @@ async function downloadMetadata(track: Track) {
     pushToast("error", t("library.menu.metadataFailed", { value: friendlyError(error) }));
   } finally { downloadingTrackId.value = null; }
 }
-function toggleSidebar() { sidebarCollapsed.value = !sidebarCollapsed.value; localStorage.setItem("welkin-sidebar-collapsed", sidebarCollapsed.value ? "1" : "0"); }
+/** Quit the app: persist the session first, then let the backend terminate. */
+async function quitApp() {
+  savePlaybackPosition(true);
+  void flushReadings();
+  try { await profile.flush(); } catch { /* best effort, quitting anyway */ }
+  try { await invoke("quit_app"); } catch (error) { showError(error); }
+}
 /** Re-verify the Pro license from scratch whenever the app regains focus. */
 function recheckLicense() { void license.refresh(); }
 function onGlobalKeydown(event: KeyboardEvent) {
@@ -483,9 +489,9 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
   <Transition name="info"><SponsorView v-if="view === 'sponsor'" @back="closeOverlay" /></Transition>
   <SetupWizard v-if="booted && profile.firstRun" v-model:theme="theme" v-model:accent="accent" @finish="onWizardFinish" />
   <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg" :class="booted ? '' : 'opacity-0'">
-    <AppNavigation placement="header" :active-view="baseView" :header-hidden="headerHidden" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-year="yearFilter" :active-genre="genreFilter" :active-source-kind="activeSourceKind" @navigate="navigate" @drawer="drawerOpen = $event" />
+    <AppNavigation placement="header" :active-view="baseView" :header-hidden="headerHidden" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-year="yearFilter" :active-genre="genreFilter" :active-source-kind="activeSourceKind" @navigate="navigate" @quit="quitApp" @drawer="drawerOpen = $event" />
     <div class="relative flex min-h-0 flex-1">
-      <AppNavigation placement="sidebar" :active-view="baseView" :collapsed="sidebarCollapsed" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-year="yearFilter" :active-genre="genreFilter" :active-source-kind="activeSourceKind" @navigate="navigate" @toggle="toggleSidebar" @create-playlist="createPlaylist" @open-playlist="openUserPlaylist" />
+      <AppNavigation placement="sidebar" :active-view="baseView" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-year="yearFilter" :active-genre="genreFilter" :active-source-kind="activeSourceKind" @navigate="navigate" @quit="quitApp" @create-playlist="createPlaylist" @open-playlist="openUserPlaylist" />
       <main class="min-w-0 flex-1 overflow-y-auto" :class="{ 'no-scrollbar': baseView === 'library' }" :style="headerHidden && !drawerOpen ? { paddingTop: 'env(safe-area-inset-top)' } : undefined">
         <Transition name="page" mode="out-in">
           <LibraryView v-if="baseView === 'library'" key="library" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
@@ -496,7 +502,6 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
           <CategoriesView v-else-if="categoryActive" key="categories" :kind="baseView" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @navigate="navigate" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @open-group="onOpenGroupFrom" @refresh="refreshLibrary" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
           <FavoritesView v-else-if="baseView === 'favorites'" key="favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <QueueView v-else-if="baseView === 'queue'" key="queue" />
-          <StatsView v-else-if="baseView === 'stats'" key="stats" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
           <SettingsView v-else key="settings" v-model:theme="theme" v-model:accent="accent" @sponsor="navigate('sponsor')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
         </Transition>

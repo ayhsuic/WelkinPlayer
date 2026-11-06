@@ -5,12 +5,14 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { ListChecks, Pencil, Play, RefreshCw, Search } from "@lucide/vue";
+import { ListChecks, Pencil, Play, RefreshCw, Search, TrendingUp } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
 import { tracksForPaths, useProfileStore } from "../stores/profile";
 import { useSourcesStore } from "../stores/sources";
+import { RECENT_PLAYS_ID } from "../lib/app";
+import { rankTracksByPlayCount } from "../lib/playRanking";
 import { groupKeys, isUnknownGroup, type GroupKind } from "../lib/grouping";
 import { sortTracks, titleLetterIndex, useTrackSort, type TrackSortContext } from "../lib/sort";
 import TrackList from "../components/TrackList.vue";
@@ -33,6 +35,9 @@ const selected = ref<Set<string>>(new Set());
 const scrollEl = ref<HTMLElement | null>(null);
 
 const activePlaylist = computed(() => props.playlistId ? profile.playlists.find((item) => item.id === props.playlistId) ?? null : null);
+/** The generated play-ranking playlist: not stored, resolved from play counts. */
+const smartPlays = computed(() => props.playlistId === RECENT_PLAYS_ID);
+const rankedTracks = computed(() => rankTracksByPlayCount(player.tracks, profile.profile.playCounts));
 /** A generated artist/album collection, selected from the classification views. */
 const groupKind = computed<GroupKind>(() => (props.artist ? "artists" : props.album ? "albums" : props.year ? "years" : "genres"));
 const groupKeyValue = computed(() => props.artist ?? props.album ?? props.year ?? props.genre ?? null);
@@ -56,6 +61,7 @@ const groupTitle = computed(() => {
 /** Representative cover for a generated collection: the first track that has artwork. */
 const groupCoverTrack = computed(() => groupTracks.value?.find((track) => track.cover) ?? groupTracks.value?.[0]);
 const sourceTracks = computed(() => {
+  if (smartPlays.value) return rankedTracks.value.map((item) => item.track);
   if (activePlaylist.value) return tracksForPaths(activePlaylist.value.tracks, player.tracks);
   if (groupTracks.value) return groupTracks.value;
   if (sourceFilter.value) return player.tracks.filter((track) => track.sourceId === sourceFilter.value);
@@ -65,13 +71,13 @@ const sourceTracks = computed(() => {
 const sortContext = computed<TrackSortContext>(() => activePlaylist.value ? "playlist" : isGroup.value ? (groupKind.value === "artists" ? "artist" : "album") : "tracks");const sortKey = computed(() => useTrackSort(sortContext.value).key.value);
 const sortDir = computed(() => useTrackSort(sortContext.value).dir.value);
 /** Source order with the chosen sort applied; the play queue follows this so "next" matches the screen. */
-const orderedTracks = computed(() => sortTracks(sourceTracks.value, sortKey.value, sortDir.value));
+const orderedTracks = computed(() => smartPlays.value ? sourceTracks.value : sortTracks(sourceTracks.value, sortKey.value, sortDir.value));
 const tracks = computed(() => {
   const value = query.value.trim().toLocaleLowerCase();
   return value ? orderedTracks.value.filter((track) => `${track.title} ${track.artist} ${track.album}`.toLocaleLowerCase().includes(value)) : orderedTracks.value;
 });
 /** The A–Z rail, only on the pages that opted in while sorting by title. */
-const letterIndex = computed(() => (sortKey.value === "title" && !selectMode.value && (sortContext.value === "tracks" || sortContext.value === "playlist") ? titleLetterIndex(tracks.value) : null));
+const letterIndex = computed(() => (sortKey.value === "title" && !smartPlays.value && !selectMode.value && (sortContext.value === "tracks" || sortContext.value === "playlist") ? titleLetterIndex(tracks.value) : null));
 
 watch([() => props.playlistId, () => props.artist, () => props.album, () => props.year, () => props.genre], () => { selectMode.value = false; selected.value = new Set(); });
 
@@ -96,6 +102,7 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
       <header class="shrink-0 border-b border-line pb-6">
         <div class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-stretch sm:gap-6">
           <PlaylistCover v-if="activePlaylist" :playlist="activePlaylist" class="ak-frame h-32 w-32 shrink-0 border border-line text-5xl" :icon-size="40" />
+          <span v-else-if="smartPlays" class="ak-frame grid h-32 w-32 shrink-0 place-items-center border border-line bg-accent/10 text-accent"><TrendingUp :size="40" :stroke-width="2" /></span>
           <span v-else-if="isGroup" class="ak-frame grid h-32 w-32 shrink-0 place-items-center overflow-hidden border border-line text-5xl font-black text-white/90" :style="{ backgroundColor: groupCoverTrack?.color ?? 'var(--accent)' }">
             <img v-if="groupCoverTrack?.cover" :src="groupCoverTrack.cover" alt="" decoding="async" class="h-full w-full object-cover" />
             <template v-else>{{ groupTitle.charAt(0) }}</template>
@@ -104,6 +111,11 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
             <template v-if="activePlaylist">
               <h1 class="truncate text-3xl font-black leading-tight tracking-tight sm:text-4xl">{{ activePlaylist.name }}</h1>
               <p class="mt-2 font-mono text-sm uppercase tracking-[0.2em] text-dim">{{ t("library.playlists.count", { count: activePlaylist.tracks.length }) }}</p>
+            </template>
+            <template v-else-if="smartPlays">
+              <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ t("playlistsPage.smart") }}</p>
+              <h1 class="mt-4 truncate text-4xl font-black leading-none tracking-tight sm:text-5xl">{{ t("playlistsPage.recentTitle") }}</h1>
+              <p class="mt-3 font-mono text-sm uppercase tracking-[0.2em] text-dim">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
             </template>
             <template v-else-if="isGroup">
               <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ t(groupKind === "artists" ? "nav.artists" : "nav.albums") }}</p>
@@ -117,19 +129,19 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
             </template>
 
             <div class="mt-auto flex flex-wrap items-center gap-3 pt-4">
-              <div class="flex w-full min-w-0 items-center gap-3 @2xl:order-2 @2xl:ml-auto @2xl:w-auto" :class="activePlaylist ? 'order-2' : 'order-1'">
+              <div class="flex w-full min-w-0 items-center gap-3 @2xl:order-2 @2xl:ml-auto @2xl:w-auto" :class="activePlaylist || smartPlays ? 'order-2' : 'order-1'">
                 <label class="flex h-10 min-w-0 flex-1 items-center gap-2 border border-line bg-surface px-3 @2xl:w-64 @2xl:flex-none"><Search :size="16" class="text-dim" /><input v-model="query" class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-dim" :placeholder="t('library.search')" aria-label="Search library" /></label>
-                <button v-if="!activePlaylist && !isGroup" type="button" class="grid h-10 w-10 shrink-0 place-items-center border border-line text-dim transition-colors hover:border-accent hover:text-accent disabled:opacity-50" :title="t('library.refresh')" :disabled="refreshing" @click="emit('refresh')"><RefreshCw :size="16" :stroke-width="2" :class="refreshing ? 'animate-spin' : ''" /></button>
+                <button v-if="!activePlaylist && !smartPlays && !isGroup" type="button" class="grid h-10 w-10 shrink-0 place-items-center border border-line text-dim transition-colors hover:border-accent hover:text-accent disabled:opacity-50" :title="t('library.refresh')" :disabled="refreshing" @click="emit('refresh')"><RefreshCw :size="16" :stroke-width="2" :class="refreshing ? 'animate-spin' : ''" /></button>
               </div>
-              <div v-if="activePlaylist || isGroup" class="flex items-center gap-3 @2xl:order-1" :class="activePlaylist ? 'order-1' : 'order-2'">
-                <template v-if="activePlaylist">
+              <div v-if="activePlaylist || smartPlays || isGroup" class="flex items-center gap-3 @2xl:order-1" :class="activePlaylist || smartPlays ? 'order-1' : 'order-2'">
+                <template v-if="activePlaylist || smartPlays">
                   <button type="button" class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 bg-accent px-4 text-[13px] font-bold text-accent-fg transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50" :disabled="!tracks.length" @click="playFirst"><Play :size="15" :stroke-width="2.2" />{{ t("library.play") }}</button>
-                  <button type="button" class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 border border-line px-4 text-[13px] font-semibold transition-colors hover:border-accent hover:text-accent" @click="emit('edit', activePlaylist.id)"><Pencil :size="15" />{{ t("library.edit") }}</button>
+                  <button v-if="activePlaylist" type="button" class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 border border-line px-4 text-[13px] font-semibold transition-colors hover:border-accent hover:text-accent" @click="emit('edit', activePlaylist.id)"><Pencil :size="15" />{{ t("library.edit") }}</button>
                 </template>
                 <button v-else type="button" class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 bg-accent px-4 text-[13px] font-bold text-accent-fg transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50" :disabled="!tracks.length" @click="playFirst"><Play :size="15" :stroke-width="2.2" />{{ t("library.collections.playAll") }}</button>
               </div>
               <div class="order-3 flex items-center gap-3">
-                <TrackSortMenu :context="sortContext" />
+                <TrackSortMenu v-if="!smartPlays" :context="sortContext" />
                 <ViewModeToggle />
                 <button type="button" class="grid h-10 w-10 shrink-0 place-items-center border transition-colors" :class="selectMode ? 'border-accent bg-accent text-accent-fg' : 'border-line text-dim hover:border-accent hover:text-accent'" :title="t('library.selectMode')" @click="toggleSelectMode"><ListChecks :size="16" :stroke-width="2" /></button>
               </div>

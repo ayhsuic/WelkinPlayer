@@ -5,14 +5,14 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { ChevronLeft, ChevronRight, HeartHandshake, Menu, Music2, Settings2 } from "@lucide/vue";
+import { HeartHandshake, LogOut, Menu, Music2, Settings2 } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { libraryNavItems, primaryNavItems, systemNavItems, type NavItem } from "../lib/app";
 import type { View } from "../lib/app";
 import type { SourceKind } from "../lib/sources";
 
 const props = withDefaults(defineProps<{ activeView: View; placement: "header" | "sidebar" | "mobile"; collapsed?: boolean; headerHidden?: boolean; activePlaylistId?: string | null; activeArtist?: string | null; activeAlbum?: string | null; activeYear?: string | null; activeGenre?: string | null; activeSourceKind?: SourceKind | null }>(), { collapsed: false, headerHidden: false, activePlaylistId: null, activeArtist: null, activeAlbum: null, activeYear: null, activeGenre: null, activeSourceKind: null });
-const emit = defineEmits<{ navigate: [view: View]; toggle: []; createPlaylist: []; openPlaylist: [id: string]; drawer: [open: boolean] }>();
+const emit = defineEmits<{ navigate: [view: View]; quit: []; createPlaylist: []; openPlaylist: [id: string]; drawer: [open: boolean] }>();
 const { t } = useI18n();
 const playlistsActive = computed(() => props.activeView === "playlists" || (props.activeView === "tracks" && !!props.activePlaylistId));
 /** Drawer navigation (hamburger on the mobile header): overlay slide-in from the left. */
@@ -92,13 +92,15 @@ function navItemActive(item: NavItem): boolean {
     <Teleport to="body">
       <Transition name="sheet-backdrop"><div v-if="drawerOpen" class="fixed inset-0 z-[70] bg-black/40 md:hidden" @pointerdown="closeDrawer"></div></Transition>
       <Transition name="drawer">
-        <section v-if="drawerOpen" ref="drawerRoot" class="drawer-shell fixed bottom-0 left-0 top-0 z-[71] flex w-[280px] flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface pb-3 md:hidden" style="padding-top: env(safe-area-inset-top)" role="dialog" aria-modal="true" :aria-label="t('nav.navigation')">
+        <section v-if="drawerOpen" ref="drawerRoot" class="drawer-shell fixed bottom-0 left-0 top-0 z-[71] flex w-[280px] flex-col overflow-hidden border-r border-line bg-surface pb-3 md:hidden" style="padding-top: env(safe-area-inset-top)" role="dialog" aria-modal="true" :aria-label="t('nav.navigation')">
           <div class="flex items-center justify-between border-b border-line px-5 py-4">
             <span class="flex items-center gap-2">
               <span class="sidebar-logo grid h-7 w-7 shrink-0 place-items-center bg-accent text-accent-fg" aria-hidden="true"><Music2 :size="14" :stroke-width="2.2" /></span>
               <span class="text-sm font-black uppercase tracking-[0.25em]">Welkin</span>
             </span>
           </div>
+          <!-- Nav list: scrolls between the fixed brand above and the fixed footer below. -->
+          <div class="drawer-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <nav class="flex flex-col gap-px p-3">
             <button v-for="item in primaryNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" :aria-current="navItemActive(item) ? 'page' : undefined" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
           </nav>
@@ -108,31 +110,36 @@ function navItemActive(item: NavItem): boolean {
           </nav>
           <div class="mx-3 border-t border-line"></div>
           <nav class="flex flex-col gap-px p-3">
-            <button v-for="item in systemNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" :aria-current="navItemActive(item) ? 'page' : undefined" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
+            <button v-for="item in systemNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" :aria-current="navItemActive(item) ? 'page' : undefined" @click="navigateDrawer(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate" :class="item.id === 'webdav' ? 'normal-case' : ''">{{ t(item.labelKey) }}</span></button>
           </nav>
-          <div class="mt-auto border-t border-line pt-3">
+          </div>
+          <div class="shrink-0 border-t border-line pt-3">
             <nav class="flex flex-col gap-px p-3">
               <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'settings' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" :aria-current="activeView === 'settings' ? 'page' : undefined" @click="navigateDrawer('settings')"><Settings2 :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.settings") }}</span></button>
               <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="activeView === 'sponsor' ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" :aria-current="activeView === 'sponsor' ? 'page' : undefined" @click="navigateDrawer('sponsor')"><HeartHandshake :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.sponsor") }}</span></button>
-              <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] text-muted transition-colors ak-hover hover:text-fg" @click="closeDrawer"><ChevronLeft :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("controls.collapse") }}</span></button>
+              <button type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] text-muted transition-colors ak-hover hover:text-fg" @click="emit('quit')"><LogOut :size="18" :stroke-width="1.8" /><span class="truncate">{{ t("nav.quit") }}</span></button>
             </nav>
           </div>
         </section>
       </Transition>
     </Teleport>
   </template>
-  <aside v-if="placement === 'sidebar'" class="sidebar-shell hidden min-h-0 shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface md:flex" :class="{ 'is-collapsed': collapsed }">
+  <aside v-if="placement === 'sidebar'" class="sidebar-shell hidden min-h-0 shrink-0 flex-col overflow-hidden border-r border-line bg-surface md:flex" :class="{ 'is-collapsed': collapsed }">
     <div class="sidebar-brand flex items-center border-b border-line pb-5" :class="collapsed ? 'justify-center' : 'gap-3'"><span class="sidebar-logo grid h-9 w-9 shrink-0 place-items-center bg-accent text-accent-fg" aria-hidden="true"><Music2 :size="18" :stroke-width="2.2" /></span><div class="sidebar-brand-copy"><p class="text-sm font-black uppercase tracking-[0.25em] leading-none">Welkin</p></div></div>
+    <!-- Nav list: the only scrolling part. The brand above and the footer below stay put. -->
+    <div class="sidebar-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
     <nav class="flex flex-col gap-px" :class="collapsed ? 'mt-4' : 'mt-6'"><button v-for="item in primaryNavItems" :key="item.id" class="relative flex h-11 items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t(item.labelKey) : undefined" :aria-current="navItemActive(item) ? 'page' : undefined" @click="emit('navigate', item.id)"><component :is="item.icon" :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(item.labelKey) }}</span></button></nav>
     <div class="mt-5 border-t border-line pt-4">
       <nav class="flex flex-col gap-px"><button v-for="item in libraryNavItems" :key="item.id" class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t(item.labelKey) : undefined" :aria-current="navItemActive(item) ? 'page' : undefined" @click="emit('navigate', item.id)"><component :is="item.icon" :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(item.labelKey) }}</span></button></nav>
       <div class="my-3 border-t border-line"></div>
-      <nav class="flex flex-col gap-px"><button v-for="item in systemNavItems" :key="item.id" class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t(item.labelKey) : undefined" :aria-current="navItemActive(item) ? 'page' : undefined" @click="emit('navigate', item.id)"><component :is="item.icon" :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(item.labelKey) }}</span></button></nav>
+      <nav class="flex flex-col gap-px"><button v-for="item in systemNavItems" :key="item.id" class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', navItemActive(item) ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t(item.labelKey) : undefined" :aria-current="navItemActive(item) ? 'page' : undefined" @click="emit('navigate', item.id)"><component :is="item.icon" :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate" :class="item.id === 'webdav' ? 'normal-case' : ''">{{ t(item.labelKey) }}</span></button></nav>
     </div>
-    <div class="mt-auto border-t border-line pt-3">
+    </div>
+    <!-- Footer: fixed bottom bar; never scrolls with the nav list. -->
+    <div class="sidebar-footer shrink-0 border-t border-line pt-3">
       <button class="relative flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'settings' ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t('nav.settings') : undefined" :aria-current="activeView === 'settings' ? 'page' : undefined" @click="emit('navigate', 'settings')"><Settings2 :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.settings") }}</span></button>
       <button type="button" class="relative mt-1.5 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] transition-colors" :class="[collapsed ? 'justify-center px-0' : 'gap-2 px-3', activeView === 'sponsor' ? 'ak-select' : 'text-muted ak-hover hover:text-fg']" :title="collapsed ? t('nav.sponsor') : undefined" :aria-current="activeView === 'sponsor' ? 'page' : undefined" @click="emit('navigate', 'sponsor')"><HeartHandshake :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.sponsor") }}</span></button>
-      <button type="button" class="sidebar-collapse-btn relative mt-1 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] text-muted transition-colors hover:text-fg" :class="collapsed ? 'justify-center px-0' : 'gap-2 px-3'" :title="t(collapsed ? 'controls.expand' : 'controls.collapse')" @click="emit('toggle')"><ChevronRight v-if="collapsed" :size="16" :stroke-width="1.8" /><ChevronLeft v-else :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t(collapsed ? 'controls.expand' : 'controls.collapse') }}</span></button>
+      <button type="button" class="relative mt-1.5 flex h-11 w-full items-center border border-transparent text-left text-[13px] font-semibold uppercase tracking-[0.2em] text-muted transition-colors hover:text-fg" :class="collapsed ? 'justify-center px-0' : 'gap-2 px-3'" :title="t('nav.quit')" @click="emit('quit')"><LogOut :size="16" :stroke-width="1.8" /><span class="sidebar-nav-label truncate">{{ t("nav.quit") }}</span></button>
     </div>
   </aside>
 </template>

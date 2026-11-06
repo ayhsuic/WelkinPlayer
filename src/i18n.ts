@@ -24,6 +24,7 @@ const messages = {
       stats: "播放排名",
       settings: "设置",
       sponsor: "赞助",
+      quit: "退出软件",
       playlists: "歌单",
       more: "更多",
       navigation: "导航",
@@ -368,6 +369,8 @@ const messages = {
       total: "{count} 个歌单",
       edit: "编辑歌单",
       open: "打开歌单",
+      smart: "智能歌单",
+      recentTitle: "播放排名",
     },
     settings: {
       eyebrow: "系统 / 配置",
@@ -885,6 +888,7 @@ const messages = {
       stats: "Play ranking",
       settings: "Settings",
       sponsor: "Sponsor",
+      quit: "Quit app",
       playlists: "Playlists",
       more: "More",
       navigation: "Navigation",
@@ -1229,6 +1233,8 @@ const messages = {
       total: "{count} playlists",
       edit: "Edit playlist",
       open: "Open playlist",
+      smart: "Smart playlist",
+      recentTitle: "Play ranking",
     },
     settings: {
       eyebrow: "System / Config",
