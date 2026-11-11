@@ -52,6 +52,8 @@ import { useUpdateStore } from "./stores/update";
 import AppNavigation from "./components/AppNavigation.vue";
 import QueuePanel from "./components/QueuePanel.vue";
 import PlayerBar from "./components/PlayerBar.vue";
+import PlayerNavBar from "./components/PlayerNavBar.vue";
+import MobileNavSheet from "./components/MobileNavSheet.vue";
 import AudioQualityModal from "./components/AudioQualityModal.vue";
 import SetupWizard from "./components/SetupWizard.vue";
 import ToastStack from "./components/ToastStack.vue";
@@ -117,6 +119,8 @@ const editingLyricsTrack = ref<Track | null>(null);
 const editingTrack = ref<Track | null>(null);
 const viewingTrack = ref<Track | null>(null);
 const showQueue = ref(false);
+/** The bottom sheet the mobile navigation strip pulls up. */
+const sheetOpen = ref(false);
 /** Whether the AMLL full-screen player should be open. */
 const amllActive = computed(() => view.value === "player" && !!player.currentTrack && lyrics.useAmll);
 /** Stays true until AmllPlayerView finishes its slide-out, then it unmounts. */
@@ -349,6 +353,25 @@ function toggleQueue() {
 function openQueue() { showQueue.value = true; }
 function closeQueue() { showQueue.value = false; }
 
+/**
+ * The mobile strip's tap: back to the wall. Until the cover wall exists, that
+ * is the overview page, which is the closest thing to "home".
+ */
+function goHome() { sheetOpen.value = false; navigate("library"); }
+
+/**
+ * The strip's long press: locate the current track. There is no cover wall to
+ * push a camera toward yet, so this shows where the track sits in the queue
+ * while keeping the user on the page they asked for.
+ * TODO: replace with a wall camera focus once the wall lands.
+ */
+function locateCurrent() {
+  if (baseView.value !== "library") navigate("library");
+  showQueue.value = true;
+}
+
+function onSheetNavigate(next: View) { navigate(next); }
+
 /** Background update probe at boot; a failure is intentionally silent. */
 async function checkUpdatesOnBoot() {
   try {
@@ -451,7 +474,9 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
       </main>
       <Transition name="queue-panel"><div v-if="showQueue" class="absolute inset-y-0 right-0 z-20 w-80 border-l border-line bg-surface"><QueuePanel @close="closeQueue" /></div></Transition>
     </div>
-    <PlayerBar v-if="player.currentTrack" @open="navigate('player')" @queue="toggleQueue" @open-artist="openArtist" @open-album="openAlbum" />
+    <PlayerBar v-if="player.currentTrack" class="hidden md:block" @open="navigate('player')" @queue="toggleQueue" @open-artist="openArtist" @open-album="openAlbum" />
+    <PlayerNavBar class="md:hidden" :can-skip="player.queue.length > 1" @home="goHome" @previous="player.previous()" @next="player.next()" @locate="locateCurrent" @sheet="sheetOpen = true" />
+    <MobileNavSheet v-model:open="sheetOpen" :active-view="baseView" @navigate="onSheetNavigate" />
     <ToastStack />
     <AudioQualityModal />
     <UpdateModal @friendly-error="showError" />
