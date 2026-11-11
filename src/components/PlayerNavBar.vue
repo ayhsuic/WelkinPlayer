@@ -63,6 +63,9 @@ function clearLongPress() {
 
 function onTouchStart(event: TouchEvent) {
   if (event.touches.length !== 1) return;
+  // Claim the touch before the engine can start a page scroll: a scroll takes
+  // over the stream and cancels it, so the swipe never reaches the axis lock.
+  if (event.cancelable) event.preventDefault();
   const touch = event.touches[0];
   tracking = true;
   moved = false;
@@ -92,10 +95,14 @@ function onTouchMove(event: TouchEvent) {
     if (Math.hypot(dx, dy) < AXIS_LOCK_PX) return;
     moved = true;
     clearLongPress();
-    const rect = root.value?.getBoundingClientRect();
+    // The capsule floats above the screen's bottom edge, so its own rectangle
+    // says nothing about where the system gesture strips are: the exclusion
+    // zones must be measured against the viewport, not against the capsule.
+    const viewWidth = window.innerWidth;
+    const viewHeight = window.innerHeight;
     if (Math.abs(dx) >= Math.abs(dy)) {
-      // Side strips belong to the system's back gesture.
-      const inSideStrip = !rect || startX < rect.left + EDGE_PX || startX > rect.right - EDGE_PX;
+      // The side strips belong to the system's back gesture.
+      const inSideStrip = startX < EDGE_PX || startX > viewWidth - EDGE_PX;
       if (inSideStrip) {
         tracking = false;
         return;
@@ -103,7 +110,7 @@ function onTouchMove(event: TouchEvent) {
       axis = "x";
     } else if (dy < 0) {
       // The bottom strip belongs to the system's home gesture.
-      const inBottomStrip = !rect || startY > rect.bottom - EDGE_PX;
+      const inBottomStrip = startY > viewHeight - EDGE_PX;
       if (inBottomStrip) {
         tracking = false;
         return;
@@ -154,9 +161,10 @@ function onTouchCancel() {
 onMounted(() => {
   const el = root.value;
   if (!el) return;
-  // `touchmove` must be non-passive: a passive listener cannot cancel the
-  // scroll, and the gesture would be lost mid-swipe.
-  el.addEventListener("touchstart", onTouchStart, { passive: true });
+  // `touchstart` must be non-passive too: cancelling the start is the only
+  // reliable way to keep a scroll from hijacking the gesture, and `touchmove`
+  // must stay non-passive so the page cannot scroll under an active swipe.
+  el.addEventListener("touchstart", onTouchStart, { passive: false });
   el.addEventListener("touchmove", onTouchMove, { passive: false });
   el.addEventListener("touchend", onTouchEnd, { passive: true });
   el.addEventListener("touchcancel", onTouchCancel, { passive: true });
