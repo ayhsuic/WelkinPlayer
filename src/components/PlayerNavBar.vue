@@ -174,22 +174,58 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    ref="root"
-    class="player-nav shrink-0 border-t border-line bg-surface md:hidden"
-    role="group"
-    aria-label="Navigation gestures"
-    :style="{ paddingBottom: 'env(safe-area-inset-bottom)' }"
-  />
+  <div ref="root" class="player-nav" role="group" aria-label="Navigation gestures">
+    <span class="player-nav-grip" aria-hidden="true"><i /><i /><i /></span>
+  </div>
 </template>
 
 <style scoped>
+/*
+ * A small floating capsule rather than a full-width bar: it carries no content,
+ * so it only needs to be big enough to catch a thumb. The three dots are a
+ * touch-affordance, not a progress indicator.
+ */
 .player-nav {
-  height: 36px;
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 14px);
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 136px;
+  height: 38px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   touch-action: none;
   /* A long press must not open the text-selection / callout menu. */
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+}
+
+.player-nav-grip {
+  display: flex;
+  gap: 6px;
+  opacity: 0.3;
+}
+
+.player-nav-grip i {
+  width: 2px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--fg);
+}
+
+/* Desktop keeps the full player bar, so the strip is mobile-only. */
+@media (min-width: 768px) {
+  .player-nav {
+    display: none;
+  }
 }
 </style>

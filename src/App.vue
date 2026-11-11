@@ -457,10 +457,10 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
   <Transition name="info"><SponsorView v-if="view === 'sponsor'" @back="closeOverlay" /></Transition>
   <SetupWizard v-if="booted && profile.firstRun" v-model:theme="theme" v-model:accent="accent" @finish="onWizardFinish" />
   <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg" :class="booted ? '' : 'opacity-0'">
-    <AppNavigation placement="header" :active-view="baseView" :header-hidden="headerHidden" @navigate="navigate" @drawer="drawerOpen = $event" />
+    <AppNavigation placement="header" :active-view="baseView" :header-hidden="headerHidden || baseView === 'wall'" @navigate="navigate" @drawer="drawerOpen = $event" />
     <div class="relative flex min-h-0 flex-1">
       <AppNavigation placement="sidebar" :active-view="baseView" :collapsed="sidebarCollapsed" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-year="yearFilter" :active-genre="genreFilter" :active-source="sourceFilter" @navigate="navigate" @toggle="toggleSidebar" @create-playlist="createPlaylist" @open-playlist="openUserPlaylist" />
-      <main class="min-w-0 flex-1 overflow-y-auto" :style="headerHidden && !drawerOpen ? { paddingTop: 'env(safe-area-inset-top)' } : undefined">
+      <main class="relative min-w-0 flex-1 overflow-y-auto" :style="(headerHidden || baseView === 'wall') && !drawerOpen ? { paddingTop: 'env(safe-area-inset-top)' } : undefined">
         <Transition name="page" mode="out-in">
           <WallView v-if="baseView === 'wall'" key="wall" :focus-token="wallFocusToken" />
           <LibraryView v-else-if="baseView === 'library'" key="library" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
@@ -479,7 +479,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
       <Transition name="queue-panel"><div v-if="showQueue" class="absolute inset-y-0 right-0 z-20 w-80 border-l border-line bg-surface"><QueuePanel @close="closeQueue" /></div></Transition>
     </div>
     <PlayerBar v-if="player.currentTrack" class="hidden md:block" @open="navigate('player')" @queue="toggleQueue" @open-artist="openArtist" @open-album="openAlbum" />
-    <PlayerNavBar class="md:hidden" :can-skip="player.queue.length > 1" @home="goHome" @previous="player.previous()" @next="player.next()" @locate="locateCurrent" @sheet="sheetOpen = true" />
+    <PlayerNavBar :can-skip="player.queue.length > 1" @home="goHome" @previous="player.previous()" @next="player.next()" @locate="locateCurrent" @sheet="sheetOpen = true" />
     <MobileNavSheet v-model:open="sheetOpen" :active-view="baseView" @navigate="onSheetNavigate" />
     <ToastStack />
     <AudioQualityModal />

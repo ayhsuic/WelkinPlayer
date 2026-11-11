@@ -202,11 +202,10 @@ defineExpose({ focusCurrent, focusFirst });
 
 <style scoped>
 .wall-stage {
-  position: relative;
-  min-height: 0;
-  flex: 1;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
-  background: var(--surface);
+  background: var(--bg);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
