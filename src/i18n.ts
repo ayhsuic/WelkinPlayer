@@ -10,6 +10,7 @@ export type Locale = "zh-CN" | "en";
 const messages = {
   "zh-CN": {
     nav: {
+      wall: "封面墙",
       library: "首页",
       favorites: "我喜欢",
       queue: "队列",
@@ -859,6 +860,7 @@ const messages = {
   },
   en: {
     nav: {
+      wall: "Cover wall",
       library: "Home",
       favorites: "Favorites",
       queue: "Queue",

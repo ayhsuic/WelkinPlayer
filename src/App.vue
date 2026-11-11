@@ -54,6 +54,7 @@ import QueuePanel from "./components/QueuePanel.vue";
 import PlayerBar from "./components/PlayerBar.vue";
 import PlayerNavBar from "./components/PlayerNavBar.vue";
 import MobileNavSheet from "./components/MobileNavSheet.vue";
+import WallView from "./components/wall/WallView.vue";
 import AudioQualityModal from "./components/AudioQualityModal.vue";
 import SetupWizard from "./components/SetupWizard.vue";
 import ToastStack from "./components/ToastStack.vue";
@@ -121,6 +122,8 @@ const viewingTrack = ref<Track | null>(null);
 const showQueue = ref(false);
 /** The bottom sheet the mobile navigation strip pulls up. */
 const sheetOpen = ref(false);
+/** Bumped to ask the cover wall to re-centre on the playing track. */
+const wallFocusToken = ref(0);
 /** Whether the AMLL full-screen player should be open. */
 const amllActive = computed(() => view.value === "player" && !!player.currentTrack && lyrics.useAmll);
 /** Stays true until AmllPlayerView finishes its slide-out, then it unmounts. */
@@ -354,20 +357,20 @@ function openQueue() { showQueue.value = true; }
 function closeQueue() { showQueue.value = false; }
 
 /**
- * The mobile strip's tap: back to the wall. Until the cover wall exists, that
- * is the overview page, which is the closest thing to "home".
+ * The strip's tap: back to the cover wall, which is both the home page and the
+ * now-playing page.
  */
-function goHome() { sheetOpen.value = false; navigate("library"); }
+function goHome() { sheetOpen.value = false; navigate("wall"); }
 
 /**
- * The strip's long press: locate the current track. There is no cover wall to
- * push a camera toward yet, so this shows where the track sits in the queue
- * while keeping the user on the page they asked for.
- * TODO: replace with a wall camera focus once the wall lands.
+ * The strip's long press: locate the current track. On the wall that is a camera
+ * move onto the playing poster; from anywhere else it first goes home and then
+ * asks the wall to centre.
  */
 function locateCurrent() {
-  if (baseView.value !== "library") navigate("library");
-  showQueue.value = true;
+  sheetOpen.value = false;
+  if (baseView.value !== "wall") navigate("wall");
+  wallFocusToken.value += 1;
 }
 
 function onSheetNavigate(next: View) { navigate(next); }
@@ -459,7 +462,8 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
       <AppNavigation placement="sidebar" :active-view="baseView" :collapsed="sidebarCollapsed" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-year="yearFilter" :active-genre="genreFilter" :active-source="sourceFilter" @navigate="navigate" @toggle="toggleSidebar" @create-playlist="createPlaylist" @open-playlist="openUserPlaylist" />
       <main class="min-w-0 flex-1 overflow-y-auto" :style="headerHidden && !drawerOpen ? { paddingTop: 'env(safe-area-inset-top)' } : undefined">
         <Transition name="page" mode="out-in">
-          <LibraryView v-if="baseView === 'library'" key="library" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
+          <WallView v-if="baseView === 'wall'" key="wall" :focus-token="wallFocusToken" />
+          <LibraryView v-else-if="baseView === 'library'" key="library" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <TracksView v-else-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <SourcesView v-else-if="baseView === 'sources' || (baseView === 'source-browser' && !browseSourceId)" key="sources" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig('sources')" />
           <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate('sources')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />

@@ -4,9 +4,9 @@
  */
 
 import type { Component } from "vue";
-import { Activity, CalendarDays, Disc3, HardDrive, Library, ListMusic, ListOrdered, ListPlus, Mic2, Music } from "@lucide/vue";
+import { Activity, CalendarDays, Disc3, HardDrive, LayoutGrid, Library, ListMusic, ListOrdered, ListPlus, Mic2, Music } from "@lucide/vue";
 
-export type View = "library" | "tracks" | "queue" | "favorites" | "stats" | "artists" | "albums" | "years" | "genres" | "sources" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "settings" | "sponsor" | "player";
+export type View = "wall" | "library" | "tracks" | "queue" | "favorites" | "stats" | "artists" | "albums" | "years" | "genres" | "sources" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "settings" | "sponsor" | "player";
 export type Theme = "light" | "dark";
 export type Accent = "amber" | "orange" | "cyan" | "red" | "green" | "blue";
 
@@ -17,8 +17,9 @@ export interface NavItem {
   icon: Component;
 }
 
-/** Primary group: home and the play queue. */
+/** Primary group: the cover wall and the play queue. */
 export const primaryNavItems: NavItem[] = [
+  { id: "wall", labelKey: "nav.wall", index: "00", icon: LayoutGrid },
   { id: "library", labelKey: "nav.library", index: "01", icon: Library },
   { id: "queue", labelKey: "nav.queue", index: "02", icon: ListOrdered },
 ];
