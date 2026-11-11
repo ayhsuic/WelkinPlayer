@@ -58,11 +58,15 @@ semver = "1"
 
 # Password storage uses the platform-native keychain. Each backend is enabled
 # only for its own target so we never compile another OS's dependencies.
-[target.'cfg(target_os = "windows")'.dependencies]
-keyring = { version = "3", features = ["windows-native"] }
-
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
+# System media controls on macOS (Now Playing). Android implements its own native
+# MediaSession, so the crate is only pulled in for the desktop targets; Linux
+# enables it (with a different backend) below.
+souvlaki = "0.8"
+# Signed updates published as GitHub release assets. Desktop only: Android queries
+# the GitHub Releases API and downloads the APK manually instead.
+tauri-plugin-updater = "3.0.0-alpha.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
@@ -92,15 +96,6 @@ gtk = { version = "0.11.5", package = "gtk4" }
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 tauri-runtime-wry = { version = "3.0.0-alpha.5" }
 tauri-plugin-dialog = "3.0.0-alpha.4"
-
-[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
-# System media controls on desktop: Windows SMTC and macOS Now Playing. Android
-# implements its own native MediaSession, so the crate is only pulled in for the
-# desktop targets; Linux enables it (with a different backend) below.
-souvlaki = "0.8"
-# Signed, per-platform updates published as GitHub release assets. Desktop only:
-# Android queries the GitHub Releases API and downloads the APK manually instead.
-tauri-plugin-updater = "3.0.0-alpha.3"
 
 # Audio decoding/rendering is shared by the desktop and Android targets: `cpal`
 # drives WASAPI / CoreAudio / ALSA on desktop and Oboe (AAudio / OpenSL ES) on

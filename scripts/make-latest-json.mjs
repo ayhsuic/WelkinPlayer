@@ -11,7 +11,6 @@
 // the one `scripts/stage-bundles.mjs` writes:
 //
 //   dist/
-//     desktop-windows-x86_64/  Welkin-setup.exe{,.sig} ...
 //     desktop-darwin-aarch64/  Welkin_aarch64.app.tar.gz{,.sig} ...
 //     desktop-linux-x86_64/    Welkin.AppImage{,.sig} ...
 //
@@ -40,7 +39,6 @@ if (!repo || !tag || !version) {
 
 /** Updater artifact extension to prefer for each OS. */
 const PREFERRED = {
-  windows: [".exe", ".msi"],
   darwin: [".app.tar.gz"],
   linux: [".AppImage"],
 };

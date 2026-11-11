@@ -64,8 +64,6 @@ function collect(dir) {
 function classify(name) {
   const lower = name.toLowerCase();
   if (lower.endsWith(".sig") || lower === "latest.json") return null;
-  if (lower.endsWith(".exe")) return { group: "Windows", rank: 0, hint: "安装向导（NSIS），支持自动更新" };
-  if (lower.endsWith(".msi")) return { group: "Windows", rank: 1, hint: "MSI 安装包，适合批量部署" };
   if (lower.endsWith(".dmg")) return { group: "macOS", rank: 0, hint: macHint(name) };
   if (lower.endsWith(".app.tar.gz")) return { group: "macOS", rank: 2, hint: "自动更新用的应用包，无需手动下载" };
   if (lower.endsWith(".appimage")) return { group: "Linux", rank: 0, hint: "免安装，赋予可执行权限后直接运行" };
@@ -128,7 +126,7 @@ function androidAbi(name) {
   return "universal";
 }
 
-const order = ["Windows", "macOS", "Linux", "Android"];
+const order = ["macOS", "Linux", "Android"];
 const groups = new Map(order.map((group) => [group, []]));
 for (const name of collect(dist)) {
   const entry = classify(name);
