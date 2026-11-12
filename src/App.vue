@@ -49,7 +49,6 @@ import { useCacheStore } from "./stores/cache";
 import { useLicenseStore } from "./stores/license";
 import { useWindowBehaviorStore } from "./stores/windowBehavior";
 import { useUpdateStore } from "./stores/update";
-import AppNavigation from "./components/AppNavigation.vue";
 import QueuePanel from "./components/QueuePanel.vue";
 import PlayerBar from "./components/PlayerBar.vue";
 import PlayerNavBar from "./components/PlayerNavBar.vue";
@@ -98,7 +97,6 @@ const OVERLAY_VIEWS: ReadonlySet<View> = new Set(["player", "track-info", "lyric
 const baseView = ref<View>(OVERLAY_VIEWS.has(view.value) ? "library" : view.value);
 const theme = ref<Theme>(localStorage.getItem("welkin-theme") === "dark" ? "dark" : "light");
 const accent = ref<Accent>(readAccent());
-const sidebarCollapsed = ref(localStorage.getItem("welkin-sidebar-collapsed") === "1");
 const downloadingTrackId = ref<number | null>(null);
 const booted = ref(false);
 const playlistFilter = ref<string | null>(null);
@@ -282,46 +280,7 @@ function readAccent(): Accent { const value = localStorage.getItem("welkin-accen
 function getViewFromHash(): View { const route = window.location.hash.slice(1); return route === "settings" || route === "sponsor" || route === "player" || route === "tracks" || route === "queue" || route === "favorites" || route === "stats" || route === "artists" || route === "albums" || route === "years" || route === "genres" || route === "sources" || route === "source-config" || route === "source-browser" || route === "playlists" || route === "playlist-new" || route === "lyrics-edit" || route === "track-edit" || route === "track-info" ? route : "library"; }
 function setView(nextView: View) { view.value = nextView; window.location.hash = nextView === "library" ? "" : nextView; }
 function clearCollectionFilters() { playlistFilter.value = null; artistFilter.value = null; albumFilter.value = null; yearFilter.value = null; genreFilter.value = null; sourceFilter.value = null; }
-/**
- * Mobile header auto-hide: scrolling any content area down collapses the
- * header and shifts its safe-area inset onto <main>, so the category tabs sit
- * directly under the status bar; scrolling up (or opening the drawer) restores
- * it. Capture-phase scroll covers every nested scroll container (main, category
- * panels, track lists) without wiring scroll events through each view.
- */
-const headerHidden = ref(false);
-const drawerOpen = ref(false);
-let headerLastTop = 0;
-let headerLastEl: Element | null = null;
-let headerScrollTick = false;
-
-function handleHeaderScroll(event: Event) {
-  const el = event.target as Element | null;
-  if (!el || !(el instanceof Element)) return;
-  // Scrolling inside the drawer overlay must not hide the header behind it.
-  if (el.closest?.(".drawer-shell")) return;
-  if (headerLastEl !== el) {
-    headerLastEl = el;
-    headerLastTop = el.scrollTop ?? 0;
-    return;
-  }
-  const top = el.scrollTop ?? 0;
-  const delta = top - headerLastTop;
-  headerLastTop = top;
-  if (Math.abs(delta) < 6) return;
-  headerHidden.value = delta > 0 && top > 40;
-}
-
-function onHeaderScrollCapture(event: Event) {
-  if (headerScrollTick) return;
-  headerScrollTick = true;
-  requestAnimationFrame(() => {
-    headerScrollTick = false;
-    handleHeaderScroll(event);
-  });
-}
-
-function navigate(nextView: View) { clearCollectionFilters(); setView(nextView); headerHidden.value = false; }
+function navigate(nextView: View) { clearCollectionFilters(); setView(nextView); }
 function syncViewFromHash() { view.value = getViewFromHash(); }
 function openUserPlaylist(id: string) { clearCollectionFilters(); playlistFilter.value = id; setView("tracks"); }
 /** Open a source in the file-manager browser instead of the flat track list. */
@@ -420,7 +379,6 @@ async function downloadMetadata(track: Track) {
     pushToast("error", t("library.menu.metadataFailed", { value: friendlyError(error) }));
   } finally { downloadingTrackId.value = null; }
 }
-function toggleSidebar() { sidebarCollapsed.value = !sidebarCollapsed.value; localStorage.setItem("welkin-sidebar-collapsed", sidebarCollapsed.value ? "1" : "0"); }
 /** Re-verify the Pro license from scratch whenever the app regains focus. */
 function recheckLicense() { void license.refresh(); }
 function onGlobalKeydown(event: KeyboardEvent) {
@@ -435,8 +393,8 @@ function onGlobalKeydown(event: KeyboardEvent) {
   player.togglePlayback();
 }
 
-onMounted(() => { windowBehavior.sync(); window.addEventListener("hashchange", syncViewFromHash); window.addEventListener("keydown", onGlobalKeydown); window.addEventListener("beforeunload", savePlaybackPositionOnLeave); window.addEventListener("pagehide", savePlaybackPositionOnLeave); window.addEventListener("focus", recheckLicense); document.addEventListener("visibilitychange", onVisibilityChange); document.addEventListener("scroll", onHeaderScrollCapture, true); void initAudio(); void network.start(); void cache.start(); bootDesktopLyrics(); bootMediaControl(); void invoke<string>("ping").catch((error) => console.warn("[welkin] ping failed", describeError(error))); void bootstrap(); });
-onUnmounted(() => { savePlaybackPosition(true); stopDesktopLyrics(); stopMediaControl(); window.removeEventListener("hashchange", syncViewFromHash); window.removeEventListener("keydown", onGlobalKeydown); window.removeEventListener("beforeunload", savePlaybackPositionOnLeave); window.removeEventListener("pagehide", savePlaybackPositionOnLeave); window.removeEventListener("focus", recheckLicense); document.removeEventListener("visibilitychange", onVisibilityChange); document.removeEventListener("scroll", onHeaderScrollCapture, true); unlistenPlayback?.(); unlistenPlayback = null; void profile.flush(); });
+onMounted(() => { windowBehavior.sync(); window.addEventListener("hashchange", syncViewFromHash); window.addEventListener("keydown", onGlobalKeydown); window.addEventListener("beforeunload", savePlaybackPositionOnLeave); window.addEventListener("pagehide", savePlaybackPositionOnLeave); window.addEventListener("focus", recheckLicense); document.addEventListener("visibilitychange", onVisibilityChange); void initAudio(); void network.start(); void cache.start(); bootDesktopLyrics(); bootMediaControl(); void invoke<string>("ping").catch((error) => console.warn("[welkin] ping failed", describeError(error))); void bootstrap(); });
+onUnmounted(() => { savePlaybackPosition(true); stopDesktopLyrics(); stopMediaControl(); window.removeEventListener("hashchange", syncViewFromHash); window.removeEventListener("keydown", onGlobalKeydown); window.removeEventListener("beforeunload", savePlaybackPositionOnLeave); window.removeEventListener("pagehide", savePlaybackPositionOnLeave); window.removeEventListener("focus", recheckLicense); document.removeEventListener("visibilitychange", onVisibilityChange); unlistenPlayback?.(); unlistenPlayback = null; void profile.flush(); });
 
 // Mirror the Rust playback context into the store. The queue / play intent / next
 // / previous all live in Rust now; this is the single channel that keeps the UI
@@ -457,12 +415,10 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
   <Transition name="info"><SponsorView v-if="view === 'sponsor'" @back="closeOverlay" /></Transition>
   <SetupWizard v-if="booted && profile.firstRun" v-model:theme="theme" v-model:accent="accent" @finish="onWizardFinish" />
   <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg" :class="booted ? '' : 'opacity-0'">
-    <AppNavigation placement="header" :active-view="baseView" :header-hidden="headerHidden || baseView === 'wall'" @navigate="navigate" @drawer="drawerOpen = $event" />
     <div class="relative flex min-h-0 flex-1">
-      <AppNavigation placement="sidebar" :active-view="baseView" :collapsed="sidebarCollapsed" :active-playlist-id="playlistFilter" :active-artist="artistFilter" :active-album="albumFilter" :active-year="yearFilter" :active-genre="genreFilter" :active-source="sourceFilter" @navigate="navigate" @toggle="toggleSidebar" @create-playlist="createPlaylist" @open-playlist="openUserPlaylist" />
-      <main class="relative min-w-0 flex-1 overflow-y-auto" :style="(headerHidden || baseView === 'wall') && !drawerOpen ? { paddingTop: 'env(safe-area-inset-top)' } : undefined">
+      <main class="relative min-w-0 flex-1 overflow-y-auto" :style="{ paddingTop: 'env(safe-area-inset-top)' }">
         <Transition name="page" mode="out-in">
-          <WallView v-if="baseView === 'wall'" key="wall" :focus-token="wallFocusToken" />
+          <WallView v-if="baseView === 'wall'" key="wall" :focus-token="wallFocusToken" @open-lyrics="navigate('player')" />
           <LibraryView v-else-if="baseView === 'library'" key="library" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <TracksView v-else-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <SourcesView v-else-if="baseView === 'sources' || (baseView === 'source-browser' && !browseSourceId)" key="sources" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig('sources')" />

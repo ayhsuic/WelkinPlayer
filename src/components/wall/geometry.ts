@@ -34,6 +34,8 @@ export type WallInstance = {
   y: number;
   width: number;
   height: number;
+  /** The grown poster of the block around the playing song. */
+  expanded?: boolean;
 };
 
 /** How big one cell is and how much air sits between posters. */
@@ -213,23 +215,28 @@ function buildInstance(
   blockRow: number,
   slotIndex: number,
   metrics: WallMetrics,
+  focus?: WallFocus | null,
 ): WallInstance {
   const repeatX = Math.floor(blockColumn / geometry.blocksPerRow);
   const repeatY = Math.floor(blockRow / geometry.blockRows);
   const localColumn = blockColumn - repeatX * geometry.blocksPerRow;
   const localRow = blockRow - repeatY * geometry.blockRows;
   const cellSlot = (localRow * geometry.blocksPerRow + localColumn) * SLOTS_PER_BLOCK + slotIndex;
-  const slot = slotsForBlock(localColumn, localRow)[slotIndex];
+  const grown = focus !== undefined && focus !== null && blockColumn === focus.block.column && blockRow === focus.block.row;
+  const slot = grown ? EXPANDED_SLOTS[slotIndex] : slotsForBlock(localColumn, localRow)[slotIndex];
   const pitch = pitchOf(metrics);
+  const expanded = grown && slotIndex === EXPANDED_SLOT_INDEX;
 
   return {
     id: `${cellSlot}:${repeatX}:${repeatY}`,
     // A cell seats whole blocks, so it usually holds more slots than songs; wrapping
     // fills the remainder instead of leaving a gap that would recur in every cell.
-    queueIndex: totalEntries > 0 ? cellSlot % totalEntries : -1,
+    // The grown poster is the one exception: it is the playing song itself.
+    queueIndex: expanded && focus ? focus.queueIndex : (totalEntries > 0 ? cellSlot % totalEntries : -1),
     cellSlot,
     repeatX,
     repeatY,
+    expanded,
     // The slot's own x/y is relative to the block, so the local block column and row
     // are what place it inside the cell.
     x: repeatX * geometry.cellWidth + localColumn * geometry.blockWidth + slot.x * pitch,
@@ -239,6 +246,75 @@ function buildInstance(
   };
 }
 
+/**
+ * One block grown around the playing song: the middle 6 x 6 becomes a single
+ * poster and the eleven posters that shared the block are pushed out into the
+ * ring it leaves. The ring is filled exactly — the left and right thirds hold
+ * four 3 x 2 posters each, the strip above the card holds two 3 x 1, the one
+ * below a single 6 x 1 — so the block still covers its 96 cells with twelve
+ * posters, with no gap and no overlap. That is the same construction rule the
+ * plain recipes follow, so a grown block cannot leave a hole either.
+ */
+const EXPANDED_SLOTS: Slot[] = [
+  { x: 3, y: 1, cols: 6, rows: 6 },
+  { x: 0, y: 0, cols: 3, rows: 2 },
+  { x: 0, y: 2, cols: 3, rows: 2 },
+  { x: 0, y: 4, cols: 3, rows: 2 },
+  { x: 0, y: 6, cols: 3, rows: 2 },
+  { x: 9, y: 0, cols: 3, rows: 2 },
+  { x: 9, y: 2, cols: 3, rows: 2 },
+  { x: 9, y: 4, cols: 3, rows: 2 },
+  { x: 9, y: 6, cols: 3, rows: 2 },
+  { x: 3, y: 0, cols: 3, rows: 1 },
+  { x: 6, y: 0, cols: 3, rows: 1 },
+  { x: 3, y: 7, cols: 6, rows: 1 },
+];
+
+/** The grown poster is the first slot of the expanded block. */
+const EXPANDED_SLOT_INDEX = 0;
+
+/**
+ * The block seating `queueIndex` that sits closest to a world point. The wall
+ * grows that one block around the playing song, so the card is always the copy
+ * of the song the camera is looking at rather than the first repeat in the field.
+ */
+export function blockForEntry(
+  geometry: WallGeometry,
+  totalEntries: number,
+  queueIndex: number,
+  point: { x: number; y: number },
+): { column: number; row: number } | null {
+  if (totalEntries <= 0 || queueIndex < 0 || queueIndex >= totalEntries) return null;
+
+  let best: { column: number; row: number } | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (let cellSlot = queueIndex; cellSlot < geometry.cellSlots; cellSlot += totalEntries) {
+    const blockInCell = Math.floor(cellSlot / SLOTS_PER_BLOCK);
+    const localColumn = blockInCell % geometry.blocksPerRow;
+    const localRow = Math.floor(blockInCell / geometry.blocksPerRow);
+    const blockX = localColumn * geometry.blockWidth;
+    const blockY = localRow * geometry.blockHeight;
+    const repeatX = Math.round((point.x - blockX - geometry.blockWidth / 2) / geometry.cellWidth);
+    const repeatY = Math.round((point.y - blockY - geometry.blockHeight / 2) / geometry.cellHeight);
+    const centerX = repeatX * geometry.cellWidth + blockX + geometry.blockWidth / 2;
+    const centerY = repeatY * geometry.cellHeight + blockY + geometry.blockHeight / 2;
+    const distance = (centerX - point.x) ** 2 + (centerY - point.y) ** 2;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = {
+        column: repeatX * geometry.blocksPerRow + localColumn,
+        row: repeatY * geometry.blockRows + localRow,
+      };
+    }
+  }
+
+  return best;
+}
+
+/** What a block grown around the playing song needs: which block, which song. */
+export type WallFocus = { block: { column: number; row: number }; queueIndex: number };
+
 /** Posters intersecting the viewport. Cost scales with what is on screen, never with queue length. */
 export function layoutWall(
   geometry: WallGeometry,
@@ -246,6 +322,7 @@ export function layoutWall(
   bounds: Bounds,
   overscan: number,
   metrics: WallMetrics,
+  focus?: WallFocus | null,
 ): WallInstance[] {
   if (totalEntries <= 0 || geometry.blockWidth <= 0 || geometry.blockHeight <= 0) return [];
 
@@ -264,7 +341,7 @@ export function layoutWall(
   for (let row = fromRow; row <= toRow; row += 1) {
     for (let column = fromColumn; column <= toColumn; column += 1) {
       for (let slotIndex = 0; slotIndex < SLOTS_PER_BLOCK; slotIndex += 1) {
-        const instance = buildInstance(geometry, totalEntries, column, row, slotIndex, metrics);
+        const instance = buildInstance(geometry, totalEntries, column, row, slotIndex, metrics, focus);
         const rect: Bounds = {
           left: instance.x,
           right: instance.x + instance.width,
