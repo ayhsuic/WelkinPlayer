@@ -122,7 +122,7 @@ function endSeek() {
 </script>
 
 <template>
-  <footer class="relative border-t border-line bg-surface">
+  <footer class="player-bar no-scrollbar relative border-t border-line bg-surface">
     <input
       :value="sliderValue"
       :style="{ '--fill': percent(sliderValue), '--buffered': percent(player.bufferedProgress) }"

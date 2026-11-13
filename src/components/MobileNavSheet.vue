@@ -41,7 +41,7 @@ function isActive(view: View): boolean {
     <Transition name="nav-sheet">
       <section
         v-if="open"
-        class="nav-sheet fixed inset-x-0 bottom-0 z-[71] flex max-h-[72vh] flex-col overflow-y-auto overscroll-contain border-t border-line bg-surface md:hidden"
+        class="nav-sheet no-scrollbar fixed inset-x-0 bottom-0 z-[71] flex max-h-[72vh] flex-col overflow-y-auto overscroll-contain border-t border-line bg-surface md:hidden"
         role="dialog"
         aria-modal="true"
         aria-label="navigation"

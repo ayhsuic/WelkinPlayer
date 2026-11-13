@@ -4,9 +4,9 @@
  */
 
 import type { Component } from "vue";
-import { Activity, CalendarDays, CircleCheck, Disc3, Folder, HardDriveDownload, LayoutGrid, Library, ListMusic, ListOrdered, ListPlus, Mic2, Music, Server } from "@lucide/vue";
+import { CalendarDays, CircleCheck, Disc3, Folder, HardDriveDownload, LayoutGrid, Library, ListMusic, ListOrdered, ListPlus, Mic2, Music, Server } from "@lucide/vue";
 
-export type View = "wall" | "library" | "tracks" | "queue" | "favorites" | "stats" | "artists" | "albums" | "years" | "genres" | "sources" | "folders" | "webdav" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "downloading" | "downloaded" | "settings" | "sponsor" | "player";
+export type View = "wall" | "library" | "tracks" | "queue" | "favorites" | "artists" | "albums" | "years" | "genres" | "sources" | "folders" | "webdav" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "downloading" | "downloaded" | "settings" | "sponsor" | "player";
 export type Theme = "light" | "dark";
 export type Accent = "amber" | "orange" | "cyan" | "red" | "green" | "blue";
 
@@ -34,12 +34,18 @@ export const libraryNavItems: NavItem[] = [
   { id: "years", labelKey: "nav.years", index: "08", icon: CalendarDays },
 ];
 
-/** System group: the two source kinds (kept separate on purpose) and play ranking. */
+/** System group: the two source kinds (kept separate on purpose). */
 export const systemNavItems: NavItem[] = [
   { id: "folders", labelKey: "nav.folders", index: "09", icon: Folder },
   { id: "webdav", labelKey: "nav.webdav", index: "10", icon: Server },
-  { id: "stats", labelKey: "nav.stats", index: "11", icon: Activity },
 ];
+
+/**
+ * Synthetic playlist id for the auto-generated "play ranking" playlist: the
+ * library sorted by play count, most played first. It has no stored playlist
+ * record, so the views resolve it from `profile.playCounts` instead.
+ */
+export const RECENT_PLAYS_ID = "builtin-recent-plays";
 
 /** The six swipeable category panels, in sidebar order. */
 export const categoryViews: View[] = ["playlists", "artists", "albums", "tracks", "genres", "years"];

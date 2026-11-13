@@ -182,7 +182,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="root" class="player-nav" role="group" aria-label="Navigation gestures">
+  <div ref="root" class="player-nav no-scrollbar" role="group" aria-label="Navigation gestures">
     <span class="player-nav-grip" aria-hidden="true"><i /><i /><i /></span>
   </div>
 </template>

@@ -525,12 +525,49 @@ html[data-accent="blue"] {
     background: transparent;
   }
 
+  /*
+   * Scrollbars auto-hide: the thumb stays transparent until its container is
+   * actually scrolling; App.vue toggles `.is-scrolling` for 700ms after each
+   * scroll event. `.no-scrollbar` opts an element out completely.
+   */
   ::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+
+  .is-scrolling::-webkit-scrollbar-thumb {
     background: var(--line-strong);
   }
 
-  ::-webkit-scrollbar-thumb:hover {
+  .is-scrolling::-webkit-scrollbar-thumb:hover {
     background: var(--accent);
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+
+  /* The bottom bar never draws a scrollbar, including any nested overflow. */
+  .player-bar,
+  .player-bar *,
+  .player-nav,
+  .player-nav *,
+  .nav-sheet,
+  .nav-sheet * {
+    scrollbar-width: none;
+  }
+
+  .player-bar *::-webkit-scrollbar,
+  .player-nav *::-webkit-scrollbar,
+  .nav-sheet *::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
   }
 }
 

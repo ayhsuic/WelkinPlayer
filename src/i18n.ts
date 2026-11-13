@@ -401,6 +401,8 @@ const messages = {
       total: "{count} 个歌单",
       edit: "编辑歌单",
       open: "打开歌单",
+      recentTitle: "播放排名",
+      smart: "智能歌单",
     },
     settings: {
       eyebrow: "系统 / 配置",
@@ -1309,6 +1311,8 @@ const messages = {
       total: "{count} playlists",
       edit: "Edit playlist",
       open: "Open playlist",
+      recentTitle: "Play ranking",
+      smart: "Smart playlist",
     },
     settings: {
       eyebrow: "System / Config",

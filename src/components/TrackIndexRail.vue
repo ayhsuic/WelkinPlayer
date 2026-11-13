@@ -4,7 +4,7 @@
 -->
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onBeforeUnmount, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { LetterIndexEntry } from "../lib/sort";
 
@@ -17,40 +17,12 @@ const rail = ref<HTMLElement | null>(null);
 const active = ref<string | null>(null);
 const dragging = ref(false);
 let hideTimer = 0;
-/** Idle hide: the rail fades out after a quiet period and reappears on scroll or touch. */
-const hidden = ref(false);
-let idleTimer = 0;
-const IDLE_HIDE_MS = 2000;
 /** Dedupes a tap, whose pointerdown and click both resolve to the same label. */
 let lastPick: { label: string; at: number } | null = null;
 
 const activeTop = ref("50%");
 
-function reveal() {
-  hidden.value = false;
-  window.clearTimeout(idleTimer);
-}
-
-function scheduleHide() {
-  window.clearTimeout(idleTimer);
-  idleTimer = window.setTimeout(() => {
-    if (!dragging.value) hidden.value = true;
-  }, IDLE_HIDE_MS);
-}
-
-/** Any list scroll brings the rail back for a while, so the position marker is never lost. */
-function onCaptureScroll() {
-  reveal();
-  scheduleHide();
-}
-
-onMounted(() => {
-  document.addEventListener("scroll", onCaptureScroll, true);
-  scheduleHide();
-});
 onBeforeUnmount(() => {
-  document.removeEventListener("scroll", onCaptureScroll, true);
-  window.clearTimeout(idleTimer);
   window.clearTimeout(hideTimer);
 });
 
@@ -90,7 +62,6 @@ function pickAt(clientY: number) {
 
 function onPointerDown(event: PointerEvent) {
   dragging.value = true;
-  reveal();
   window.clearTimeout(hideTimer);
   (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
   pickAt(event.clientY);
@@ -105,7 +76,6 @@ function onPointerUp(event: PointerEvent) {
   const el = event.currentTarget as HTMLElement;
   if (el.hasPointerCapture?.(event.pointerId)) el.releasePointerCapture(event.pointerId);
   clearPreview();
-  scheduleHide();
 }
 </script>
 
@@ -113,7 +83,7 @@ function onPointerUp(event: PointerEvent) {
   <div
     ref="rail"
     class="track-index"
-    :class="[dragging ? 'track-index--dragging' : '', hidden ? 'track-index--hidden' : '']"
+    :class="dragging ? 'track-index--dragging' : ''"
     role="listbox"
     :aria-label="t('library.titleIndex')"
     @pointerdown="onPointerDown"
@@ -157,12 +127,6 @@ function onPointerUp(event: PointerEvent) {
   touch-action: none;
   user-select: none;
   transition: opacity 240ms ease;
-}
-
-/* Idle state: fades out completely until the next scroll or touch. */
-.track-index--hidden {
-  opacity: 0;
-  pointer-events: none;
 }
 
 .track-index__item {

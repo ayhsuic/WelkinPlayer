@@ -68,7 +68,6 @@ import FavoritesView from "./views/FavoritesView.vue";
 import QueueView from "./views/QueueView.vue";
 import CategoriesView from "./views/CategoriesView.vue";
 import type { GroupKind } from "./lib/grouping";
-import StatsView from "./views/StatsView.vue";
 import DownloadingView from "./views/DownloadingView.vue";
 import DownloadedView from "./views/DownloadedView.vue";
 import SourcesView from "./views/SourcesView.vue";
@@ -81,6 +80,8 @@ import SourceConfigView from "./views/SourceConfigView.vue";
 
 const AmllPlayerView = defineAsyncComponent(() => import("./views/AmllPlayerView.vue"));
 
+/** Hash routes the app can restore on boot; must be initialised before `view` calls `getViewFromHash`. */
+const VIEW_ROUTES: ReadonlySet<string> = new Set(["settings", "sponsor", "player", "tracks", "queue", "favorites", "artists", "albums", "years", "genres", "sources", "folders", "webdav", "source-config", "source-browser", "playlists", "playlist-new", "lyrics-edit", "track-edit", "track-info", "downloading", "downloaded"]);
 const { t, locale } = useI18n();
 const player = usePlayerStore();
 const sources = useSourcesStore();
@@ -288,14 +289,33 @@ watch([() => player.queue, () => player.queueIndex], () => {
 });
 
 function readAccent(): Accent { const value = localStorage.getItem("welkin-accent"); return (accents.some((item) => item.id === value) ? value : "amber") as Accent; }
-/** Hash routes the app can restore on boot; declared before `getViewFromHash` is first called. */
-const VIEW_ROUTES: ReadonlySet<string> = new Set(["settings", "sponsor", "player", "tracks", "queue", "favorites", "stats", "artists", "albums", "years", "genres", "sources", "folders", "webdav", "source-config", "source-browser", "playlists", "playlist-new", "lyrics-edit", "track-edit", "track-info", "downloading", "downloaded"]);
 function getViewFromHash(): View {
   const route = window.location.hash.slice(1);
   // `#sources` predates the folder / WebDAV split; keep old links working.
   if (route === "sources") return "folders";
   return VIEW_ROUTES.has(route) ? (route as View) : "library";
 }
+/** How long a scrolled container keeps its auto-hiding scrollbar visible after the last scroll. */
+const SCROLLBAR_IDLE_MS = 700;
+const scrollbarTimers = new WeakMap<Element, number>();
+
+/**
+ * Mark the scrolled element so style.css paints its scrollbar thumb, then clear
+ * the mark once scrolling stops. Runs in the capture phase on the document, so
+ * every nested scroller (track lists, category panels, source browsers) is covered.
+ */
+function onScrollCapture(event: Event) {
+  const el = event.target;
+  if (!(el instanceof Element)) return;
+  el.classList.add("is-scrolling");
+  const pending = scrollbarTimers.get(el);
+  if (pending !== undefined) window.clearTimeout(pending);
+  scrollbarTimers.set(el, window.setTimeout(() => {
+    el.classList.remove("is-scrolling");
+    scrollbarTimers.delete(el);
+  }, SCROLLBAR_IDLE_MS));
+}
+
 function setView(nextView: View) { view.value = nextView; window.location.hash = nextView === "library" ? "" : nextView; }
 function clearCollectionFilters() { playlistFilter.value = null; artistFilter.value = null; albumFilter.value = null; yearFilter.value = null; genreFilter.value = null; sourceFilter.value = null; }
 function navigate(nextView: View) { clearCollectionFilters(); setView(nextView); }
@@ -421,8 +441,8 @@ function onGlobalKeydown(event: KeyboardEvent) {
   player.togglePlayback();
 }
 
-onMounted(() => { windowBehavior.sync(); window.addEventListener("hashchange", syncViewFromHash); window.addEventListener("keydown", onGlobalKeydown); window.addEventListener("beforeunload", savePlaybackPositionOnLeave); window.addEventListener("pagehide", savePlaybackPositionOnLeave); window.addEventListener("focus", recheckLicense); document.addEventListener("visibilitychange", onVisibilityChange); void initAudio(); void network.start(); void cache.start(); bootDesktopLyrics(); bootMediaControl(); void invoke<string>("ping").catch((error) => console.warn("[welkin] ping failed", describeError(error))); void bootstrap(); });
-onUnmounted(() => { savePlaybackPosition(true); stopDesktopLyrics(); stopMediaControl(); window.removeEventListener("hashchange", syncViewFromHash); window.removeEventListener("keydown", onGlobalKeydown); window.removeEventListener("beforeunload", savePlaybackPositionOnLeave); window.removeEventListener("pagehide", savePlaybackPositionOnLeave); window.removeEventListener("focus", recheckLicense); document.removeEventListener("visibilitychange", onVisibilityChange); unlistenPlayback?.(); unlistenPlayback = null; void profile.flush(); });
+onMounted(() => { windowBehavior.sync(); window.addEventListener("hashchange", syncViewFromHash); window.addEventListener("keydown", onGlobalKeydown); window.addEventListener("beforeunload", savePlaybackPositionOnLeave); window.addEventListener("pagehide", savePlaybackPositionOnLeave); window.addEventListener("focus", recheckLicense); document.addEventListener("visibilitychange", onVisibilityChange); document.addEventListener("scroll", onScrollCapture, true); void initAudio(); void network.start(); void cache.start(); bootDesktopLyrics(); bootMediaControl(); void invoke<string>("ping").catch((error) => console.warn("[welkin] ping failed", describeError(error))); void bootstrap(); });
+onUnmounted(() => { savePlaybackPosition(true); stopDesktopLyrics(); stopMediaControl(); window.removeEventListener("hashchange", syncViewFromHash); window.removeEventListener("keydown", onGlobalKeydown); window.removeEventListener("beforeunload", savePlaybackPositionOnLeave); window.removeEventListener("pagehide", savePlaybackPositionOnLeave); window.removeEventListener("focus", recheckLicense); document.removeEventListener("visibilitychange", onVisibilityChange); document.removeEventListener("scroll", onScrollCapture, true); unlistenPlayback?.(); unlistenPlayback = null; void profile.flush(); });
 
 // Mirror the Rust playback context into the store. The queue / play intent / next
 // / previous all live in Rust now; this is the single channel that keeps the UI
@@ -455,7 +475,6 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
           <CategoriesView v-else-if="categoryActive" key="categories" :kind="baseView" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @navigate="navigate" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @open-group="onOpenGroupFrom" @refresh="refreshLibrary" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
           <FavoritesView v-else-if="baseView === 'favorites'" key="favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <QueueView v-else-if="baseView === 'queue'" key="queue" />
-          <StatsView v-else-if="baseView === 'stats'" key="stats" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <DownloadingView v-else-if="baseView === 'downloading'" key="downloading" />
           <DownloadedView v-else-if="baseView === 'downloaded'" key="downloaded" @open-artist="openArtist" @open-album="openAlbum" />
           <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
