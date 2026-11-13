@@ -4,7 +4,7 @@
 // (instead of relying on upload-artifact globs) gives the release job a stable,
 // predictable layout to turn into latest.json.
 //
-// Usage: node scripts/stage-bundles.mjs --bundle <dir> --out <dir> --os <macos|linux> --key <os-arch>
+// Usage: node scripts/stage-bundles.mjs --bundle <dir> --out <dir> --os <windows|macos|linux> --key <os-arch>
 
 import { cpSync, existsSync, mkdirSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
@@ -19,12 +19,13 @@ const out = arg("out");
 const os = arg("os");
 const key = arg("key") ?? os;
 if (!bundle || !out || !os) {
-  console.error("usage: node scripts/stage-bundles.mjs --bundle <dir> --out <dir> --os <macos|linux> --key <os-arch>");
+  console.error("usage: node scripts/stage-bundles.mjs --bundle <dir> --out <dir> --os <windows|macos|linux> --key <os-arch>");
   process.exit(1);
 }
 
 /** Extensions worth publishing, per OS. */
 const WANTED = {
+  windows: [".exe", ".exe.sig", ".msi", ".msi.sig"],
   macos: [".app.tar.gz", ".app.tar.gz.sig", ".dmg"],
   linux: [".AppImage", ".AppImage.sig", ".deb", ".rpm"],
 };

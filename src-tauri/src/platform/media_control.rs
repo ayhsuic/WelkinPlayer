@@ -158,8 +158,14 @@ pub fn init(app: &AppHandle) {
     }
 }
 
-/// macOS/Linux have no window handle to hand to the media-control backend.
-#[cfg(desktop)]
+/// Raw `HWND` for Windows SMTC; unused on macOS/Linux.
+#[cfg(all(desktop, target_os = "windows"))]
+fn platform_hwnd(app: &AppHandle) -> Option<*mut std::ffi::c_void> {
+    let window = app.get_webview_window("main")?;
+    window.hwnd().ok().map(|hwnd| hwnd.0)
+}
+
+#[cfg(all(desktop, not(target_os = "windows")))]
 fn platform_hwnd(_app: &AppHandle) -> Option<*mut std::ffi::c_void> {
     None
 }

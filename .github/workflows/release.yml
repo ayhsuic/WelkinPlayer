@@ -48,6 +48,11 @@ jobs:
             bundle: "src-tauri/target/release/bundle"
             os: linux
             key: linux-x86_64
+          - platform: windows-latest
+            args: ""
+            bundle: "src-tauri/target/release/bundle"
+            os: windows
+            key: windows-x86_64
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -108,7 +113,7 @@ jobs:
       # used here goes undetected and the bundle silently ships no CEF.
       # alpha.27 is the first release that detects the runtime from the manifest
       # (`Runtime::detect` / `Manifest::uses_dependency`).
-      # Only Linux needs it; macOS uses the generic CLI + wry runtime.
+      # Only Linux needs it; macOS/Windows use the generic CLI + wry runtime.
       - name: Use CEF-aware CLI on Linux
         if: matrix.platform == 'ubuntu-24.04'
         run: |
@@ -129,10 +134,22 @@ jobs:
       - name: Sync version from package.json
         run: pnpm version:sync
 
+      # WiX (MSI) only accepts numeric versions (major.minor.patch, optionally a
+      # numeric 4th field). A letter pre-release like `-rc` makes it fail with
+      # "optional pre-release identifier ... must be numeric-only". Strip any
+      # non-numeric pre-release/build suffix from the version for Windows builds
+      # only, so the MSI bundles cleanly. This rewrites package.json in place for
+      # the build; it is never committed.
+      - name: Sanitize version for MSI (Windows only)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          node -e "const fs=require('fs');const p='package.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));const base=j.version.split(/[-+]/)[0];j.version=base;fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');console.log('version ->',base);"
+          pnpm version:sync
+
       # Linux ships deb/rpm only; the AppImage path relies on the legacy
       # linuxdeploy toolchain that is brittle on ubuntu-24.04 (and the app's
       # Linux updates open the GitHub Release page rather than auto-installing,
-      # so an AppImage is not needed). macOS keeps every bundle.
+      # so an AppImage is not needed). macOS/Windows keep every bundle.
       # `build.beforeBundleCommand` runs scripts/patch-cef-angle-stubs.mjs here
       # to satisfy the bundler's stale ANGLE file list (tauri-apps/tauri#16338).
       - name: Build desktop bundles

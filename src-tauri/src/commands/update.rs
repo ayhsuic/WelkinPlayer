@@ -142,7 +142,7 @@ fn fetch_release_notes(current: &str, latest: &str) -> Result<Option<String>, Ap
 ///
 /// The shape mirrors the official updater example so the frontend can key off
 /// `event.event` (`Started` / `Progress` / `Finished`).
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "event", content = "data")]
 pub enum DownloadEvent {
@@ -157,8 +157,8 @@ pub enum DownloadEvent {
     Finished,
 }
 
-/// macOS update backend, backed by `tauri-plugin-updater`.
-#[cfg(target_os = "macos")]
+/// macOS/Windows update backend, backed by `tauri-plugin-updater`.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub mod desktop {
     use std::sync::Mutex;
 
@@ -423,8 +423,8 @@ pub mod github_release {
     }
 }
 
-/// Check for an update on macOS (in-app auto-install).
-#[cfg(target_os = "macos")]
+/// Check for an update on macOS/Windows (in-app auto-install).
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 #[tauri::command]
 pub async fn check_update(
     app: AppHandle,
@@ -434,7 +434,7 @@ pub async fn check_update(
 }
 
 /// Download and install the pending desktop update, reporting progress.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 #[tauri::command]
 pub async fn install_update(
     app: AppHandle,

@@ -87,11 +87,11 @@ pub fn run() {
         .manage(platform::media_control::MediaControlState::default())
         .manage(platform::tray::CloseToTray::default())
         .setup(|app| {
-            // Apply signed updates from GitHub Releases. macOS uses the Tauri
-            // updater plugin (in-app auto-install); Android and Linux query
+            // Apply signed updates from GitHub Releases. macOS/Windows use the
+            // Tauri updater plugin (in-app auto-install); Android and Linux query
             // GitHub directly and open the release page, so they need neither the
             // plugin nor the pending-update state.
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             {
                 if let Err(error) = app
                     .handle()
@@ -220,10 +220,10 @@ pub fn run() {
             commands::sources::test_source_write,
             commands::sponsor::get_install_id,
             commands::sponsor::build_sponsor_claim,
-            // macOS installs updates in-app through the Tauri updater.
-            #[cfg(target_os = "macos")]
+            // macOS/Windows install updates in-app through the Tauri updater.
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             commands::update::check_update,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             commands::update::install_update,
             // Linux opens the GitHub Release page instead of auto-installing, so
             // it only needs the check command (no installer).

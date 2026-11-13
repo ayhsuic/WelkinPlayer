@@ -1,0 +1,70 @@
+name: Windows Desktop Build
+
+# Manual desktop build for testing local frontend changes on Windows.
+#
+# Unlike `release.yml` (v* tags, needs signing secrets, builds all platforms)
+# this builds a single unsigned Windows bundle so no repository secrets are
+# required. It strips the updater section in-place (never committed) because
+# `createUpdaterArtifacts: true` demands a signing private key, and sanitizes
+# the version to numeric-only for the WiX MSI bundler. Uploads the bundle as an
+# artifact for manual install.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      # WiX (MSI) only accepts numeric versions (major.minor.patch, optionally a
+      # numeric 4th field). A letter pre-release like `-rc` makes it fail with
+      # "optional pre-release identifier ... must be numeric-only". Strip any
+      # non-numeric pre-release/build suffix from the version for the build.
+      # This rewrites package.json in place; it is never committed.
+      - name: Sanitize version for MSI
+        run: node -e "const fs=require('fs');const p='package.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));const base=j.version.split(/[-+]/)[0];j.version=base;fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');console.log('version ->',base);"
+
+      - name: Sync version from package.json
+        run: pnpm version:sync
+
+      # `bundle.createUpdaterArtifacts` plus a configured updater pubkey forces
+      # Tauri to demand a signing private key. For an unsigned test bundle,
+      # drop the updater section in-place (never committed) so the build needs
+      # no repository secrets.
+      - name: Disable updater for unsigned build
+        run: node -e "const fs=require('fs');const p='src-tauri/tauri.conf.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.bundle.createUpdaterArtifacts=false;delete j.plugins.updater;fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');console.log('updater disabled');"
+
+      - name: Build Windows bundle
+        run: pnpm tauri build
+
+      - name: Upload Windows bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bundle
+          path: src-tauri/target/release/bundle
+          if-no-files-found: error
