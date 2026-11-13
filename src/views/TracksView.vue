@@ -42,6 +42,8 @@ const groupKeyValue = computed(() => props.artist ?? props.album ?? props.year ?
 const isGroup = computed(() => groupKeyValue.value !== null);
 const sourceFilter = computed(() => props.sourceId ?? null);
 const sourceName = computed(() => sources.sources.find((source) => source.id === sourceFilter.value)?.name ?? null);
+/** The split source page this filtered list belongs to (文件夹 / WebDAV). */
+const sourceKindLabel = computed(() => (sources.sources.find((source) => source.id === sourceFilter.value)?.kind === "webdav" ? t("nav.webdav") : t("nav.folders")));
 const groupTracks = computed(() => {
   const key = groupKeyValue.value;
   if (key === null) return null;
@@ -118,7 +120,7 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
               <p class="mt-3 font-mono text-sm uppercase tracking-[0.2em] text-dim">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
             </template>
             <template v-else>
-              <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ sourceFilter ? t("nav.sources") : t("nav.tracks") }}</p>
+              <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ sourceFilter ? sourceKindLabel : t("nav.tracks") }}</p>
               <h1 class="mt-4 truncate text-4xl font-black leading-none tracking-tight sm:text-5xl">{{ sourceFilter ? (sourceName ?? t("nav.tracks")) : t("nav.tracks") }}</h1>
               <p class="mt-3 font-mono text-sm uppercase tracking-[0.2em] text-dim">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
             </template>

@@ -5,14 +5,18 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { FolderTree, HardDrive, Server, Settings2 } from "@lucide/vue";
+import { FolderOpen, FolderTree, HardDrive, Server, Settings2 } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import { useSourcesStore } from "../stores/sources";
 import { SOURCE_KINDS } from "../lib/sources";
 import type { SongSource, SourceKind } from "../lib/sources";
 
-defineProps<{ loading: boolean }>();
+/**
+ * Source list for one kind. Folders and WebDAV are separate pages (and separate
+ * sheet entries), so this view only ever shows the kind it was opened for.
+ */
+const props = defineProps<{ kind: SourceKind; loading: boolean }>();
 const emit = defineEmits<{ open: [id: string]; manage: [] }>();
 const { t } = useI18n();
 const player = usePlayerStore();
@@ -25,11 +29,30 @@ interface SourceRow {
 }
 
 const rows = computed<SourceRow[]>(() =>
-  sources.sources.map((source) => ({
-    source,
-    count: player.tracks.filter((track) => track.sourceId === source.id).length,
-    isSync: source.id === sources.syncId,
-  })),
+  sources.sources
+    .filter((source) => source.kind === props.kind)
+    .map((source) => ({
+      source,
+      count: player.tracks.filter((track) => track.sourceId === source.id).length,
+      isSync: source.id === sources.syncId,
+    })),
+);
+
+/** Page copy for the current kind, keeping both halves in one place. */
+const copy = computed(() =>
+  props.kind === "webdav"
+    ? {
+        title: t("sources.webdavTitle"),
+        desc: t("sources.webdavDesc"),
+        emptyTitle: t("sources.webdavEmptyTitle"),
+        emptyDesc: t("sources.webdavEmptyDesc"),
+      }
+    : {
+        title: t("sources.foldersTitle"),
+        desc: t("sources.foldersDesc"),
+        emptyTitle: t("sources.foldersEmptyTitle"),
+        emptyDesc: t("sources.foldersEmptyDesc"),
+      },
 );
 
 /** Localized label for a source kind, falling back to the raw kind. */
@@ -44,18 +67,19 @@ function kindLabel(kind: SourceKind): string {
     <header class="flex flex-wrap items-end justify-between gap-4 border-b border-line pb-6">
       <div class="min-w-0">
         <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ t("sources.eyebrow") }}</p>
-        <h1 class="mt-4 text-4xl font-black uppercase leading-none tracking-tight sm:text-5xl">{{ t("sources.title") }}</h1>
-        <p class="mt-4 max-w-2xl text-sm text-muted">{{ t("sources.desc") }}</p>
+        <h1 class="mt-4 text-4xl font-black uppercase leading-none tracking-tight sm:text-5xl">{{ copy.title }}</h1>
+        <p class="mt-4 max-w-2xl text-sm text-muted">{{ copy.desc }}</p>
       </div>
       <button type="button" class="ak-clip-tr flex h-10 items-center gap-2 border border-line px-5 text-[13px] font-semibold uppercase tracking-[0.25em]" @click="emit('manage')"><Settings2 :size="15" />{{ t("sources.manage") }}</button>
     </header>
 
-    <p v-if="!sources.hasCloudSync && sources.hasSources" class="ak-frame mt-6 border border-accent/60 bg-accent/5 p-4 text-sm text-fg">{{ t("sources.localOnlyWarning") }}</p>
+    <p v-if="kind === 'local' && !sources.hasCloudSync && sources.hasSources" class="ak-frame mt-6 border border-accent/60 bg-accent/5 p-4 text-sm text-fg">{{ t("sources.localOnlyWarning") }}</p>
 
     <div v-if="rows.length === 0" class="ak-frame mt-8 grid place-items-center gap-4 border border-dashed border-line bg-surface/50 px-6 py-20 text-center">
-      <HardDrive :size="36" class="text-dim" />
-      <p class="text-base font-semibold uppercase tracking-[0.2em]">{{ t("sources.emptyTitle") }}</p>
-      <p class="max-w-md text-sm text-muted">{{ t("sources.emptyDesc") }}</p>
+      <Server v-if="kind === 'webdav'" :size="36" class="text-dim" />
+      <FolderOpen v-else :size="36" class="text-dim" />
+      <p class="text-base font-semibold uppercase tracking-[0.2em]">{{ copy.emptyTitle }}</p>
+      <p class="max-w-md text-sm text-muted">{{ copy.emptyDesc }}</p>
       <button type="button" class="ak-clip-tr flex h-10 items-center gap-2 bg-accent px-5 text-[13px] font-bold uppercase tracking-[0.25em] text-accent-fg" @click="emit('manage')"><Settings2 :size="15" />{{ t("sources.manage") }}</button>
     </div>
 
