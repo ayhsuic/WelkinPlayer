@@ -6,7 +6,7 @@
 <script setup lang="ts">
 import { ChevronDown, HeartHandshake, Music2, Settings2 } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
-import { libraryNavItems, primaryNavItems, systemNavItems } from "../lib/app";
+import { downloadNavItems, libraryNavItems, primaryNavItems, systemNavItems } from "../lib/app";
 import type { View } from "../lib/app";
 
 /**
@@ -66,6 +66,10 @@ function isActive(view: View): boolean {
         <div class="mx-3 border-t border-line"></div>
         <nav class="flex flex-col gap-px p-3">
           <button v-for="item in systemNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="isActive(item.id) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="go(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
+        </nav>
+        <div class="mx-3 border-t border-line"></div>
+        <nav class="flex flex-col gap-px p-3">
+          <button v-for="item in downloadNavItems" :key="item.id" type="button" class="relative flex h-11 items-center gap-3 border border-transparent px-3 text-left text-[13px] font-semibold uppercase tracking-[0.15em] transition-colors" :class="isActive(item.id) ? 'ak-select' : 'text-muted ak-hover hover:text-fg'" @click="go(item.id)"><component :is="item.icon" :size="18" :stroke-width="1.8" /><span class="truncate">{{ t(item.labelKey) }}</span></button>
         </nav>
         <div class="mx-3 border-t border-line"></div>
         <nav class="flex flex-col gap-px p-3">
