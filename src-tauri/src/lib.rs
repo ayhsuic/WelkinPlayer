@@ -121,12 +121,12 @@ pub fn run() {
             match streaming::state::start(app.handle().clone()) {
                 Ok(stream_state) => {
                     // The playback engine decodes in Rust and reads the
-                    // stream/smart caches directly; it shares their handles.
+                    // stream/manual caches directly; it shares their handles.
                     #[cfg(any(desktop, target_os = "android"))]
                     let engine = playback::engine::start(
                         app.handle().clone(),
                         stream_state.cache.clone(),
-                        stream_state.smart.clone(),
+                        stream_state.manual.clone(),
                     );
                     // The playback context (queue / shuffle / repeat) is owned
                     // by Rust so playback survives a dead or throttled webview.
@@ -136,7 +136,7 @@ pub fn run() {
                     // run `Engine::drop`, which stops the worker).
                     #[cfg(any(desktop, target_os = "android"))]
                     let context =
-                        playback::context::PlaybackContext::new(engine.clone());
+                        playback::context::PlaybackContext::new(engine.clone(), app.handle().clone());
                     #[cfg(any(desktop, target_os = "android"))]
                     if !app.manage(engine) {
                         log::error!(
@@ -271,17 +271,15 @@ pub fn run() {
             streaming::state::prefetch_track,
             streaming::state::report_stream_progress,
             streaming::state::stream_progress,
-            streaming::state::sync_smart_cache,
             streaming::state::pin_track,
             streaming::state::unpin_track,
             streaming::state::cache_status,
             streaming::state::cache_usage,
             streaming::state::network_status,
             streaming::state::get_cache_config,
-            streaming::state::set_smart_cache_limit,
-            streaming::state::set_smart_cache_enabled,
             streaming::state::set_stream_cache_enabled,
             streaming::state::set_prefetch_seconds,
+            streaming::state::set_max_concurrent_downloads,
             streaming::state::clear_cache,
             #[cfg(any(desktop, target_os = "android"))]
             playback::commands::audio_load,

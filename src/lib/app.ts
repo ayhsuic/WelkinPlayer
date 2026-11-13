@@ -4,9 +4,9 @@
  */
 
 import type { Component } from "vue";
-import { Activity, CalendarDays, Disc3, HardDrive, LayoutGrid, Library, ListMusic, ListOrdered, ListPlus, Mic2, Music } from "@lucide/vue";
+import { Activity, CalendarDays, CircleCheck, Disc3, HardDrive, HardDriveDownload, LayoutGrid, Library, ListMusic, ListOrdered, ListPlus, Mic2, Music } from "@lucide/vue";
 
-export type View = "wall" | "library" | "tracks" | "queue" | "favorites" | "stats" | "artists" | "albums" | "years" | "genres" | "sources" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "settings" | "sponsor" | "player";
+export type View = "wall" | "library" | "tracks" | "queue" | "favorites" | "stats" | "artists" | "albums" | "years" | "genres" | "sources" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "downloading" | "downloaded" | "settings" | "sponsor" | "player";
 export type Theme = "light" | "dark";
 export type Accent = "amber" | "orange" | "cyan" | "red" | "green" | "blue";
 
@@ -42,6 +42,12 @@ export const systemNavItems: NavItem[] = [
 
 /** The six swipeable category panels, in sidebar order. */
 export const categoryViews: View[] = ["playlists", "artists", "albums", "tracks", "genres", "years"];
+
+/** Manual cache download manager, grouped with the library entries. */
+export const downloadNavItems: NavItem[] = [
+  { id: "downloading", labelKey: "nav.downloading", index: "D", icon: HardDriveDownload },
+  { id: "downloaded", labelKey: "nav.downloaded", index: "C", icon: CircleCheck },
+];
 
 export const accents: { id: Accent; key: string; swatch: string }[] = [
   { id: "amber", key: "accent.amber", swatch: "#f0a500" },

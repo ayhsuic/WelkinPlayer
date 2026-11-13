@@ -55,6 +55,7 @@ import PlayerNavBar from "./components/PlayerNavBar.vue";
 import MobileNavSheet from "./components/MobileNavSheet.vue";
 import WallView from "./components/wall/WallView.vue";
 import AudioQualityModal from "./components/AudioQualityModal.vue";
+import MeteredPlaybackModal from "./components/MeteredPlaybackModal.vue";
 import SetupWizard from "./components/SetupWizard.vue";
 import ToastStack from "./components/ToastStack.vue";
 import UpdateModal from "./components/UpdateModal.vue";
@@ -68,6 +69,8 @@ import QueueView from "./views/QueueView.vue";
 import CategoriesView from "./views/CategoriesView.vue";
 import type { GroupKind } from "./lib/grouping";
 import StatsView from "./views/StatsView.vue";
+import DownloadingView from "./views/DownloadingView.vue";
+import DownloadedView from "./views/DownloadedView.vue";
 import SourcesView from "./views/SourcesView.vue";
 import SourceBrowserView from "./views/SourceBrowserView.vue";
 import PlaylistEditorView from "./views/PlaylistEditorView.vue";
@@ -277,7 +280,7 @@ watch([() => player.queue, () => player.queueIndex], () => {
 });
 
 function readAccent(): Accent { const value = localStorage.getItem("welkin-accent"); return (accents.some((item) => item.id === value) ? value : "amber") as Accent; }
-function getViewFromHash(): View { const route = window.location.hash.slice(1); return route === "settings" || route === "sponsor" || route === "player" || route === "tracks" || route === "queue" || route === "favorites" || route === "stats" || route === "artists" || route === "albums" || route === "years" || route === "genres" || route === "sources" || route === "source-config" || route === "source-browser" || route === "playlists" || route === "playlist-new" || route === "lyrics-edit" || route === "track-edit" || route === "track-info" ? route : "library"; }
+function getViewFromHash(): View { const route = window.location.hash.slice(1); return route === "settings" || route === "sponsor" || route === "player" || route === "tracks" || route === "queue" || route === "favorites" || route === "stats" || route === "artists" || route === "albums" || route === "years" || route === "genres" || route === "sources" || route === "source-config" || route === "source-browser" || route === "playlists" || route === "playlist-new" || route === "lyrics-edit" || route === "track-edit" || route === "track-info" || route === "downloading" || route === "downloaded" ? route : "library"; }
 function setView(nextView: View) { view.value = nextView; window.location.hash = nextView === "library" ? "" : nextView; }
 function clearCollectionFilters() { playlistFilter.value = null; artistFilter.value = null; albumFilter.value = null; yearFilter.value = null; genreFilter.value = null; sourceFilter.value = null; }
 function navigate(nextView: View) { clearCollectionFilters(); setView(nextView); }
@@ -428,6 +431,8 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
           <FavoritesView v-else-if="baseView === 'favorites'" key="favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <QueueView v-else-if="baseView === 'queue'" key="queue" />
           <StatsView v-else-if="baseView === 'stats'" key="stats" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
+          <DownloadingView v-else-if="baseView === 'downloading'" key="downloading" />
+          <DownloadedView v-else-if="baseView === 'downloaded'" key="downloaded" @open-artist="openArtist" @open-album="openAlbum" />
           <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
           <SettingsView v-else key="settings" v-model:theme="theme" v-model:accent="accent" @sponsor="navigate('sponsor')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
         </Transition>
@@ -439,6 +444,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
     <MobileNavSheet v-model:open="sheetOpen" :active-view="baseView" @navigate="onSheetNavigate" />
     <ToastStack />
     <AudioQualityModal />
+    <MeteredPlaybackModal />
     <UpdateModal @friendly-error="showError" />
   </div>
 </template>
