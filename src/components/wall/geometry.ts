@@ -28,13 +28,18 @@ export type WallInstance = {
   id: string;
   queueIndex: number;
   cellSlot: number;
+  /** The block this poster belongs to, in unbounded block coordinates. */
+  blockColumn: number;
+  blockRow: number;
+  /** Which of the block's twelve seats this poster occupies. */
+  slotIndex: number;
   repeatX: number;
   repeatY: number;
   x: number;
   y: number;
   width: number;
   height: number;
-  /** The grown poster of the block around the playing song. */
+  /** The grown poster of the block the user opened. */
   expanded?: boolean;
 };
 
@@ -207,6 +212,20 @@ const overlaps = (rect: Bounds, view: Bounds) => (
   rect.left < view.right && rect.right > view.left && rect.top < view.bottom && rect.bottom > view.top
 );
 
+/**
+ * Maps a grown block's seat to the seat whose song it shows.
+ *
+ * The opened block keeps its own twelve songs: the poster the user chose takes the
+ * big card, and the eleven ring seats carry the rest of the block in order. Without
+ * this the card would have to borrow a song from outside the block and the block's
+ * own copy would show up twice.
+ */
+function grownSourceSlot(slotIndex: number, focusSlot: number): number {
+  if (slotIndex === EXPANDED_SLOT_INDEX) return focusSlot;
+  const index = slotIndex - 1;
+  return index < focusSlot ? index : index + 1;
+}
+
 /** Builds the poster in one slot of one block, addressed by unbounded block coordinates. */
 function buildInstance(
   geometry: WallGeometry,
@@ -226,14 +245,18 @@ function buildInstance(
   const slot = grown ? EXPANDED_SLOTS[slotIndex] : slotsForBlock(localColumn, localRow)[slotIndex];
   const pitch = pitchOf(metrics);
   const expanded = grown && slotIndex === EXPANDED_SLOT_INDEX;
+  const sourceSlot = grown && focus ? grownSourceSlot(slotIndex, focus.slotIndex) : slotIndex;
+  const blockBase = cellSlot - slotIndex;
 
   return {
     id: `${cellSlot}:${repeatX}:${repeatY}`,
     // A cell seats whole blocks, so it usually holds more slots than songs; wrapping
     // fills the remainder instead of leaving a gap that would recur in every cell.
-    // The grown poster is the one exception: it is the playing song itself.
-    queueIndex: expanded && focus ? focus.queueIndex : (totalEntries > 0 ? cellSlot % totalEntries : -1),
+    queueIndex: totalEntries > 0 ? (blockBase + sourceSlot) % totalEntries : -1,
     cellSlot,
+    blockColumn,
+    blockRow,
+    slotIndex,
     repeatX,
     repeatY,
     expanded,
@@ -247,13 +270,13 @@ function buildInstance(
 }
 
 /**
- * One block grown around the playing song: the middle 6 x 6 becomes a single
- * poster and the eleven posters that shared the block are pushed out into the
- * ring it leaves. The ring is filled exactly — the left and right thirds hold
- * four 3 x 2 posters each, the strip above the card holds two 3 x 1, the one
- * below a single 6 x 1 — so the block still covers its 96 cells with twelve
- * posters, with no gap and no overlap. That is the same construction rule the
- * plain recipes follow, so a grown block cannot leave a hole either.
+ * One block grown around the poster the user opened: the middle 6 x 6 becomes a
+ * single card and the eleven posters that shared the block move into the ring it
+ * leaves. The ring is filled exactly — the left and right thirds hold four 3 x 2
+ * posters each, the strip above the card holds two 3 x 1, the one below a single
+ * 6 x 1 — so the block still covers its 96 cells with twelve posters, with no gap
+ * and no overlap. That is the same construction rule the plain recipes follow, so
+ * a grown block cannot leave a hole either.
  */
 const EXPANDED_SLOTS: Slot[] = [
   { x: 3, y: 1, cols: 6, rows: 6 },
@@ -274,9 +297,9 @@ const EXPANDED_SLOTS: Slot[] = [
 const EXPANDED_SLOT_INDEX = 0;
 
 /**
- * The block seating `queueIndex` that sits closest to a world point. The wall
- * grows that one block around the playing song, so the card is always the copy
- * of the song the camera is looking at rather than the first repeat in the field.
+ * The block seating `queueIndex` that sits closest to a world point. Used to
+ * centre the wall on a song without moving the camera anywhere the user did not
+ * ask for.
  */
 export function blockForEntry(
   geometry: WallGeometry,
@@ -312,8 +335,8 @@ export function blockForEntry(
   return best;
 }
 
-/** What a block grown around the playing song needs: which block, which song. */
-export type WallFocus = { block: { column: number; row: number }; queueIndex: number };
+/** What an opened block needs: which block, and which of its seats the card shows. */
+export type WallFocus = { block: { column: number; row: number }; slotIndex: number };
 
 /** Posters intersecting the viewport. Cost scales with what is on screen, never with queue length. */
 export function layoutWall(
