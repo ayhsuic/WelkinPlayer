@@ -195,6 +195,19 @@ watch(() => trackKey(player.currentTrack), (key) => { if (booted.value && key &&
 // to ensure every newly selected track gets a metadata request.
 watch(() => trackKey(player.currentTrack), () => metadata.request(player.currentTrack));
 
+// Keep lyrics loaded and the active line synced for the playing track even
+// when the cover wall (not the full player view) is on screen; the wall card
+// reads the mirrored lines directly, so this wiring lives at the app level.
+watch(
+  () => trackKey(player.currentTrack),
+  () => { void lyrics.loadForTrack(player.currentTrack ?? undefined); },
+);
+
+watch(
+  () => player.position,
+  (position) => { if (Number.isFinite(position)) lyrics.sync(position); },
+);
+
 // Resume the last track/position once the playback state and library are ready.
 // The local copy lands first; the authoritative remote copy may arrive later.
 // Keep accepting it until the user starts playing, then ignore any late reply

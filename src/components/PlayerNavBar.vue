@@ -4,19 +4,21 @@
 -->
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { Pause, Play, SkipBack, SkipForward } from "@lucide/vue";
-import { usePlayerStore } from "../stores/player";
+import { onBeforeUnmount, onMounted, ref } from "vue";
+import { usePlayerStore, type PlayMode } from "../stores/player";
 import { seekPercent } from "../lib/audio";
 import { percent } from "../lib/format";
+import { i18n } from "../i18n";
+import { pushToast } from "../lib/toast";
 
 /**
- * Mobile transport strip. Replaces the old bare gesture capsule with a
- * playback control surface:
+ * Mobile transport strip, modelled on the lmusic seekbar:
  *
- *   - a scrubbable progress track at the top (drag to seek);
- *   - previous / play-pause / next in the row below;
- *   - long-pressing the play button cycles the repeat mode;
+ *   - one tall progress bar carrying the elapsed / total time;
+ *   - drag horizontally to seek;
+ *   - tap the left third for previous, the middle for play/pause, the right
+ *     third for next;
+ *   - long-press cycles the play mode (order -> shuffle -> repeat-one);
  *   - an upward swipe opens the navigation drawer.
  *
  * Desktop keeps the full `PlayerBar`; this strip is mobile-only.
@@ -24,76 +26,101 @@ import { percent } from "../lib/format";
 const emit = defineEmits<{ sheet: [] }>();
 const player = usePlayerStore();
 
-/* ------------------------------------------------------------- scrubbing */
+/* ------------------------------------------------------------- seek bar */
 
-/** While dragging, the slider shows `seekValue` so engine ticks cannot yank it. */
+const bar = ref<HTMLElement | null>(null);
+/** While dragging, the bar shows `seekValue` so engine ticks cannot yank it. */
 const seekValue = ref<number | null>(null);
-const sliderValue = computed(() => seekValue.value ?? player.progress);
+const sliderValue = () => seekValue.value ?? player.progress;
+
 let pointerSeeking = false;
-let pointerCommitDone = false;
-
-function onSeek(event: Event) {
-  const value = Number((event.target as HTMLInputElement).value);
-  if (!Number.isFinite(value)) return;
-  seekValue.value = value;
-  pointerCommitDone = false;
-  seekPercent(value, false);
-}
-
-function commitSeek(event: Event) {
-  if (pointerSeeking) return;
-  if (pointerCommitDone) {
-    pointerCommitDone = false;
-    return;
-  }
-  const value = Number((event.target as HTMLInputElement).value);
-  if (!Number.isFinite(value)) return;
-  seekValue.value = null;
-  seekPercent(value, true);
-}
-
-function beginSeek() {
-  pointerSeeking = true;
-  pointerCommitDone = false;
-  seekValue.value = player.progress;
-}
-
-function endSeek() {
-  if (!pointerSeeking) return;
-  pointerSeeking = false;
-  if (pointerCommitDone) return;
-  const value = seekValue.value;
-  if (value === null) return;
-  pointerCommitDone = true;
-  seekValue.value = null;
-  seekPercent(value, true);
-}
-
-/* ------------------------------------------- play / long-press cycle mode */
-
-let pressTimer = 0;
+let dragMoved = false;
 let longFired = false;
+let downX = 0;
+let downY = 0;
+let barRect: DOMRect | null = null;
+let pressTimer = 0;
 
-function pressPlay() {
+function ratioFromEvent(clientX: number): number {
+  if (!barRect) return 0;
+  return Math.min(1, Math.max(0, (clientX - barRect.left) / barRect.width));
+}
+
+/** Localized label for the three long-press play modes. */
+function playModeLabel(mode: PlayMode): string {
+  const key =
+    mode === "shuffle"
+      ? "controls.shuffle"
+      : mode === "one"
+        ? "controls.repeatOne"
+        : "controls.repeatOrder";
+  return i18n.global.t(key);
+}
+
+function onBarDown(event: PointerEvent) {
+  const el = bar.value;
+  if (!el) return;
+  barRect = el.getBoundingClientRect();
+  pointerSeeking = true;
+  dragMoved = false;
   longFired = false;
-  window.clearTimeout(pressTimer);
-  // Long press cycles the repeat mode; a plain tap toggles play/pause.
+  downX = event.clientX;
+  downY = event.clientY;
+  seekValue.value = player.progress;
+  el.setPointerCapture?.(event.pointerId);
+  // Long press cycles the play mode; a plain tap toggles play/pause.
   pressTimer = window.setTimeout(() => {
     longFired = true;
-    void player.cycleRepeat();
+    void player.cyclePlayMode().then((next) => pushToast("info", playModeLabel(next)));
   }, 500);
 }
 
-function releasePlay() {
-  window.clearTimeout(pressTimer);
+function onBarMove(event: PointerEvent) {
+  if (!pointerSeeking) return;
+  const dx = event.clientX - downX;
+  const dy = event.clientY - downY;
+  if (!dragMoved && Math.hypot(dx, dy) > 8) {
+    // A vertical gesture belongs to the drawer swipe, not the seek drag.
+    if (Math.abs(dx) < Math.abs(dy)) {
+      pointerSeeking = false;
+      return;
+    }
+    dragMoved = true;
+    window.clearTimeout(pressTimer);
+  }
+  if (!dragMoved) return;
+  const value = ratioFromEvent(event.clientX) * 100;
+  seekValue.value = value;
+  seekPercent(value, false);
 }
 
-function onPlayTap() {
+function onBarUp(event: PointerEvent) {
+  window.clearTimeout(pressTimer);
+  if (!pointerSeeking) return;
+  pointerSeeking = false;
   if (longFired) {
     longFired = false;
+    seekValue.value = null;
     return;
   }
-  void player.togglePlayback();
+  if (dragMoved) {
+    const value = seekValue.value ?? player.progress;
+    seekValue.value = null;
+    seekPercent(value, true);
+    return;
+  }
+  // Tap: left third previous, middle play/pause, right third next.
+  const ratio = ratioFromEvent(event.clientX);
+  if (ratio < 1 / 3) void player.previous();
+  else if (ratio > 2 / 3) void player.next();
+  else void player.togglePlayback();
+}
+
+function onBarCancel() {
+  window.clearTimeout(pressTimer);
+  pointerSeeking = false;
+  dragMoved = false;
+  seekValue.value = null;
 }
 
 /* --------------------------------------------- swipe up opens the drawer */
@@ -176,40 +203,23 @@ onBeforeUnmount(() => {
 
 <template>
   <footer ref="root" class="transport no-scrollbar" role="group" aria-label="Playback controls">
-    <input
-      :value="sliderValue"
-      :style="{ '--fill': percent(sliderValue), '--buffered': percent(player.bufferedProgress) }"
-      class="ak-slider transport-seek"
-      type="range"
-      min="0"
-      max="100"
+    <div
+      ref="bar"
+      class="seekbar"
+      :style="{ '--fill': percent(sliderValue()) }"
+      role="slider"
+      :aria-valuenow="Math.round(sliderValue())"
+      aria-valuemin="0"
+      aria-valuemax="100"
       aria-label="Playback position"
-      @pointerdown="beginSeek"
-      @input="onSeek"
-      @change="commitSeek"
-      @pointerup="endSeek"
-      @pointercancel="endSeek"
-      @lostpointercapture="endSeek"
-    />
-    <div class="transport-row">
-      <button type="button" class="transport-btn" aria-label="Previous track" @click="player.previous()">
-        <SkipBack :size="20" />
-      </button>
-      <button
-        type="button"
-        class="transport-btn transport-play"
-        :aria-label="player.isPlaying ? 'Pause' : 'Play'"
-        @pointerdown="pressPlay"
-        @pointerup="releasePlay"
-        @pointerleave="releasePlay"
-        @click="onPlayTap"
-      >
-        <Pause v-if="player.isPlaying" :size="22" />
-        <Play v-else :size="22" />
-      </button>
-      <button type="button" class="transport-btn" aria-label="Next track" @click="player.next()">
-        <SkipForward :size="20" />
-      </button>
+      @pointerdown="onBarDown"
+      @pointermove="onBarMove"
+      @pointerup="onBarUp"
+      @pointercancel="onBarCancel"
+    >
+      <div class="seekbar-fill" :style="{ width: percent(sliderValue()) }" />
+      <span class="seekbar-time seekbar-time--start">{{ player.elapsedTime }}</span>
+      <span class="seekbar-time seekbar-time--end">{{ player.totalTime }}</span>
     </div>
   </footer>
 </template>
@@ -221,11 +231,7 @@ onBeforeUnmount(() => {
   right: 12px;
   bottom: calc(env(safe-area-inset-bottom) + 12px);
   z-index: 60;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 14px 12px;
-  border-radius: 20px;
+  padding: 6px;
   border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
   background: color-mix(in srgb, var(--surface) 78%, transparent);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.26);
@@ -237,37 +243,42 @@ onBeforeUnmount(() => {
   -webkit-touch-callout: none;
 }
 
-.transport-seek {
-  width: 100%;
-  height: 14px;
-  margin: 0;
-}
-
-.transport-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.transport-btn {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--fg);
+.seekbar {
+  position: relative;
+  height: 48px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--line) 55%, transparent);
   cursor: pointer;
-  touch-action: manipulation;
+  touch-action: none;
 }
 
-.transport-play {
-  width: 52px;
-  height: 52px;
+.seekbar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
   background: var(--accent);
+  pointer-events: none;
+}
+
+.seekbar-time {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
   color: #fff;
+  pointer-events: none;
+}
+
+.seekbar-time--start {
+  left: 14px;
+}
+
+.seekbar-time--end {
+  right: 14px;
 }
 
 /* Desktop keeps the full player bar, so this strip is mobile-only. */

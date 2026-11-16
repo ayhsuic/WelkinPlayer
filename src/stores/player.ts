@@ -37,6 +37,8 @@ export const MAX_RATE = 2;
 const SHUFFLE_STORAGE_KEY = "welkin-shuffle";
 const REPEAT_STORAGE_KEY = "welkin-repeat";
 export type RepeatMode = "off" | "all" | "one";
+/** Play modes offered by the mobile long-press: sequential / shuffle / repeat-one. */
+export type PlayMode = "order" | "shuffle" | "one";
 
 /** Snapshot pushed by Rust on every context change. */
 export interface PlaybackSnapshot {
@@ -394,6 +396,48 @@ export const usePlayerStore = defineStore("player", () => {
     }
   }
 
+  /** Set repeat mode explicitly (direct play-mode selection). */
+  async function setRepeat(mode: RepeatMode) {
+    try {
+      await invoke("playback_set_repeat", { mode });
+    } catch (error) {
+      console.warn("[welkin] playback_set_repeat failed", error);
+    }
+  }
+
+  /** Derive the current three-state mode from the mirrored repeat/shuffle flags. */
+  function playMode(): PlayMode {
+    if (repeat.value === "one") return "one";
+    if (shuffle.value) return "shuffle";
+    return "order";
+  }
+
+  const NEXT_PLAY_MODE: Record<PlayMode, PlayMode> = {
+    order: "shuffle",
+    shuffle: "one",
+    one: "order",
+  };
+
+  /**
+   * Cycle the three mobile play modes: order -> shuffle -> one -> order.
+   * Returns the target mode so the UI can announce it before the Rust
+   * snapshot mirrors back.
+   */
+  async function cyclePlayMode(): Promise<PlayMode> {
+    const next = NEXT_PLAY_MODE[playMode()];
+    if (next === "shuffle") {
+      await setRepeat("off");
+      await setShuffle(true);
+    } else if (next === "one") {
+      // Entering repeat-one clears shuffle on the Rust side.
+      await setRepeat("one");
+    } else {
+      await setShuffle(false);
+      await setRepeat("off");
+    }
+    return next;
+  }
+
   /** Advance to the next track (Rust honours repeat-one / repeat-all / end). */
   async function next() {
     try {
@@ -582,5 +626,8 @@ export const usePlayerStore = defineStore("player", () => {
     toggleShuffle,
     cycleRepeat,
     setShuffle,
+    setRepeat,
+    playMode,
+    cyclePlayMode,
   };
 });

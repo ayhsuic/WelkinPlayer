@@ -545,6 +545,42 @@ impl PlaybackContext {
         self.emit(snapshot);
     }
 
+    /// Set repeat mode explicitly (used for direct play-mode selection).
+    ///
+    /// Entering repeat-one also clears shuffle and restores the base order,
+    /// matching the cycle semantics in [`Self::cycle_repeat`].
+    pub fn set_repeat(&self, mode: RepeatMode) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.repeat = mode;
+        if mode == RepeatMode::One && inner.shuffle {
+            inner.shuffle = false;
+            let base = if inner.base_queue.is_empty() {
+                inner.queue.clone()
+            } else {
+                inner.base_queue.clone()
+            };
+            let current = inner
+                .index
+                .try_into()
+                .ok()
+                .filter(|&i: &usize| i < inner.queue.len())
+                .map(|i| inner.queue[i].clone());
+            inner.queue = base;
+            inner.index = match &current {
+                Some(current) => inner
+                    .queue
+                    .iter()
+                    .position(|item| item == current)
+                    .map(|i| i as i64)
+                    .unwrap_or(0),
+                None => 0,
+            };
+        }
+        let snapshot = self.snapshot_locked(&inner);
+        drop(inner);
+        self.emit(snapshot);
+    }
+
     /// Set shuffle explicitly (used for restore / settings).
     pub fn set_shuffle(&self, on: bool) {
         let mut inner = self.inner.lock().unwrap();

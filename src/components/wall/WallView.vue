@@ -92,7 +92,8 @@ const focusWindow = computed(() => {
   if (!sel) return null;
   const list = sourceList.value;
   if (list.length === 0) return null;
-  let c = sel.centerKey ? list.findIndex((item) => trackKey(item) === sel.centerKey) : -1;
+  let c = sel.centerIndex != null && sel.centerIndex >= 0 && sel.centerIndex < list.length ? sel.centerIndex : -1;
+  if (c < 0 && sel.centerKey) c = list.findIndex((item) => trackKey(item) === sel.centerKey);
   if (c < 0) c = 0;
   return neighborWindow(list, c);
 });
@@ -467,15 +468,16 @@ function onTileClick(tile: WallInstance) {
   const block = { column: tile.blockColumn, row: tile.blockRow };
   const track = tileTrack(tile);
   const centerKey = track ? trackKey(track) : undefined;
+  const centerIndex = track ? sourceList.value.findIndex((item) => item === track) : -1;
 
   if (isGrownTile(tile)) {
-    selected.value = { block, slotIndex: tile.sourceSlot, centerKey };
+    selected.value = { block, slotIndex: tile.sourceSlot, centerKey, centerIndex };
     panTo(expandedCenter(block), SETTLE_MS, expandedScale.value);
     return;
   }
 
   // Plain neighbour poster: open the block it sits in, with this track at the card.
-  selected.value = { block, slotIndex: tile.sourceSlot, centerKey };
+  selected.value = { block, slotIndex: tile.sourceSlot, centerKey, centerIndex };
   panTo(expandedCenter(block), SETTLE_MS, expandedScale.value);
 }
 
@@ -664,7 +666,7 @@ defineExpose({ focusCurrent, focusFirst });
   position: absolute;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--surface-2, var(--surface));
   cursor: pointer;
 }
@@ -677,7 +679,7 @@ defineExpose({ focusCurrent, focusFirst });
 /* The grown poster: a page, not a tile. */
 .wall-tile.is-expanded {
   border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
-  border-radius: 16px;
+  border-radius: 0;
   box-shadow: 0 22px 52px rgba(0, 0, 0, 0.34);
 }
 
@@ -706,7 +708,7 @@ defineExpose({ focusCurrent, focusFirst });
   left: 4px;
   min-width: 17px;
   padding: 1px 4px;
-  border-radius: 6px;
+  border-radius: 0;
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
   font-size: 10px;
@@ -798,7 +800,7 @@ defineExpose({ focusCurrent, focusFirst });
   width: 44px;
   height: 44px;
   padding: 0;
-  border-radius: 999px;
+  border-radius: 0;
   border: 1px solid rgba(255, 255, 255, 0.24);
   background: rgba(255, 255, 255, 0.12);
   color: #fff;

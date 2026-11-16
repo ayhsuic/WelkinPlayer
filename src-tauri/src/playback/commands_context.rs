@@ -92,6 +92,16 @@ pub fn playback_cycle_repeat(context: State<PlaybackContext>) -> Result<(), AppE
     Ok(())
 }
 
+/// Set repeat mode explicitly (direct play-mode selection).
+#[tauri::command]
+pub fn playback_set_repeat(
+    context: State<PlaybackContext>,
+    mode: crate::playback::context::RepeatMode,
+) -> Result<(), AppError> {
+    context.set_repeat(mode);
+    Ok(())
+}
+
 /// Restore a persisted queue + position. Mirrors the old `restoreQueue`.
 #[tauri::command]
 pub fn playback_restore(

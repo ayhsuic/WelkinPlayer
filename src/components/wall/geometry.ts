@@ -344,6 +344,8 @@ export function blockForEntry(
 export type WallFocus = {
   block: { column: number; row: number };
   slotIndex: number;
+  /** Index of the centre track in the source list; kept alongside the key so a track without a resolvable key (a placeholder) still seats itself. */
+  centerIndex?: number;
   /** Identity of the centre track; the grown ring takes its neighbours from the queue around it. */
   centerKey?: string;
 };

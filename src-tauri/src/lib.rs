@@ -328,6 +328,8 @@ pub fn run() {
             #[cfg(any(desktop, target_os = "android"))]
             playback::commands_context::playback_cycle_repeat,
             #[cfg(any(desktop, target_os = "android"))]
+            playback::commands_context::playback_set_repeat,
+            #[cfg(any(desktop, target_os = "android"))]
             playback::commands_context::playback_restore,
             #[cfg(any(desktop, target_os = "android"))]
             playback::commands_context::playback_state,

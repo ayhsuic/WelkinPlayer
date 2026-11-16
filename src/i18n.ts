@@ -847,6 +847,7 @@ const messages = {
         repeatOff: "循环播放：关",
         repeatAll: "列表循环",
         repeatOne: "单曲循环",
+        repeatOrder: "顺序播放",
     },
     playback: {
       failed: "播放失败",
@@ -1760,6 +1761,7 @@ const messages = {
         repeatOff: "Repeat: off",
         repeatAll: "Repeat all",
         repeatOne: "Repeat one",
+        repeatOrder: "Sequential",
     },
     playback: {
       failed: "Playback failed",
