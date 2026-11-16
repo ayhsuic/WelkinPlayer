@@ -81,7 +81,7 @@ import SourceConfigView from "./views/SourceConfigView.vue";
 const AmllPlayerView = defineAsyncComponent(() => import("./views/AmllPlayerView.vue"));
 
 /** Hash routes the app can restore on boot; must be initialised before `view` calls `getViewFromHash`. */
-const VIEW_ROUTES: ReadonlySet<string> = new Set(["settings", "sponsor", "player", "tracks", "queue", "favorites", "artists", "albums", "years", "genres", "sources", "folders", "webdav", "source-config", "source-browser", "playlists", "playlist-new", "lyrics-edit", "track-edit", "track-info", "downloading", "downloaded"]);
+const VIEW_ROUTES: ReadonlySet<string> = new Set(["wall", "settings", "sponsor", "player", "tracks", "queue", "favorites", "artists", "albums", "years", "genres", "sources", "folders", "webdav", "source-config", "source-browser", "playlists", "playlist-new", "lyrics-edit", "track-edit", "track-info", "downloading", "downloaded"]);
 const { t, locale } = useI18n();
 const player = usePlayerStore();
 const sources = useSourcesStore();
