@@ -50,6 +50,19 @@ const metrics = computed(() => ({
 }));
 const geometry = computed(() => geometryFor(total.value, metrics.value));
 const viewport = computed(() => ({ width: width.value, height: height.value, scale: camera.value.scale }));
+/**
+ * Once a block is grown the whole block — big card plus the eleven ring posters —
+ * must fit inside the narrow phone viewport. At the plain-wall base scale the
+ * block is wider than the screen, so the side columns and the bottom strip land
+ * off-screen and cannot be tapped. Fit the block to the viewport instead.
+ */
+const expandedScale = computed(() => {
+  if (!width.value || !height.value || geometry.value.blockWidth <= 0) return 1;
+  const pad = 14;
+  const sx = (width.value - pad) / geometry.value.blockWidth;
+  const sy = (height.value - pad) / geometry.value.blockHeight;
+  return Math.max(0.3, Math.min(1, sx, sy));
+});
 const bounds = computed(() => visibleBounds(
   centerOf(camera.value, viewport.value),
   viewport.value,
@@ -116,10 +129,11 @@ function reducedMotion() {
 }
 
 /** Glide the camera so `center` lands under the view's centre. */
-function panTo(center: { x: number; y: number }, ms = SETTLE_MS) {
+function panTo(center: { x: number; y: number }, ms = SETTLE_MS, targetScale?: number) {
   if (!width.value || !height.value) return;
   cancelMotion();
-  const to = cameraAt(center, viewport.value);
+  const fitViewport = targetScale === undefined ? viewport.value : { ...viewport.value, scale: targetScale };
+  const to = cameraAt(center, fitViewport);
   if (ms <= 0 || reducedMotion()) {
     camera.value = to;
     return;
@@ -367,19 +381,16 @@ function onWheel(event: WheelEvent) {
 
 /* ------------------------------------------------------------- open, close */
 
-/** World centre of the grown poster inside one block. */
+/** Centre of the opened block in world space; the grown block fits around this point. */
 function expandedCenter(block: { column: number; row: number }) {
   const geo = geometry.value;
-  const { cell, gap } = metrics.value;
-  const pitch = cell + gap;
   const repeatX = Math.floor(block.column / geo.blocksPerRow);
   const repeatY = Math.floor(block.row / geo.blockRows);
   const localColumn = block.column - repeatX * geo.blocksPerRow;
   const localRow = block.row - repeatY * geo.blockRows;
   return {
-    // The grown poster is slot 0: cells 3..8 across, 0..5 down.
-    x: repeatX * geo.cellWidth + localColumn * geo.blockWidth + 6 * pitch - gap / 2,
-    y: repeatY * geo.cellHeight + localRow * geo.blockHeight + 3 * pitch - gap / 2,
+    x: repeatX * geo.cellWidth + localColumn * geo.blockWidth + geo.blockWidth / 2,
+    y: repeatY * geo.cellHeight + localRow * geo.blockHeight + geo.blockHeight / 2,
   };
 }
 
@@ -387,7 +398,21 @@ function expandedCenter(block: { column: number; row: number }) {
 function onTileClick(tile: WallInstance) {
   if (performance.now() < ignoreClickUntil) return;
   if (tile.expanded) {
+    // Back to the plain wall at its base framing: re-anchor on this song's own
+    // plain copy so the camera does not stay in the grown block's fit scale.
+    const plain = locateNearest(
+      geometry.value,
+      total.value,
+      tile.queueIndex,
+      centerOf(camera.value, viewport.value),
+      metrics.value,
+    );
     selected.value = null;
+    if (plain) {
+      panTo({ x: plain.x + plain.width / 2, y: plain.y + plain.height / 2 }, SETTLE_MS, 1);
+    } else {
+      camera.value = { ...camera.value, scale: 1 };
+    }
     return;
   }
 
@@ -417,7 +442,7 @@ function onTileClick(tile: WallInstance) {
   }
 
   selected.value = { block, slotIndex: slot };
-  panTo(expandedCenter(block));
+  panTo(expandedCenter(block), SETTLE_MS, expandedScale.value);
 }
 
 function playCard() {
@@ -453,10 +478,10 @@ function centerOn(index: number, expand = false, instant = false) {
   const block = { column: tile.blockColumn, row: tile.blockRow };
   if (expand) {
     selected.value = { block, slotIndex: tile.slotIndex };
-    panTo(expandedCenter(block), instant ? 0 : SETTLE_MS);
+    panTo(expandedCenter(block), instant ? 0 : SETTLE_MS, expandedScale.value);
   } else {
     selected.value = null;
-    panTo({ x: tile.x + tile.width / 2, y: tile.y + tile.height / 2 }, instant ? 0 : SETTLE_MS);
+    panTo({ x: tile.x + tile.width / 2, y: tile.y + tile.height / 2 }, instant ? 0 : SETTLE_MS, 1);
   }
   pending = null;
 }
