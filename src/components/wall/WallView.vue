@@ -390,8 +390,33 @@ function onTileClick(tile: WallInstance) {
     selected.value = null;
     return;
   }
-  const block = { column: tile.blockColumn, row: tile.blockRow };
-  selected.value = { block, slotIndex: tile.sourceSlot };
+
+  // A ring card still carries its own song. Tapping it opens that song's own
+  // block on the plain wall — a fresh set of twelve posters — instead of
+  // swapping seats inside the currently grown block.
+  const inGrownBlock = Boolean(
+    selected.value &&
+      tile.blockColumn === selected.value.block.column &&
+      tile.blockRow === selected.value.block.row,
+  );
+
+  let block = { column: tile.blockColumn, row: tile.blockRow };
+  let slot = tile.sourceSlot;
+  if (inGrownBlock) {
+    const plain = locateNearest(
+      geometry.value,
+      total.value,
+      tile.queueIndex,
+      centerOf(camera.value, viewport.value),
+      metrics.value,
+    );
+    if (plain) {
+      block = { column: plain.blockColumn, row: plain.blockRow };
+      slot = plain.slotIndex;
+    }
+  }
+
+  selected.value = { block, slotIndex: slot };
   panTo(expandedCenter(block));
 }
 
