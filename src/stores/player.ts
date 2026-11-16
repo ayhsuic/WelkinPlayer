@@ -418,6 +418,19 @@ export const usePlayerStore = defineStore("player", () => {
     one: "order",
   };
 
+  /** Set the three-state mobile play mode directly (order / shuffle / one). */
+  async function applyPlayMode(mode: PlayMode) {
+    if (mode === "shuffle") {
+      await setRepeat("off");
+      await setShuffle(true);
+    } else if (mode === "one") {
+      await setRepeat("one");
+    } else {
+      await setShuffle(false);
+      await setRepeat("off");
+    }
+  }
+
   /**
    * Cycle the three mobile play modes: order -> shuffle -> one -> order.
    * Returns the target mode so the UI can announce it before the Rust
@@ -629,5 +642,6 @@ export const usePlayerStore = defineStore("player", () => {
     setRepeat,
     playMode,
     cyclePlayMode,
+    applyPlayMode,
   };
 });

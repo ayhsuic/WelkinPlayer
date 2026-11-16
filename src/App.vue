@@ -480,7 +480,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
       <Transition name="queue-panel"><div v-if="showQueue" class="absolute inset-y-0 right-0 z-20 w-80 border-l border-line bg-surface"><QueuePanel @close="closeQueue" /></div></Transition>
     </div>
     <PlayerBar v-if="player.currentTrack" class="hidden md:block" @open="navigate('player')" @queue="toggleQueue" @open-artist="openArtist" @open-album="openAlbum" />
-    <PlayerNavBar @sheet="sheetOpen = true" />
+    <PlayerNavBar v-if="baseView === 'wall' || view === 'player'" @sheet="sheetOpen = true" />
     <MobileNavSheet v-model:open="sheetOpen" :active-view="baseView" @navigate="onSheetNavigate" />
     <ToastStack />
     <AudioQualityModal />

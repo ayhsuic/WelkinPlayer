@@ -5,6 +5,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
+import { ListMusic, Repeat1, Shuffle } from "@lucide/vue";
 import { usePlayerStore, type PlayMode } from "../stores/player";
 import { seekPercent } from "../lib/audio";
 import { percent } from "../lib/format";
@@ -41,12 +42,15 @@ let downY = 0;
 let barRect: DOMRect | null = null;
 let pressTimer = 0;
 
-function ratioFromEvent(clientX: number): number {
-  if (!barRect) return 0;
-  return Math.min(1, Math.max(0, (clientX - barRect.left) / barRect.width));
-}
+/** Three play modes offered in the long-press sheet, left to right. */
+const MODES: { id: PlayMode; icon: typeof Shuffle }[] = [
+  { id: "shuffle", icon: Shuffle },
+  { id: "order", icon: ListMusic },
+  { id: "one", icon: Repeat1 },
+];
+const showModes = ref(false);
 
-/** Localized label for the three long-press play modes. */
+/** Localized label for the three play modes. */
 function playModeLabel(mode: PlayMode): string {
   const key =
     mode === "shuffle"
@@ -55,6 +59,29 @@ function playModeLabel(mode: PlayMode): string {
         ? "controls.repeatOne"
         : "controls.repeatOrder";
   return i18n.global.t(key);
+}
+
+function closeModes() {
+  showModes.value = false;
+}
+
+function selectMode(mode: PlayMode) {
+  if (player.playMode() !== mode) void player.applyPlayMode(mode);
+  pushToast("info", playModeLabel(mode));
+  closeModes();
+}
+
+/** Swipe to the neighbouring mode inside the sheet. */
+function stepMode(delta: number) {
+  const current = player.playMode();
+  const index = MODES.findIndex((item) => item.id === current);
+  const next = MODES[(index + delta + MODES.length) % MODES.length];
+  if (next) selectMode(next.id);
+}
+
+function ratioFromEvent(clientX: number): number {
+  if (!barRect) return 0;
+  return Math.min(1, Math.max(0, (clientX - barRect.left) / barRect.width));
 }
 
 function onBarDown(event: PointerEvent) {
@@ -68,10 +95,10 @@ function onBarDown(event: PointerEvent) {
   downY = event.clientY;
   seekValue.value = player.progress;
   el.setPointerCapture?.(event.pointerId);
-  // Long press cycles the play mode; a plain tap toggles play/pause.
+  // Long press opens the mode sheet; a plain tap toggles play/pause or seeks.
   pressTimer = window.setTimeout(() => {
     longFired = true;
-    void player.cyclePlayMode().then((next) => pushToast("info", playModeLabel(next)));
+    showModes.value = true;
   }, 500);
 }
 
@@ -103,6 +130,12 @@ function onBarUp(event: PointerEvent) {
     seekValue.value = null;
     return;
   }
+  // A tap while the sheet is open dismisses it instead of changing track.
+  if (showModes.value) {
+    closeModes();
+    seekValue.value = null;
+    return;
+  }
   if (dragMoved) {
     const value = seekValue.value ?? player.progress;
     seekValue.value = null;
@@ -121,6 +154,25 @@ function onBarCancel() {
   pointerSeeking = false;
   dragMoved = false;
   seekValue.value = null;
+}
+
+/* --------------------------------------------- mode sheet swipe select */
+
+let sheetTouchX = 0;
+let sheetSwiped = false;
+
+function onSheetTouchStart(event: TouchEvent) {
+  if (event.touches.length !== 1) return;
+  sheetTouchX = event.touches[0].clientX;
+  sheetSwiped = false;
+}
+
+function onSheetTouchMove(event: TouchEvent) {
+  if (sheetSwiped || event.touches.length !== 1) return;
+  const dx = event.touches[0].clientX - sheetTouchX;
+  if (Math.abs(dx) < 24) return;
+  sheetSwiped = true;
+  stepMode(dx < 0 ? 1 : -1);
 }
 
 /* --------------------------------------------- swipe up opens the drawer */
@@ -203,6 +255,27 @@ onBeforeUnmount(() => {
 
 <template>
   <footer ref="root" class="transport no-scrollbar" role="group" aria-label="Playback controls">
+    <Transition name="mode-sheet">
+      <div
+        v-if="showModes"
+        class="mode-sheet"
+        @touchstart="onSheetTouchStart"
+        @touchmove="onSheetTouchMove"
+      >
+        <button
+          v-for="mode in MODES"
+          :key="mode.id"
+          type="button"
+          class="mode-option"
+          :class="{ 'is-active': player.playMode() === mode.id }"
+          :aria-label="playModeLabel(mode.id)"
+          @click.stop="selectMode(mode.id)"
+        >
+          <component :is="mode.icon" :size="20" />
+          <span class="mode-option-label">{{ playModeLabel(mode.id) }}</span>
+        </button>
+      </div>
+    </Transition>
     <div
       ref="bar"
       class="seekbar"
@@ -279,6 +352,50 @@ onBeforeUnmount(() => {
 
 .seekbar-time--end {
   right: 14px;
+}
+
+.mode-sheet {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
+.mode-option {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.mode-option.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.mode-option-label {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mode-sheet-enter-active,
+.mode-sheet-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.mode-sheet-enter-from,
+.mode-sheet-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 
 /* Desktop keeps the full player bar, so this strip is mobile-only. */

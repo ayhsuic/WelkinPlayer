@@ -53,10 +53,13 @@ const total = computed(() => sourceList.value.length);
 /** One cell of the lattice; a phone shows roughly five across. */
 const metrics = computed(() => ({
   cell: Math.round(Math.min(112, Math.max(52, (width.value || 400) * 0.19))),
-  gap: 10,
+  gap: 0,
 }));
 const geometry = computed(() => geometryFor(total.value, metrics.value));
 const viewport = computed(() => ({ width: width.value, height: height.value, scale: camera.value.scale }));
+const MIN_SCALE = 0.45;
+const MAX_SCALE = 2.6;
+
 /**
  * Once a block is grown the whole block — big card plus the eleven ring posters —
  * must fit inside the narrow phone viewport. At the plain-wall base scale the
@@ -68,7 +71,7 @@ const expandedScale = computed(() => {
   const pad = 14;
   const sx = (width.value - pad) / geometry.value.blockWidth;
   const sy = (height.value - pad) / geometry.value.blockHeight;
-  return Math.max(0.3, Math.min(1, sx, sy));
+  return Math.max(MIN_SCALE, Math.min(1, sx, sy));
 });
 const bounds = computed(() => visibleBounds(
   centerOf(camera.value, viewport.value),
@@ -162,12 +165,21 @@ const INERTIA = {
 const TAP_SLOP_PX = 8;
 /** Below this finger separation (px) a pinch is not armed: the ratio is noise. */
 const MIN_PINCH_PX = 24;
-const MIN_SCALE = 0.45;
-const MAX_SCALE = 2.6;
 const SETTLE_MS = 340;
+/** Idle time after which the wall drifts back to the playing track. */
+const IDLE_MS = 6000;
 
 /** One animation at a time: a glide, a coast, or a pinch all own the camera. */
 let motionFrame = 0;
+let idleTimer = 0;
+
+/** Reset the idle centring timer; any touch, drag or tap counts as activity. */
+function resetIdle() {
+  window.clearTimeout(idleTimer);
+  idleTimer = window.setTimeout(() => {
+    if (currentIndex.value >= 0) centerOn(currentIndex.value, false);
+  }, IDLE_MS);
+}
 
 function cancelMotion() {
   if (motionFrame) cancelAnimationFrame(motionFrame);
@@ -298,6 +310,7 @@ function zoomAt(factor: number, anchor: { x: number; y: number }) {
 
 function onPointerDown(event: PointerEvent) {
   if (event.pointerType === "mouse" && event.button !== 0) return;
+  resetIdle();
   pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
   // A second finger turns the gesture into a pinch; the single-finger pan lets go.
@@ -448,6 +461,7 @@ function expandedCenter(block: { column: number; row: number }, focusSlot: numbe
 
 /** Tapping a poster opens its block; tapping the open card closes it. */
 function onTileClick(tile: WallInstance) {
+  resetIdle();
   if (performance.now() < ignoreClickUntil) return;
   if (tile.expanded) {
     // Back to the plain wall at its base framing: re-anchor on this song's own
@@ -525,7 +539,9 @@ function centerOn(index: number, expand = false, instant = false) {
     panTo(expandedCenter(block, tile.slotIndex), instant ? 0 : SETTLE_MS, expandedScale.value);
   } else {
     selected.value = null;
-    panTo({ x: tile.x + tile.width / 2, y: tile.y + tile.height / 2 }, instant ? 0 : SETTLE_MS, 1);
+    // Keep the user's current zoom when re-centring a plain wall; only the grown
+    // block refits to the viewport.
+    panTo({ x: tile.x + tile.width / 2, y: tile.y + tile.height / 2 }, instant ? 0 : SETTLE_MS);
   }
   pending = null;
 }
@@ -561,6 +577,7 @@ onMounted(() => {
     centred = true;
     centerOn(currentIndex.value >= 0 ? currentIndex.value : 0, false, true);
   }
+  resetIdle();
 });
 
 watch(total, (next, previous) => {
@@ -570,6 +587,14 @@ watch(total, (next, previous) => {
   if (!previous && !centred) {
     centred = true;
     centerOn(currentIndex.value >= 0 ? currentIndex.value : 0, false, true);
+  }
+});
+
+/** Back on the wall after leaving it: centre on the playing track once it resolves. */
+watch(currentIndex, (index, previous) => {
+  if (index >= 0 && previous < 0 && !centred) {
+    centred = true;
+    centerOn(index, false, true);
   }
 });
 
@@ -591,6 +616,7 @@ watch(
 
 onBeforeUnmount(() => {
   cancelMotion();
+  window.clearTimeout(idleTimer);
   observer?.disconnect();
   observer = null;
 });
@@ -675,6 +701,11 @@ defineExpose({ focusCurrent, focusFirst });
   border-radius: 0;
   background: var(--surface-2, var(--surface));
   cursor: pointer;
+  transition:
+    left 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    top 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .wall-tile.is-current {
