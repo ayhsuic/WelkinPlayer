@@ -13,6 +13,9 @@ import { useLyricsStore } from "../../stores/lyrics";
 import { cameraAt, centerOf, geometryFor, layoutWall, locateNearest, visibleBounds, worldTransform, neighborWindow, grownWindowIndex, focusSlotRect, pitchOf } from "./geometry";
 import type { WallFocus, WallInstance } from "./geometry";
 import { trackKey } from "../../lib/sources";
+import { requestMeta } from "../../directives/requestMeta";
+
+const vRequestMeta = requestMeta;
 
 /**
  * The cover wall: the whole library as one endless field of posters, laid out by
@@ -177,7 +180,7 @@ let idleTimer = 0;
 function resetIdle() {
   window.clearTimeout(idleTimer);
   idleTimer = window.setTimeout(() => {
-    if (currentIndex.value >= 0) centerOn(currentIndex.value, false);
+    if (currentIndex.value >= 0) centerOn(currentIndex.value, true);
   }, IDLE_MS);
 }
 
@@ -444,6 +447,19 @@ function onWheel(event: WheelEvent) {
 
 /* ------------------------------------------------------------- open, close */
 
+/** Centre of a plain block in world space (used when closing the grown card). */
+function plainBlockCenter(block: { column: number; row: number }) {
+  const geo = geometry.value;
+  const repeatX = Math.floor(block.column / geo.blocksPerRow);
+  const repeatY = Math.floor(block.row / geo.blockRows);
+  const localColumn = block.column - repeatX * geo.blocksPerRow;
+  const localRow = block.row - repeatY * geo.blockRows;
+  return {
+    x: repeatX * geo.cellWidth + localColumn * geo.blockWidth + geo.blockWidth / 2,
+    y: repeatY * geo.cellHeight + localRow * geo.blockHeight + geo.blockHeight / 2,
+  };
+}
+
 /** Centre of the big card opened on `focusSlot`, in world space. */
 function expandedCenter(block: { column: number; row: number }, focusSlot: number) {
   const geo = geometry.value;
@@ -464,21 +480,12 @@ function onTileClick(tile: WallInstance) {
   resetIdle();
   if (performance.now() < ignoreClickUntil) return;
   if (tile.expanded) {
-    // Back to the plain wall at its base framing: re-anchor on this song's own
-    // plain copy so the camera does not stay in the grown block's fit scale.
-    const plain = locateNearest(
-      geometry.value,
-      total.value,
-      tile.queueIndex,
-      centerOf(camera.value, viewport.value),
-      metrics.value,
-    );
+    // Close back onto the same block in its plain framing. Anchoring on the
+    // opened block itself avoids re-locating a different repeated copy of the
+    // song and jumping the camera across the wall.
+    const block = { column: tile.blockColumn, row: tile.blockRow };
     selected.value = null;
-    if (plain) {
-      panTo({ x: plain.x + plain.width / 2, y: plain.y + plain.height / 2 }, SETTLE_MS, 1);
-    } else {
-      camera.value = { ...camera.value, scale: 1 };
-    }
+    panTo(plainBlockCenter(block), SETTLE_MS, 1);
     return;
   }
 
@@ -636,6 +643,7 @@ defineExpose({ focusCurrent, focusFirst });
         role="button"
         tabindex="0"
         :aria-label="tileTrack(tile)?.title ?? ''"
+        v-request-meta="tileTrack(tile) ?? undefined"
         @click="onTileClick(tile)"
         @keydown.enter.prevent="onTileClick(tile)"
       >

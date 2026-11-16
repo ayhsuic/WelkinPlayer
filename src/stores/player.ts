@@ -470,14 +470,20 @@ export const usePlayerStore = defineStore("player", () => {
   }
 
   async function togglePlayback() {
-    const track = currentTrack.value;
-    if (!track) return;
+    // Nothing loaded yet: start the first playable track from the queue or
+    // library instead of doing nothing on the play button.
+    if (!currentTrack.value) {
+      const items = (queue.value.length > 0 ? queue.value : tracks.value).filter((item) => item.path);
+      if (items.length === 0) return;
+      await playInQueue(items, items[0]);
+      return;
+    }
     if (!isPlaying.value) {
-      const items = queue.value.length > 0 ? queue.value : [track];
+      const items = queue.value.length > 0 ? queue.value : [currentTrack.value];
       const authorized = await authorizeQueue(items);
       if (!authorized) return;
       if (authorized.rebuild) {
-        await startQueue(items, track, authorized.cachedOnly);
+        await startQueue(items, currentTrack.value, authorized.cachedOnly);
         return;
       }
     }
