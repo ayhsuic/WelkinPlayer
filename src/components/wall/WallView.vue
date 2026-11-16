@@ -234,7 +234,6 @@ function zoomAt(factor: number, anchor: { x: number; y: number }) {
 
 function onPointerDown(event: PointerEvent) {
   if (event.pointerType === "mouse" && event.button !== 0) return;
-  const target = event.currentTarget as HTMLElement | null;
   pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
   // A second finger turns the gesture into a pinch; the single-finger pan lets go.
@@ -260,7 +259,9 @@ function onPointerDown(event: PointerEvent) {
   drag.lastTime = event.timeStamp;
   drag.vx = 0;
   drag.vy = 0;
-  target?.setPointerCapture?.(event.pointerId);
+  // Capture is taken only once the gesture becomes a pan (see onPointerMove).
+  // Capturing on tap here would redirect the following click to the stage and
+  // the poster's own @click would never fire.
 }
 
 function onPointerMove(event: PointerEvent) {
@@ -291,6 +292,7 @@ function onPointerMove(event: PointerEvent) {
   const dy = event.clientY - drag.startY;
   // A short wobble is a tap on a poster, not a pan.
   if (!drag.moved && Math.hypot(dx, dy) <= TAP_SLOP_PX) return;
+  if (!drag.moved) stage.value?.setPointerCapture?.(event.pointerId);
   drag.moved = true;
 
   const elapsed = event.timeStamp - drag.lastTime;
@@ -389,7 +391,7 @@ function onTileClick(tile: WallInstance) {
     return;
   }
   const block = { column: tile.blockColumn, row: tile.blockRow };
-  selected.value = { block, slotIndex: tile.slotIndex };
+  selected.value = { block, slotIndex: tile.sourceSlot };
   panTo(expandedCenter(block));
 }
 

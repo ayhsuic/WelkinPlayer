@@ -33,6 +33,11 @@ export type WallInstance = {
   blockRow: number;
   /** Which of the block's twelve seats this poster occupies. */
   slotIndex: number;
+  /**
+   * The plain seat this poster actually shows. A grown ring seat remaps back to
+   * its source song, so re-opening from a ring card anchors on the right track.
+   */
+  sourceSlot: number;
   repeatX: number;
   repeatY: number;
   x: number;
@@ -257,6 +262,7 @@ function buildInstance(
     blockColumn,
     blockRow,
     slotIndex,
+    sourceSlot,
     repeatX,
     repeatY,
     expanded,
