@@ -8,9 +8,11 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Music2, Pause, Play } from "@lucide/vue";
 import { usePlayerStore } from "../../stores/player";
+import type { Track } from "../../stores/player";
 import { useLyricsStore } from "../../stores/lyrics";
-import { cameraAt, centerOf, geometryFor, layoutWall, locateNearest, visibleBounds, worldTransform } from "./geometry";
+import { cameraAt, centerOf, geometryFor, layoutWall, locateNearest, visibleBounds, worldTransform, neighborWindow } from "./geometry";
 import type { WallFocus, WallInstance } from "./geometry";
+import { trackKey } from "../../lib/sources";
 
 /**
  * The cover wall: the whole library as one endless field of posters, laid out by
@@ -42,7 +44,12 @@ const camera = ref({ x: 0, y: 0, scale: 1 });
 const selected = ref<WallFocus | null>(null);
 
 const tracks = computed(() => player.tracks);
-const total = computed(() => tracks.value.length);
+/**
+ * The list the wall shows: the live play queue when there is one, otherwise the
+ * whole library. When both are empty the wall renders its empty state.
+ */
+const sourceList = computed(() => (player.queue.length > 0 ? player.queue : tracks.value));
+const total = computed(() => sourceList.value.length);
 /** One cell of the lattice; a phone shows roughly five across. */
 const metrics = computed(() => ({
   cell: Math.round(Math.min(112, Math.max(52, (width.value || 400) * 0.19))),
@@ -71,28 +78,66 @@ const bounds = computed(() => visibleBounds(
 const currentIndex = computed(() => {
   const current = player.currentTrack;
   if (!current) return -1;
-  return tracks.value.findIndex((track) => track.id === current.id);
+  const key = trackKey(current);
+  return sourceList.value.findIndex((track) => trackKey(track) === key);
 });
 const current = computed(() => player.currentTrack);
 const tiles = computed(() => layoutWall(geometry.value, total.value, bounds.value, 0, metrics.value, selected.value));
 /** The grown poster, once a block is open. */
 const openedTile = computed(() => tiles.value.find((tile) => tile.expanded) ?? null);
-const cardTrack = computed(() => {
-  const tile = openedTile.value;
-  if (!tile) return null;
-  return tracks.value[tile.queueIndex] ?? null;
-});
-/** Whether the open card is showing the song that is actually playing. */
-const isCardCurrent = computed(() => Boolean(cardTrack.value && current.value && cardTrack.value.id === current.value.id));
 
-/** The lyric line being sung, read from the word runs the parser produces. */
-const activeLyric = computed(() => {
-  const line = lyrics.lines[lyrics.activeIndex];
+/** The 12 tracks of the opened ring, centred on the focus track's neighbours in the source list. */
+const focusWindow = computed(() => {
+  const sel = selected.value;
+  if (!sel) return null;
+  const list = sourceList.value;
+  if (list.length === 0) return null;
+  let c = sel.centerKey ? list.findIndex((item) => trackKey(item) === sel.centerKey) : -1;
+  if (c < 0) c = 0;
+  return neighborWindow(list, c);
+});
+
+function isGrownTile(tile: WallInstance): boolean {
+  const sel = selected.value;
+  return Boolean(sel && tile.blockColumn === sel.block.column && tile.blockRow === sel.block.row);
+}
+
+/** Track a poster shows: grown ring seats follow the focus window; plain seats follow the source list. */
+function tileTrack(tile: WallInstance): Track | null {
+  if (isGrownTile(tile)) return focusWindow.value?.[tile.expanded ? 0 : tile.slotIndex] ?? null;
+  return sourceList.value[tile.queueIndex] ?? null;
+}
+
+/** 1-based position of a poster's track inside the source list, for the corner badge. */
+function orderOf(tile: WallInstance): number {
+  const track = tileTrack(tile);
+  if (!track) return 0;
+  const key = trackKey(track);
+  const index = sourceList.value.findIndex((item) => trackKey(item) === key);
+  return index >= 0 ? index + 1 : 0;
+}
+
+const cardTrack = computed(() => (openedTile.value ? focusWindow.value?.[0] ?? null : null));
+/** Whether the open card is showing the song that is actually playing. */
+const isCardCurrent = computed(() => Boolean(cardTrack.value && current.value && trackKey(cardTrack.value) === trackKey(current.value)));
+
+/** One parsed line flattened to plain text; "" outside the lyric range. */
+function lineText(index: number): string {
+  const line = lyrics.lines[index];
   if (!line) return "";
   return line.words.map((word) => word.word).join("").trim();
+}
+
+/**
+ * Three lyric slots for the card: previous line, the sung line, next line.
+ * Empty strings keep the three-row reservation even when a line is missing or
+ * the card shows a different song.
+ */
+const lyricLines = computed<[string, string, string]>(() => {
+  if (!isCardCurrent.value) return ["", "", ""];
+  const i = lyrics.activeIndex;
+  return [lineText(i - 1), lineText(i), lineText(i + 1)];
 });
-/** A card for some other song has no sung line to show. */
-const cardLyric = computed(() => (isCardCurrent.value ? activeLyric.value : ""));
 
 /* ----------------------------------------------------------------- motion */
 
@@ -416,32 +461,21 @@ function onTileClick(tile: WallInstance) {
     return;
   }
 
-  // A ring card still carries its own song. Tapping it opens that song's own
-  // block on the plain wall — a fresh set of twelve posters — instead of
-  // swapping seats inside the currently grown block.
-  const inGrownBlock = Boolean(
-    selected.value &&
-      tile.blockColumn === selected.value.block.column &&
-      tile.blockRow === selected.value.block.row,
-  );
+  // A ring card carries its own song. Tapping it re-centres the opened ring on
+  // that track: the card moves to the middle and the eleven neighbours are
+  // rebuilt from the queue around it, instead of swapping seats in place.
+  const block = { column: tile.blockColumn, row: tile.blockRow };
+  const track = tileTrack(tile);
+  const centerKey = track ? trackKey(track) : undefined;
 
-  let block = { column: tile.blockColumn, row: tile.blockRow };
-  let slot = tile.sourceSlot;
-  if (inGrownBlock) {
-    const plain = locateNearest(
-      geometry.value,
-      total.value,
-      tile.queueIndex,
-      centerOf(camera.value, viewport.value),
-      metrics.value,
-    );
-    if (plain) {
-      block = { column: plain.blockColumn, row: plain.blockRow };
-      slot = plain.slotIndex;
-    }
+  if (isGrownTile(tile)) {
+    selected.value = { block, slotIndex: tile.sourceSlot, centerKey };
+    panTo(expandedCenter(block), SETTLE_MS, expandedScale.value);
+    return;
   }
 
-  selected.value = { block, slotIndex: slot };
+  // Plain neighbour poster: open the block it sits in, with this track at the card.
+  selected.value = { block, slotIndex: tile.sourceSlot, centerKey };
   panTo(expandedCenter(block), SETTLE_MS, expandedScale.value);
 }
 
@@ -452,14 +486,14 @@ function playCard() {
     player.togglePlayback();
     return;
   }
-  void player.playInQueue(tracks.value, track);
+  void player.playInQueue(sourceList.value, track);
 }
 
 function openCardLyrics() {
   const track = cardTrack.value;
   if (!track) return;
   // The lyric sheet shows the playing song, so open it on what the card holds.
-  if (!isCardCurrent.value) void player.playInQueue(tracks.value, track);
+  if (!isCardCurrent.value) void player.playInQueue(sourceList.value, track);
   emit("openLyrics");
 }
 
@@ -476,8 +510,10 @@ function centerOn(index: number, expand = false, instant = false) {
   const tile = locateNearest(geometry.value, total.value, index, centerOf(camera.value, viewport.value), metrics.value);
   if (!tile) return;
   const block = { column: tile.blockColumn, row: tile.blockRow };
+  const centreTrack = sourceList.value[tile.queueIndex];
+  const centerKey = centreTrack ? trackKey(centreTrack) : undefined;
   if (expand) {
-    selected.value = { block, slotIndex: tile.slotIndex };
+    selected.value = { block, slotIndex: tile.slotIndex, centerKey };
     panTo(expandedCenter(block), instant ? 0 : SETTLE_MS, expandedScale.value);
   } else {
     selected.value = null;
@@ -532,6 +568,19 @@ watch(total, (next, previous) => {
 /** A long press on the navigation strip asks the wall to re-centre on the playing track. */
 watch(() => props.focusToken, () => focusCurrent());
 
+/**
+ * When playback moves to a new track it grows to the centre; the track that was
+ * playing falls back to a small ring card. Fires on identity change only, so a
+ * metadata refresh on the same song does not re-centre the wall under the finger.
+ */
+watch(
+  () => (current.value ? trackKey(current.value) : null),
+  (key) => {
+    if (!key) return;
+    centerOn(currentIndex.value >= 0 ? currentIndex.value : 0, true);
+  },
+);
+
 onBeforeUnmount(() => {
   cancelMotion();
   observer?.disconnect();
@@ -548,23 +597,27 @@ defineExpose({ focusCurrent, focusFirst });
         v-for="tile in tiles"
         :key="tile.id"
         class="wall-tile"
-        :class="{ 'is-current': tile.queueIndex === currentIndex && !tile.expanded, 'is-expanded': tile.expanded }"
-        :style="{ left: `${tile.x}px`, top: `${tile.y}px`, width: `${tile.width}px`, height: `${tile.height}px`, zIndex: tile.expanded ? 5 : tile.queueIndex === currentIndex ? 2 : 1 }"
+        :class="{ 'is-current': !tile.expanded && trackKey(tileTrack(tile)) === trackKey(current), 'is-expanded': tile.expanded }"
+        :style="{ left: `${tile.x}px`, top: `${tile.y}px`, width: `${tile.width}px`, height: `${tile.height}px`, zIndex: tile.expanded ? 5 : trackKey(tileTrack(tile)) === trackKey(current) ? 2 : 1 }"
         role="button"
         tabindex="0"
-        :aria-label="tracks[tile.queueIndex]?.title ?? ''"
+        :aria-label="tileTrack(tile)?.title ?? ''"
         @click="onTileClick(tile)"
         @keydown.enter.prevent="onTileClick(tile)"
       >
-        <img v-if="tracks[tile.queueIndex]?.cover" class="wall-cover" :src="tracks[tile.queueIndex]?.cover" alt="" loading="lazy" decoding="async" draggable="false" />
-        <span v-else class="wall-fallback" :style="{ background: tracks[tile.queueIndex]?.color ?? 'var(--line)' }">{{ tracks[tile.queueIndex]?.title?.slice(0, 1) ?? "" }}</span>
+        <img v-if="tileTrack(tile)?.cover" class="wall-cover" :src="tileTrack(tile)?.cover" alt="" loading="lazy" decoding="async" draggable="false" />
+        <span v-else class="wall-fallback" :style="{ background: tileTrack(tile)?.color ?? 'var(--line)' }">{{ tileTrack(tile)?.title?.slice(0, 1) ?? "" }}</span>
+        <span v-if="!tile.expanded && orderOf(tile) > 0" class="wall-tile-order">{{ orderOf(tile) }}</span>
         <template v-if="tile.expanded && cardTrack">
           <span class="wall-card-shade" aria-hidden="true" />
           <div class="wall-card">
-            <span class="wall-card-kicker">{{ t("nav.wall") }}</span>
             <h2 class="wall-card-title">{{ cardTrack.title }}</h2>
             <span class="wall-card-artist">{{ cardTrack.artist }}</span>
-            <p v-if="cardLyric" class="wall-card-lyric">{{ cardLyric }}</p>
+            <div class="wall-card-lyrics">
+              <p class="wall-card-lyric is-prev">{{ lyricLines[0] }}</p>
+              <p class="wall-card-lyric is-current">{{ lyricLines[1] }}</p>
+              <p class="wall-card-lyric is-next">{{ lyricLines[2] }}</p>
+            </div>
             <div class="wall-card-actions">
               <button type="button" class="wall-card-action is-primary" :aria-label="isCardCurrent && player.isPlaying ? 'Pause' : 'Play'" @click.stop="playCard()">
                 <Pause v-if="isCardCurrent && player.isPlaying" :size="20" />
@@ -646,6 +699,23 @@ defineExpose({ focusCurrent, focusFirst });
   opacity: 0.35;
 }
 
+/* Corner queue-position badge (folia sonnet style). */
+.wall-tile-order {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  min-width: 17px;
+  padding: 1px 4px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  pointer-events: none;
+}
+
 .wall-card-shade {
   position: absolute;
   inset: 0;
@@ -664,14 +734,6 @@ defineExpose({ focusCurrent, focusFirst });
   padding: 20px 22px 22px;
   color: #fff;
   pointer-events: none;
-}
-
-.wall-card-kicker {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  opacity: 0.6;
 }
 
 .wall-card-title {
@@ -695,15 +757,31 @@ defineExpose({ focusCurrent, focusFirst });
   text-overflow: ellipsis;
 }
 
+.wall-card-lyrics {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+  min-height: calc(1.4em * 3 + 4px);
+}
+
 .wall-card-lyric {
-  margin: 2px 0 0;
+  margin: 0;
   font-size: 13px;
-  line-height: 1.45;
-  opacity: 0.62;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  line-height: 1.4;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wall-card-lyric.is-prev,
+.wall-card-lyric.is-next {
+  opacity: 0.4;
+}
+
+.wall-card-lyric.is-current {
+  opacity: 0.92;
+  font-weight: 600;
 }
 
 .wall-card-actions {

@@ -293,7 +293,7 @@ function getViewFromHash(): View {
   const route = window.location.hash.slice(1);
   // `#sources` predates the folder / WebDAV split; keep old links working.
   if (route === "sources") return "folders";
-  return VIEW_ROUTES.has(route) ? (route as View) : "library";
+  return VIEW_ROUTES.has(route) ? (route as View) : "wall";
 }
 /** How long a scrolled container keeps its auto-hiding scrollbar visible after the last scroll. */
 const SCROLLBAR_IDLE_MS = 700;
@@ -362,23 +362,6 @@ function toggleQueue() {
 }
 function openQueue() { showQueue.value = true; }
 function closeQueue() { showQueue.value = false; }
-
-/**
- * The strip's tap: back to the cover wall, which is both the home page and the
- * now-playing page.
- */
-function goHome() { sheetOpen.value = false; navigate("wall"); }
-
-/**
- * The strip's long press: locate the current track. On the wall that is a camera
- * move onto the playing poster; from anywhere else it first goes home and then
- * asks the wall to centre.
- */
-function locateCurrent() {
-  sheetOpen.value = false;
-  if (baseView.value !== "wall") navigate("wall");
-  wallFocusToken.value += 1;
-}
 
 function onSheetNavigate(next: View) { navigate(next); }
 
@@ -484,7 +467,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
       <Transition name="queue-panel"><div v-if="showQueue" class="absolute inset-y-0 right-0 z-20 w-80 border-l border-line bg-surface"><QueuePanel @close="closeQueue" /></div></Transition>
     </div>
     <PlayerBar v-if="player.currentTrack" class="hidden md:block" @open="navigate('player')" @queue="toggleQueue" @open-artist="openArtist" @open-album="openAlbum" />
-    <PlayerNavBar :can-skip="player.queue.length > 1" @home="goHome" @previous="player.previous()" @next="player.next()" @locate="locateCurrent" @sheet="sheetOpen = true" />
+    <PlayerNavBar @sheet="sheetOpen = true" />
     <MobileNavSheet v-model:open="sheetOpen" :active-view="baseView" @navigate="onSheetNavigate" />
     <ToastStack />
     <AudioQualityModal />

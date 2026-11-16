@@ -340,8 +340,33 @@ export function blockForEntry(
   return best;
 }
 
-/** What an opened block needs: which block, and which of its seats the card shows. */
-export type WallFocus = { block: { column: number; row: number }; slotIndex: number };
+/** What an opened block needs: which block, which seat the card shows, and the identity of the centre track. */
+export type WallFocus = {
+  block: { column: number; row: number };
+  slotIndex: number;
+  /** Identity of the centre track; the grown ring takes its neighbours from the queue around it. */
+  centerKey?: string;
+};
+
+/**
+ * Build a `SLOTS_PER_BLOCK`-seat window around `center`: seat 0 is the centre
+ * track, the rest alternate before/after it, wrapping around the list. Short
+ * lists repeat so the window always fills every seat.
+ */
+export function neighborWindow<T>(list: T[], center: number): T[] {
+  const n = list.length;
+  if (n === 0) return [];
+  const win: T[] = [list[((center % n) + n) % n]];
+  let d = 1;
+  while (win.length < SLOTS_PER_BLOCK) {
+    const left = ((center - d) % n + n) % n;
+    const right = ((center + d) % n + n) % n;
+    win.push(list[left]);
+    if (win.length < SLOTS_PER_BLOCK) win.push(list[right]);
+    d += 1;
+  }
+  return win;
+}
 
 /** Posters intersecting the viewport. Cost scales with what is on screen, never with queue length. */
 export function layoutWall(
