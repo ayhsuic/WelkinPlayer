@@ -377,9 +377,9 @@ function expandedCenter(block: { column: number; row: number }) {
   const localColumn = block.column - repeatX * geo.blocksPerRow;
   const localRow = block.row - repeatY * geo.blockRows;
   return {
-    // The grown poster is slot 0: cells 3..8 across, 1..6 down.
+    // The grown poster is slot 0: cells 3..8 across, 0..5 down.
     x: repeatX * geo.cellWidth + localColumn * geo.blockWidth + 6 * pitch - gap / 2,
-    y: repeatY * geo.cellHeight + localRow * geo.blockHeight + 4 * pitch - gap / 2,
+    y: repeatY * geo.cellHeight + localRow * geo.blockHeight + 3 * pitch - gap / 2,
   };
 }
 

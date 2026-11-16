@@ -73,10 +73,10 @@ const QUADRANT_RECIPES: Slot[][] = [
     { x: 2, y: 0, cols: 2, rows: 4 },
     { x: 4, y: 0, cols: 2, rows: 4 },
   ],
-  // horizontal stripes, the last one taller
+  // two side-by-side above, one wide band below; every seat is at least two rows tall
   [
-    { x: 0, y: 0, cols: 6, rows: 1 },
-    { x: 0, y: 1, cols: 6, rows: 1 },
+    { x: 0, y: 0, cols: 3, rows: 2 },
+    { x: 3, y: 0, cols: 3, rows: 2 },
     { x: 0, y: 2, cols: 6, rows: 2 },
   ],
   // one big square plus two small ones stacked
@@ -278,25 +278,24 @@ function buildInstance(
 /**
  * One block grown around the poster the user opened: the middle 6 x 6 becomes a
  * single card and the eleven posters that shared the block move into the ring it
- * leaves. The ring is filled exactly — the left and right thirds hold four 3 x 2
- * posters each, the strip above the card holds two 3 x 1, the one below a single
- * 6 x 1 — so the block still covers its 96 cells with twelve posters, with no gap
- * and no overlap. That is the same construction rule the plain recipes follow, so
- * a grown block cannot leave a hole either.
+ * leaves. The card sits at the top so the two side columns and the bottom strip can
+ * all be at least two rows tall — a one-row seat would crop a square cover into a
+ * thin bar. The block still covers its 96 cells with twelve posters, with no gap
+ * and no overlap.
  */
 const EXPANDED_SLOTS: Slot[] = [
-  { x: 3, y: 1, cols: 6, rows: 6 },
+  { x: 3, y: 0, cols: 6, rows: 6 },
   { x: 0, y: 0, cols: 3, rows: 2 },
   { x: 0, y: 2, cols: 3, rows: 2 },
   { x: 0, y: 4, cols: 3, rows: 2 },
-  { x: 0, y: 6, cols: 3, rows: 2 },
   { x: 9, y: 0, cols: 3, rows: 2 },
   { x: 9, y: 2, cols: 3, rows: 2 },
   { x: 9, y: 4, cols: 3, rows: 2 },
-  { x: 9, y: 6, cols: 3, rows: 2 },
-  { x: 3, y: 0, cols: 3, rows: 1 },
-  { x: 6, y: 0, cols: 3, rows: 1 },
-  { x: 3, y: 7, cols: 6, rows: 1 },
+  { x: 0, y: 6, cols: 3, rows: 2 },
+  { x: 3, y: 6, cols: 3, rows: 2 },
+  { x: 6, y: 6, cols: 2, rows: 2 },
+  { x: 8, y: 6, cols: 2, rows: 2 },
+  { x: 10, y: 6, cols: 2, rows: 2 },
 ];
 
 /** The grown poster is the first slot of the expanded block. */
