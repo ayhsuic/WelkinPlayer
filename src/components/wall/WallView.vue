@@ -10,7 +10,7 @@ import { Music2, Pause, Play } from "@lucide/vue";
 import { usePlayerStore } from "../../stores/player";
 import type { Track } from "../../stores/player";
 import { useLyricsStore } from "../../stores/lyrics";
-import { cameraAt, centerOf, geometryFor, layoutWall, locateNearest, visibleBounds, worldTransform, neighborWindow } from "./geometry";
+import { cameraAt, centerOf, geometryFor, layoutWall, locateNearest, visibleBounds, worldTransform, neighborWindow, grownWindowIndex, focusSlotRect, pitchOf } from "./geometry";
 import type { WallFocus, WallInstance } from "./geometry";
 import { trackKey } from "../../lib/sources";
 
@@ -105,7 +105,11 @@ function isGrownTile(tile: WallInstance): boolean {
 
 /** Track a poster shows: grown ring seats follow the focus window; plain seats follow the source list. */
 function tileTrack(tile: WallInstance): Track | null {
-  if (isGrownTile(tile)) return focusWindow.value?.[tile.expanded ? 0 : tile.slotIndex] ?? null;
+  const sel = selected.value;
+  if (isGrownTile(tile) && sel) {
+    const idx = tile.expanded ? 0 : grownWindowIndex(tile.slotIndex, sel.slotIndex);
+    return focusWindow.value?.[idx] ?? null;
+  }
   return sourceList.value[tile.queueIndex] ?? null;
 }
 
@@ -427,16 +431,18 @@ function onWheel(event: WheelEvent) {
 
 /* ------------------------------------------------------------- open, close */
 
-/** Centre of the opened block in world space; the grown block fits around this point. */
-function expandedCenter(block: { column: number; row: number }) {
+/** Centre of the big card opened on `focusSlot`, in world space. */
+function expandedCenter(block: { column: number; row: number }, focusSlot: number) {
   const geo = geometry.value;
   const repeatX = Math.floor(block.column / geo.blocksPerRow);
   const repeatY = Math.floor(block.row / geo.blockRows);
   const localColumn = block.column - repeatX * geo.blocksPerRow;
   const localRow = block.row - repeatY * geo.blockRows;
+  const slot = focusSlotRect(focusSlot);
+  const pitch = pitchOf(metrics.value);
   return {
-    x: repeatX * geo.cellWidth + localColumn * geo.blockWidth + geo.blockWidth / 2,
-    y: repeatY * geo.cellHeight + localRow * geo.blockHeight + geo.blockHeight / 2,
+    x: repeatX * geo.cellWidth + localColumn * geo.blockWidth + (slot.x + slot.cols / 2) * pitch,
+    y: repeatY * geo.cellHeight + localRow * geo.blockHeight + (slot.y + slot.rows / 2) * pitch,
   };
 }
 
@@ -471,14 +477,14 @@ function onTileClick(tile: WallInstance) {
   const centerIndex = track ? sourceList.value.findIndex((item) => item === track) : -1;
 
   if (isGrownTile(tile)) {
-    selected.value = { block, slotIndex: tile.sourceSlot, centerKey, centerIndex };
-    panTo(expandedCenter(block), SETTLE_MS, expandedScale.value);
+    selected.value = { block, slotIndex: tile.slotIndex, centerKey, centerIndex };
+    panTo(expandedCenter(block, tile.slotIndex), SETTLE_MS, expandedScale.value);
     return;
   }
 
   // Plain neighbour poster: open the block it sits in, with this track at the card.
-  selected.value = { block, slotIndex: tile.sourceSlot, centerKey, centerIndex };
-  panTo(expandedCenter(block), SETTLE_MS, expandedScale.value);
+  selected.value = { block, slotIndex: tile.slotIndex, centerKey, centerIndex };
+  panTo(expandedCenter(block, tile.slotIndex), SETTLE_MS, expandedScale.value);
 }
 
 function playCard() {
@@ -516,7 +522,7 @@ function centerOn(index: number, expand = false, instant = false) {
   const centerKey = centreTrack ? trackKey(centreTrack) : undefined;
   if (expand) {
     selected.value = { block, slotIndex: tile.slotIndex, centerKey };
-    panTo(expandedCenter(block), instant ? 0 : SETTLE_MS, expandedScale.value);
+    panTo(expandedCenter(block, tile.slotIndex), instant ? 0 : SETTLE_MS, expandedScale.value);
   } else {
     selected.value = null;
     panTo({ x: tile.x + tile.width / 2, y: tile.y + tile.height / 2 }, instant ? 0 : SETTLE_MS, 1);

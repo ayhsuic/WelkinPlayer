@@ -217,6 +217,26 @@ const overlaps = (rect: Bounds, view: Bounds) => (
   rect.left < view.right && rect.right > view.left && rect.top < view.bottom && rect.bottom > view.top
 );
 
+/** The eleven non-focus slot indices, in ascending seat order. */
+function ringOrder(focusSlot: number): number[] {
+  return Array.from({ length: SLOTS_PER_BLOCK }, (_, s) => s).filter((s) => s !== focusSlot);
+}
+
+/**
+ * Maps a grown block's seat to its track window index: the focus seat is the big
+ * card (window 0), the other eleven ring seats take neighbours 1..11 in seat order.
+ */
+export function grownWindowIndex(slotIndex: number, focusSlot: number): number {
+  if (slotIndex === focusSlot) return 0;
+  return ringOrder(focusSlot).indexOf(slotIndex) + 1;
+}
+
+/** The big-card seat inside the reflow opened on `focusSlot` (block-local cells). */
+export function focusSlotRect(focusSlot: number): Slot {
+  const reflow = REFLOW[focusSlot] ?? REFLOW[EXPANDED_SLOT_INDEX];
+  return reflow[focusSlot] ?? reflow[EXPANDED_SLOT_INDEX];
+}
+
 /**
  * Maps a grown block's seat to the seat whose song it shows.
  *
@@ -226,9 +246,8 @@ const overlaps = (rect: Bounds, view: Bounds) => (
  * own copy would show up twice.
  */
 function grownSourceSlot(slotIndex: number, focusSlot: number): number {
-  if (slotIndex === EXPANDED_SLOT_INDEX) return focusSlot;
-  const index = slotIndex - 1;
-  return index < focusSlot ? index : index + 1;
+  if (slotIndex === focusSlot) return focusSlot;
+  return ringOrder(focusSlot).indexOf(slotIndex);
 }
 
 /** Builds the poster in one slot of one block, addressed by unbounded block coordinates. */
@@ -247,9 +266,10 @@ function buildInstance(
   const localRow = blockRow - repeatY * geometry.blockRows;
   const cellSlot = (localRow * geometry.blocksPerRow + localColumn) * SLOTS_PER_BLOCK + slotIndex;
   const grown = focus !== undefined && focus !== null && blockColumn === focus.block.column && blockRow === focus.block.row;
-  const slot = grown ? EXPANDED_SLOTS[slotIndex] : slotsForBlock(localColumn, localRow)[slotIndex];
+  const reflow = grown && focus ? REFLOW[focus.slotIndex] ?? REFLOW[EXPANDED_SLOT_INDEX] : undefined;
+  const slot = reflow ? reflow[slotIndex] : slotsForBlock(localColumn, localRow)[slotIndex];
   const pitch = pitchOf(metrics);
-  const expanded = grown && slotIndex === EXPANDED_SLOT_INDEX;
+  const expanded = grown && focus != null && slotIndex === focus.slotIndex;
   const sourceSlot = grown && focus ? grownSourceSlot(slotIndex, focus.slotIndex) : slotIndex;
   const blockBase = cellSlot - slotIndex;
 
@@ -276,29 +296,195 @@ function buildInstance(
 }
 
 /**
- * One block grown around the poster the user opened: the middle 6 x 6 becomes a
- * single card and the eleven posters that shared the block move into the ring it
- * leaves. The card sits at the top so the two side columns and the bottom strip can
- * all be at least two rows tall — a one-row seat would crop a square cover into a
- * thin bar. The block still covers its 96 cells with twelve posters, with no gap
- * and no overlap.
+ * Twelve grown-block layouts, one per slot the user may open. `REFLOW[focusSlot]`
+ * keeps every poster's seat identity: the poster in `focusSlot` takes the 6 x 6 big
+ * card and the other eleven fall back to ring seats that fill the remaining cells.
+ * Each layout is an exact cover of the 96-cell block with no gap and no overlap.
  */
-const EXPANDED_SLOTS: Slot[] = [
-  { x: 3, y: 0, cols: 6, rows: 6 },
-  { x: 0, y: 0, cols: 3, rows: 2 },
-  { x: 0, y: 2, cols: 3, rows: 2 },
-  { x: 0, y: 4, cols: 3, rows: 2 },
-  { x: 9, y: 0, cols: 3, rows: 2 },
-  { x: 9, y: 2, cols: 3, rows: 2 },
-  { x: 9, y: 4, cols: 3, rows: 2 },
-  { x: 0, y: 6, cols: 3, rows: 2 },
-  { x: 3, y: 6, cols: 3, rows: 2 },
-  { x: 6, y: 6, cols: 2, rows: 2 },
-  { x: 8, y: 6, cols: 2, rows: 2 },
-  { x: 10, y: 6, cols: 2, rows: 2 },
+const REFLOW: Slot[][] = [
+  // 展开槽位 0
+  [
+    { x: 0, y: 0, cols: 6, rows: 6 },
+    { x: 6, y: 0, cols: 4, rows: 4 },
+    { x: 10, y: 0, cols: 2, rows: 2 },
+    { x: 2, y: 6, cols: 2, rows: 2 },
+    { x: 10, y: 2, cols: 2, rows: 4 },
+    { x: 0, y: 6, cols: 2, rows: 2 },
+    { x: 4, y: 6, cols: 2, rows: 2 },
+    { x: 6, y: 4, cols: 2, rows: 2 },
+    { x: 6, y: 6, cols: 2, rows: 2 },
+    { x: 8, y: 6, cols: 2, rows: 2 },
+    { x: 8, y: 4, cols: 2, rows: 2 },
+    { x: 10, y: 6, cols: 2, rows: 2 },
+  ],
+  // 展开槽位 1
+  [
+    { x: 0, y: 0, cols: 3, rows: 2 },
+    { x: 3, y: 0, cols: 6, rows: 6 },
+    { x: 9, y: 0, cols: 3, rows: 2 },
+    { x: 0, y: 2, cols: 3, rows: 2 },
+    { x: 9, y: 2, cols: 3, rows: 2 },
+    { x: 0, y: 4, cols: 3, rows: 2 },
+    { x: 3, y: 6, cols: 3, rows: 2 },
+    { x: 6, y: 6, cols: 2, rows: 2 },
+    { x: 0, y: 6, cols: 3, rows: 2 },
+    { x: 8, y: 6, cols: 2, rows: 2 },
+    { x: 10, y: 6, cols: 2, rows: 2 },
+    { x: 9, y: 4, cols: 3, rows: 2 },
+  ],
+  // 展开槽位 2
+  [
+    { x: 0, y: 0, cols: 3, rows: 2 },
+    { x: 3, y: 0, cols: 3, rows: 4 },
+    { x: 6, y: 0, cols: 6, rows: 6 },
+    { x: 0, y: 2, cols: 3, rows: 2 },
+    { x: 10, y: 6, cols: 2, rows: 2 },
+    { x: 0, y: 4, cols: 2, rows: 4 },
+    { x: 4, y: 4, cols: 2, rows: 2 },
+    { x: 6, y: 6, cols: 2, rows: 2 },
+    { x: 4, y: 6, cols: 2, rows: 2 },
+    { x: 8, y: 6, cols: 2, rows: 2 },
+    { x: 2, y: 6, cols: 2, rows: 2 },
+    { x: 2, y: 4, cols: 2, rows: 2 },
+  ],
+  // 展开槽位 3
+  [
+    { x: 2, y: 0, cols: 2, rows: 2 },
+    { x: 4, y: 0, cols: 6, rows: 2 },
+    { x: 8, y: 2, cols: 2, rows: 2 },
+    { x: 0, y: 2, cols: 6, rows: 6 },
+    { x: 10, y: 0, cols: 2, rows: 6 },
+    { x: 0, y: 0, cols: 2, rows: 2 },
+    { x: 6, y: 2, cols: 2, rows: 2 },
+    { x: 6, y: 4, cols: 2, rows: 2 },
+    { x: 6, y: 6, cols: 2, rows: 2 },
+    { x: 8, y: 6, cols: 2, rows: 2 },
+    { x: 8, y: 4, cols: 2, rows: 2 },
+    { x: 10, y: 6, cols: 2, rows: 2 },
+  ],
+  // 展开槽位 4
+  [
+    { x: 0, y: 0, cols: 3, rows: 2 },
+    { x: 3, y: 0, cols: 4, rows: 2 },
+    { x: 10, y: 0, cols: 2, rows: 2 },
+    { x: 0, y: 2, cols: 2, rows: 3 },
+    { x: 6, y: 2, cols: 6, rows: 6 },
+    { x: 0, y: 5, cols: 2, rows: 3 },
+    { x: 2, y: 4, cols: 2, rows: 2 },
+    { x: 4, y: 4, cols: 2, rows: 2 },
+    { x: 4, y: 6, cols: 2, rows: 2 },
+    { x: 2, y: 6, cols: 2, rows: 2 },
+    { x: 7, y: 0, cols: 3, rows: 2 },
+    { x: 2, y: 2, cols: 4, rows: 2 },
+  ],
+  // 展开槽位 5
+  [
+    { x: 0, y: 0, cols: 3, rows: 2 },
+    { x: 5, y: 0, cols: 4, rows: 2 },
+    { x: 9, y: 0, cols: 3, rows: 2 },
+    { x: 3, y: 0, cols: 2, rows: 2 },
+    { x: 8, y: 2, cols: 4, rows: 2 },
+    { x: 0, y: 2, cols: 6, rows: 6 },
+    { x: 6, y: 2, cols: 2, rows: 2 },
+    { x: 6, y: 4, cols: 2, rows: 2 },
+    { x: 6, y: 6, cols: 2, rows: 2 },
+    { x: 8, y: 4, cols: 2, rows: 4 },
+    { x: 10, y: 6, cols: 2, rows: 2 },
+    { x: 10, y: 4, cols: 2, rows: 2 },
+  ],
+  // 展开槽位 6
+  [
+    { x: 0, y: 0, cols: 4, rows: 2 },
+    { x: 4, y: 0, cols: 3, rows: 2 },
+    { x: 9, y: 0, cols: 3, rows: 2 },
+    { x: 0, y: 2, cols: 2, rows: 3 },
+    { x: 10, y: 2, cols: 2, rows: 2 },
+    { x: 0, y: 5, cols: 2, rows: 3 },
+    { x: 4, y: 2, cols: 6, rows: 6 },
+    { x: 10, y: 4, cols: 2, rows: 2 },
+    { x: 2, y: 6, cols: 2, rows: 2 },
+    { x: 10, y: 6, cols: 2, rows: 2 },
+    { x: 7, y: 0, cols: 2, rows: 2 },
+    { x: 2, y: 2, cols: 2, rows: 4 },
+  ],
+  // 展开槽位 7
+  [
+    { x: 0, y: 0, cols: 4, rows: 2 },
+    { x: 4, y: 0, cols: 4, rows: 2 },
+    { x: 8, y: 0, cols: 2, rows: 2 },
+    { x: 0, y: 2, cols: 2, rows: 3 },
+    { x: 10, y: 0, cols: 2, rows: 2 },
+    { x: 0, y: 5, cols: 2, rows: 3 },
+    { x: 4, y: 4, cols: 2, rows: 2 },
+    { x: 6, y: 2, cols: 6, rows: 6 },
+    { x: 4, y: 6, cols: 2, rows: 2 },
+    { x: 2, y: 6, cols: 2, rows: 2 },
+    { x: 2, y: 4, cols: 2, rows: 2 },
+    { x: 2, y: 2, cols: 4, rows: 2 },
+  ],
+  // 展开槽位 8
+  [
+    { x: 0, y: 0, cols: 4, rows: 2 },
+    { x: 4, y: 0, cols: 3, rows: 2 },
+    { x: 9, y: 0, cols: 3, rows: 2 },
+    { x: 0, y: 2, cols: 2, rows: 3 },
+    { x: 10, y: 2, cols: 2, rows: 2 },
+    { x: 0, y: 5, cols: 2, rows: 3 },
+    { x: 2, y: 2, cols: 2, rows: 4 },
+    { x: 10, y: 4, cols: 2, rows: 2 },
+    { x: 4, y: 2, cols: 6, rows: 6 },
+    { x: 2, y: 6, cols: 2, rows: 2 },
+    { x: 10, y: 6, cols: 2, rows: 2 },
+    { x: 7, y: 0, cols: 2, rows: 2 },
+  ],
+  // 展开槽位 9
+  [
+    { x: 0, y: 0, cols: 4, rows: 2 },
+    { x: 4, y: 0, cols: 4, rows: 2 },
+    { x: 8, y: 0, cols: 2, rows: 2 },
+    { x: 0, y: 2, cols: 2, rows: 3 },
+    { x: 10, y: 0, cols: 2, rows: 2 },
+    { x: 0, y: 5, cols: 2, rows: 3 },
+    { x: 2, y: 4, cols: 2, rows: 2 },
+    { x: 4, y: 4, cols: 2, rows: 2 },
+    { x: 4, y: 6, cols: 2, rows: 2 },
+    { x: 6, y: 2, cols: 6, rows: 6 },
+    { x: 2, y: 6, cols: 2, rows: 2 },
+    { x: 2, y: 2, cols: 4, rows: 2 },
+  ],
+  // 展开槽位 10
+  [
+    { x: 0, y: 0, cols: 4, rows: 2 },
+    { x: 4, y: 0, cols: 4, rows: 2 },
+    { x: 8, y: 0, cols: 2, rows: 2 },
+    { x: 0, y: 2, cols: 2, rows: 3 },
+    { x: 10, y: 0, cols: 2, rows: 2 },
+    { x: 0, y: 5, cols: 2, rows: 3 },
+    { x: 2, y: 4, cols: 2, rows: 2 },
+    { x: 4, y: 4, cols: 2, rows: 2 },
+    { x: 4, y: 6, cols: 2, rows: 2 },
+    { x: 2, y: 6, cols: 2, rows: 2 },
+    { x: 6, y: 2, cols: 6, rows: 6 },
+    { x: 2, y: 2, cols: 4, rows: 2 },
+  ],
+  // 展开槽位 11
+  [
+    { x: 0, y: 0, cols: 4, rows: 2 },
+    { x: 4, y: 0, cols: 4, rows: 2 },
+    { x: 8, y: 0, cols: 2, rows: 2 },
+    { x: 0, y: 2, cols: 2, rows: 3 },
+    { x: 10, y: 0, cols: 2, rows: 2 },
+    { x: 0, y: 5, cols: 2, rows: 3 },
+    { x: 2, y: 4, cols: 2, rows: 2 },
+    { x: 4, y: 4, cols: 2, rows: 2 },
+    { x: 4, y: 6, cols: 2, rows: 2 },
+    { x: 2, y: 6, cols: 2, rows: 2 },
+    { x: 2, y: 2, cols: 4, rows: 2 },
+    { x: 6, y: 2, cols: 6, rows: 6 },
+  ],
 ];
 
-/** The grown poster is the first slot of the expanded block. */
+/** Fallback grown seat when the focus slot is out of range. */
 const EXPANDED_SLOT_INDEX = 0;
 
 /**
