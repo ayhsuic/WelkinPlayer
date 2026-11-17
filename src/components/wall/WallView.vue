@@ -6,7 +6,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Music2, Pause, Play } from "@lucide/vue";
+import { Music2, Play } from "@lucide/vue";
 import { usePlayerStore } from "../../stores/player";
 import type { Track } from "../../stores/player";
 import { useLyricsStore } from "../../stores/lyrics";
@@ -663,16 +663,16 @@ defineExpose({ focusCurrent, focusFirst });
         <template v-if="tile.expanded && cardTrack">
           <span class="wall-card-shade" aria-hidden="true" />
 
-          <!-- Centre button: Play when idle, Pause when playing in button state. Square. -->
+          <!-- Centre button: a square Play. After collapsing lyrics the card looks
+               exactly like the idle cover; only the progress keeps running. -->
           <button
             v-if="!isCardCurrent || !lyricsVisible"
             type="button"
             class="wall-card-center"
-            :aria-label="isCardCurrent ? 'Pause' : 'Play'"
+            aria-label="Play"
             @click.stop="onCenterButton()"
           >
-            <Pause v-if="isCardCurrent" :size="26" />
-            <Play v-else :size="26" />
+            <Play :size="26" />
           </button>
 
           <!-- Bottom copy: meta + title, kept in every state. -->
