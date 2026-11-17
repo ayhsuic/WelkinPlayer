@@ -6,7 +6,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Music2, Play } from "@lucide/vue";
+import { Music2, Pause, Play } from "@lucide/vue";
 import { usePlayerStore } from "../../stores/player";
 import type { Track } from "../../stores/player";
 import { useLyricsStore } from "../../stores/lyrics";
@@ -41,12 +41,22 @@ const lyrics = useLyricsStore();
 const stage = ref<HTMLElement | null>(null);
 const width = ref(0);
 const height = ref(0);
+/** localStorage key for the persisted pinch zoom, restored after a relaunch. */
+const SCALE_KEY = "welkin-wall-scale";
+const MIN_SCALE = 0.45;
+const MAX_SCALE = 2.6;
+
+/** Read the saved pinch zoom; falls back to 1 when missing or out of range. */
+function readStoredScale(): number {
+  const raw = Number(localStorage.getItem(SCALE_KEY));
+  return Number.isFinite(raw) && raw >= MIN_SCALE && raw <= MAX_SCALE ? raw : 1;
+}
+
 /**
- * Pinch zoom remembered across wall remounts: leaving for another page and
- * coming back restores the scale the user left at, instead of refitting to a
- * fixed expanded proportion.
+ * Pinch zoom remembered across wall remounts and app relaunches: leaving for
+ * another page, coming back, or restarting restores the scale the user left at.
  */
-let rememberedScale = 1;
+let rememberedScale = readStoredScale();
 /** `screen = camera + world * scale`. */
 const camera = ref({ x: 0, y: 0, scale: rememberedScale });
 
@@ -54,6 +64,7 @@ watch(
   () => camera.value.scale,
   (scale) => {
     rememberedScale = scale;
+    localStorage.setItem(SCALE_KEY, String(scale));
   },
 );
 /** The block the user opened, and which of its twelve posters the card shows. */
@@ -73,8 +84,6 @@ const metrics = computed(() => {
 });
 const geometry = computed(() => geometryFor(total.value, metrics.value));
 const viewport = computed(() => ({ width: width.value, height: height.value, scale: camera.value.scale }));
-const MIN_SCALE = 0.45;
-const MAX_SCALE = 2.6;
 
 const bounds = computed(() => visibleBounds(
   centerOf(camera.value, viewport.value),
@@ -127,6 +136,11 @@ function metaOf(track: Track): string {
 const cardTrack = computed(() => (openedTile.value ? focusWindow.value?.[0] ?? null : null));
 /** Whether the open card is showing the song that is actually playing. */
 const isCardCurrent = computed(() => Boolean(cardTrack.value && current.value && trackKey(cardTrack.value) === trackKey(current.value)));
+/**
+ * Playing-card local view: lyrics layer up or down. While down the centre shows
+ * the pause button again; tapping the cover/lyrics area collapses the lyrics.
+ */
+const lyricsVisible = ref(true);
 
 /** One parsed line flattened to plain text; "" outside the lyric range. */
 function lineText(index: number): string {
@@ -463,9 +477,9 @@ function onTileClick(tile: WallInstance) {
   resetIdle();
   if (performance.now() < ignoreClickUntil) return;
   if (tile.expanded) {
-    // The grown card's cover is a play/pause target, not a close button: tapping
-    // it never shrinks the card or drops the playback focus.
-    playCard();
+    // The cover itself never starts/stops playback: only the centre button does.
+    // While playing, tapping the cover collapses the lyrics back to the button state.
+    if (isCardCurrent.value) lyricsVisible.value = false;
     return;
   }
 
@@ -496,7 +510,14 @@ function playCard() {
     player.togglePlayback();
     return;
   }
+  lyricsVisible.value = true;
   void player.playInQueue(sourceList.value, track);
+}
+
+/** The centre button is the only play/pause entry on the card. */
+function onCenterButton() {
+  if (isCardCurrent.value) player.togglePlayback();
+  else playCard();
 }
 
 function openCardLyrics() {
@@ -509,12 +530,16 @@ function openCardLyrics() {
 
 /* --------------------------------------------------------- locate a song */
 
-let pending: { index: number; expand: boolean } | null = null;
+let pending: { index: number } | null = null;
 
-/** Bring one song to the middle; `expand` also opens its block. */
-function centerOn(index: number, expand = false, instant = false) {
+/**
+ * Bring one song to the middle. The grown card always exists and there is only
+ * one: every centring opens the block in the centre, there is no plain-wall
+ * no-card state.
+ */
+function centerOn(index: number, instant = false) {
   if (!width.value || !height.value || total.value === 0) {
-    pending = { index, expand };
+    pending = { index };
     return;
   }
   const tile = locateNearest(geometry.value, total.value, index, centerOf(camera.value, viewport.value), metrics.value);
@@ -522,21 +547,16 @@ function centerOn(index: number, expand = false, instant = false) {
   const block = { column: tile.blockColumn, row: tile.blockRow };
   const centreTrack = sourceList.value[tile.queueIndex];
   const centerKey = centreTrack ? trackKey(centreTrack) : undefined;
-  if (expand) {
-    selected.value = { block, slotIndex: tile.slotIndex, centerKey };
-    // Re-centring on the grown card keeps the user's current pinch scale; the
-    // camera only moves the focus to the centre, it never resets the zoom.
-    panTo(expandedCenter(block, tile.slotIndex), instant ? 0 : SETTLE_MS);
-  } else {
-    selected.value = null;
-    panTo({ x: tile.x + tile.width / 2, y: tile.y + tile.height / 2 }, instant ? 0 : SETTLE_MS);
-  }
+  selected.value = { block, slotIndex: tile.slotIndex, centerKey };
+  // Re-centring keeps the user's current pinch scale; the camera only moves the
+  // focus to the centre, it never resets the zoom.
+  panTo(expandedCenter(block, tile.slotIndex), instant ? 0 : SETTLE_MS);
   pending = null;
 }
 
-/** Centre the wall on the playing track and open it; answered by the strip's long press. */
+/** Centre the wall on the playing track; answered by the strip's long press. */
 function focusCurrent() {
-  centerOn(currentIndex.value >= 0 ? currentIndex.value : 0, true);
+  centerOn(currentIndex.value >= 0 ? currentIndex.value : 0);
 }
 
 /** Centre the wall on the first track; used when the wall first gets a library. */
@@ -556,14 +576,14 @@ onMounted(() => {
     const rect = el.getBoundingClientRect();
     width.value = rect.width;
     height.value = rect.height;
-    if (pending) centerOn(pending.index, pending.expand, true);
+    if (pending) centerOn(pending.index, true);
   };
   measure();
   observer = new ResizeObserver(measure);
   observer.observe(el);
   if (total.value > 0 && !centred) {
     centred = true;
-    centerOn(currentIndex.value >= 0 ? currentIndex.value : 0, currentIndex.value >= 0, true);
+    centerOn(currentIndex.value >= 0 ? currentIndex.value : 0, true);
   }
   resetIdle();
 });
@@ -574,7 +594,7 @@ watch(total, (next, previous) => {
   // that the camera belongs to the user and must not jump under their finger.
   if (!previous && !centred) {
     centred = true;
-    centerOn(currentIndex.value >= 0 ? currentIndex.value : 0, currentIndex.value >= 0, true);
+    centerOn(currentIndex.value >= 0 ? currentIndex.value : 0, true);
   }
 });
 
@@ -582,7 +602,7 @@ watch(total, (next, previous) => {
 watch(currentIndex, (index, previous) => {
   if (index >= 0 && previous < 0 && !centred) {
     centred = true;
-    centerOn(index, true, true);
+    centerOn(index, true);
   }
 });
 
@@ -598,7 +618,13 @@ watch(
   () => (current.value ? trackKey(current.value) : null),
   (key) => {
     if (!key) return;
-    centerOn(currentIndex.value >= 0 ? currentIndex.value : 0, true);
+    // Starting playback from the card itself leaves the grown card already in
+    // the centre: do not run the re-centring/rearrange animation again. Only an
+    // automatic switch to a different track moves the camera to the new card.
+    const cardKey = cardTrack.value ? trackKey(cardTrack.value) : null;
+    if (key === cardKey) return;
+    lyricsVisible.value = true;
+    centerOn(currentIndex.value >= 0 ? currentIndex.value : 0);
   },
 );
 
@@ -637,31 +663,41 @@ defineExpose({ focusCurrent, focusFirst });
         <template v-if="tile.expanded && cardTrack">
           <span class="wall-card-shade" aria-hidden="true" />
 
-          <!-- Idle card: a centred play button over the cover, copy at the bottom. -->
+          <!-- Centre button: Play when idle, Pause when playing in button state. Square. -->
           <button
-            v-if="!isCardCurrent"
+            v-if="!isCardCurrent || !lyricsVisible"
             type="button"
             class="wall-card-center"
-            aria-label="Play"
-            @click.stop="playCard()"
+            :aria-label="isCardCurrent ? 'Pause' : 'Play'"
+            @click.stop="onCenterButton()"
           >
-            <Play :size="26" />
+            <Pause v-if="isCardCurrent" :size="26" />
+            <Play v-else :size="26" />
           </button>
 
-          <div v-if="!isCardCurrent" class="wall-card wall-card--idle">
-            <button type="button" class="wall-card-meta" @click.stop="playCard()">
+          <!-- Bottom copy: meta + title, kept in every state. -->
+          <div class="wall-card wall-card--copy">
+            <button
+              v-if="!isCardCurrent"
+              type="button"
+              class="wall-card-meta"
+              @click.stop="playCard()"
+            >
               {{ metaOf(cardTrack) }}
             </button>
+            <span v-else class="wall-card-meta">{{ metaOf(cardTrack) }}</span>
             <h2 class="wall-card-title">{{ cardTrack.title }}</h2>
           </div>
 
-          <!-- Playing card: the button drops out and three lyric lines take the centre. -->
-          <div v-if="isCardCurrent" class="wall-card wall-card--playing">
-            <div class="wall-card-lyrics">
-              <p class="wall-card-lyric is-prev">{{ lyricLines[0] }}</p>
-              <p class="wall-card-lyric is-current">{{ lyricLines[1] }}</p>
-              <p class="wall-card-lyric is-next">{{ lyricLines[2] }}</p>
-            </div>
+          <!-- Playing lyrics state: three lines take the centre; tap to collapse. -->
+          <div
+            v-if="isCardCurrent && lyricsVisible"
+            class="wall-card-lyrics"
+            @click.stop="lyricsVisible = false"
+          >
+            <p class="wall-card-lyric is-prev">{{ lyricLines[0] }}</p>
+            <p class="wall-card-lyric is-current">{{ lyricLines[1] }}</p>
+            <p class="wall-card-lyric is-next">{{ lyricLines[2] }}</p>
           </div>
 
           <button
@@ -798,7 +834,7 @@ defineExpose({ focusCurrent, focusFirst });
   pointer-events: none;
 }
 
-/* Idle card: artist · album (underlined) above the title, anchored to the bottom. */
+/* Artist · album line above the title, anchored to the bottom. */
 .wall-card-meta {
   align-self: flex-start;
   max-width: 100%;
@@ -809,11 +845,15 @@ defineExpose({ focusCurrent, focusFirst });
   font-size: 13px;
   font-weight: 600;
   opacity: 0.72;
-  text-decoration: underline;
-  text-underline-offset: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Idle entry: the meta line stays a tappable artist/album link. */
+button.wall-card-meta {
+  text-decoration: underline;
+  text-underline-offset: 3px;
   cursor: pointer;
   pointer-events: auto;
 }
@@ -830,21 +870,19 @@ defineExpose({ focusCurrent, focusFirst });
   overflow: hidden;
 }
 
-/* Playing card: the copy layer fills the card and centres the three lyric lines. */
-.wall-card--playing {
-  inset: 0;
-  justify-content: center;
-  align-items: center;
-  padding: 0 24px;
-  text-align: center;
-}
-
+/* Playing lyrics layer: fills the card and centres the three lines; tap to collapse. */
 .wall-card-lyrics {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  width: 100%;
-  min-height: calc(1.5em * 3 + 12px);
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  padding: 0 24px;
+  text-align: center;
+  pointer-events: auto;
+  z-index: 2;
 }
 
 .wall-card-lyric {
@@ -864,6 +902,7 @@ defineExpose({ focusCurrent, focusFirst });
 
 .wall-card-lyric.is-current {
   opacity: 0.95;
+  font-size: 20px;
   font-weight: 700;
 }
 
@@ -900,7 +939,7 @@ defineExpose({ focusCurrent, focusFirst });
   height: 64px;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 50%;
+  border-radius: 0;
   background: rgba(0, 0, 0, 0.42);
   color: #fff;
   backdrop-filter: blur(10px);
