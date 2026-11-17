@@ -111,7 +111,10 @@ jobs:
             echo "No APK was produced under src-tauri/gen/android/app/build/outputs/apk" >&2
             exit 1
           fi
-          cp "$apk" "dist/android/Welkin-${GITHUB_REF_NAME}-arm64-v8a.apk"
+          codename=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).codename || '')")
+          [ -n "$codename" ] || codename="${GITHUB_REF_NAME}"
+          echo "CODENAME=$codename" >> "$GITHUB_ENV"
+          cp "$apk" "dist/android/Welkin-${codename}-arm64-v8a.apk"
           ls -l dist/android
 
       - name: Upload APK artifact
@@ -130,7 +133,7 @@ jobs:
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             gh release upload "${GITHUB_REF_NAME}" dist/android/*.apk --clobber
           else
-            [ -s changelog.md ] || printf 'Welkin %s\n' "${GITHUB_REF_NAME}" > changelog.md
+            [ -s changelog.md ] || printf 'Welkin %s\n' "${CODENAME}" > changelog.md
             gh release create "${GITHUB_REF_NAME}" dist/android/*.apk \
-              --title "Welkin ${GITHUB_REF_NAME}" --notes-file release-notes.md
+              --title "Welkin ${CODENAME}" --notes-file release-notes.md
           fi

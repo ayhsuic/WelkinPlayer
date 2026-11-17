@@ -31,6 +31,8 @@ const accent = defineModel<Accent>("accent", { required: true });
 const emit = defineEmits<{ sponsor: []; sources: []; downloading: []; downloaded: []; friendlyError: [error: unknown] }>();
 const { t, locale } = useI18n();
 const appVersion = pkg.version;
+/** Public release codename (e.g. Lyra); shown in the About row instead of the numeric version. */
+const appCodename = pkg.codename ?? pkg.version;
 /** Settings categories. Only the active panel is shown, so the page stays
  * short on phones instead of stacking every card at once. */
 const tabItems = [
@@ -450,7 +452,7 @@ button.text-dim:hover:not(:disabled) {
             <div class="grid gap-6">
               <div class="flex items-center gap-5"><span class="grid h-24 w-24 shrink-0 place-items-center bg-accent text-accent-fg"><Music2 :size="42" :stroke-width="2" /></span><div class="min-w-0"><h2 class="text-3xl font-black uppercase leading-none tracking-tight sm:text-4xl">{{ t("settings.about.title") }}</h2><p class="mt-3 max-w-lg text-sm leading-[1.7] text-muted">{{ t("settings.about.tagline") }}</p></div></div>
               <div class="grid gap-1 text-sm leading-relaxed">
-                <p class="flex flex-wrap items-baseline gap-1.5"><span class="font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.about.version") }}</span><span class="text-dim">{{ locale === "zh-CN" ? "：" : ":" }}</span><span class="font-semibold tabular-nums">v{{ appVersion }}</span></p>
+                <p class="flex flex-wrap items-baseline gap-1.5"><span class="font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.about.version") }}</span><span class="text-dim">{{ locale === "zh-CN" ? "：" : ":" }}</span><span class="font-semibold">{{ appCodename }}</span></p>
                 <p class="flex flex-wrap items-baseline gap-1.5"><span class="font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.about.author") }}</span><span class="text-dim">{{ locale === "zh-CN" ? "：" : ":" }}</span><span class="font-semibold">{{ t("settings.about.authorName") }}</span></p>
               </div>
             </div>
