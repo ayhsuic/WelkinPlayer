@@ -10,7 +10,7 @@ import { Music2, Pause, Play } from "@lucide/vue";
 import { usePlayerStore } from "../../stores/player";
 import type { Track } from "../../stores/player";
 import { useLyricsStore } from "../../stores/lyrics";
-import { cameraAt, centerOf, geometryFor, layoutWall, locateNearest, visibleBounds, worldTransform, neighborWindow, grownWindowIndex, focusSlotRect, pitchOf } from "./geometry";
+import { cameraAt, centerOf, geometryFor, layoutWall, locateNearest, visibleBounds, worldTransform, neighborWindow, grownWindowIndex, focusSlotRect, pitchOf, slotsForBlock } from "./geometry";
 import type { WallFocus, WallInstance } from "./geometry";
 import { trackKey } from "../../lib/sources";
 import { requestMeta } from "../../directives/requestMeta";
@@ -447,16 +447,22 @@ function onWheel(event: WheelEvent) {
 
 /* ------------------------------------------------------------- open, close */
 
-/** Centre of a plain block in world space (used when closing the grown card). */
-function plainBlockCenter(block: { column: number; row: number }) {
+/**
+ * Centre of the plain seat the grown card came from, in world space. Keeping the
+ * card's own repeat copy and its seat (not the block centre) means closing the
+ * card drops back onto the same poster instead of jumping to another copy.
+ */
+function plainSlotCenter(block: { column: number; row: number }, slotIndex: number) {
   const geo = geometry.value;
   const repeatX = Math.floor(block.column / geo.blocksPerRow);
   const repeatY = Math.floor(block.row / geo.blockRows);
   const localColumn = block.column - repeatX * geo.blocksPerRow;
   const localRow = block.row - repeatY * geo.blockRows;
+  const slot = slotsForBlock(localColumn, localRow)[slotIndex];
+  const pitch = pitchOf(metrics.value);
   return {
-    x: repeatX * geo.cellWidth + localColumn * geo.blockWidth + geo.blockWidth / 2,
-    y: repeatY * geo.cellHeight + localRow * geo.blockHeight + geo.blockHeight / 2,
+    x: repeatX * geo.cellWidth + localColumn * geo.blockWidth + (slot.x + slot.cols / 2) * pitch,
+    y: repeatY * geo.cellHeight + localRow * geo.blockHeight + (slot.y + slot.rows / 2) * pitch,
   };
 }
 
@@ -480,12 +486,12 @@ function onTileClick(tile: WallInstance) {
   resetIdle();
   if (performance.now() < ignoreClickUntil) return;
   if (tile.expanded) {
-    // Close back onto the same block in its plain framing. Anchoring on the
-    // opened block itself avoids re-locating a different repeated copy of the
-    // song and jumping the camera across the wall.
+    // Close back onto the same poster's plain seat in the same repeat copy.
+    // The seat centre (not the block centre) and the current zoom are kept, so
+    // the camera does not jump to another copy or snap the scale back to 1.
     const block = { column: tile.blockColumn, row: tile.blockRow };
     selected.value = null;
-    panTo(plainBlockCenter(block), SETTLE_MS, 1);
+    panTo(plainSlotCenter(block, tile.slotIndex), SETTLE_MS);
     return;
   }
 

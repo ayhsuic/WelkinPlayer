@@ -331,7 +331,12 @@ function onScrollCapture(event: Event) {
 
 function setView(nextView: View) { view.value = nextView; window.location.hash = nextView === "library" ? "" : nextView; }
 function clearCollectionFilters() { playlistFilter.value = null; artistFilter.value = null; albumFilter.value = null; yearFilter.value = null; genreFilter.value = null; sourceFilter.value = null; }
-function navigate(nextView: View) { clearCollectionFilters(); setView(nextView); }
+function navigate(nextView: View) {
+  clearCollectionFilters();
+  setView(nextView);
+  // Returning to the wall re-grows the playing track into the centred card.
+  if (nextView === "wall") wallFocusToken.value += 1;
+}
 function syncViewFromHash() { view.value = getViewFromHash(); }
 function openUserPlaylist(id: string) { clearCollectionFilters(); playlistFilter.value = id; setView("tracks"); }
 /** Open a source in the file-manager browser instead of the flat track list. */
@@ -362,7 +367,10 @@ function editLyrics(track: Track) { if (!track.path) return; editingLyricsTrack.
 function editInfo(track: Track) { if (!track.path) return; editingTrack.value = track; closeQueue(); setView("track-edit"); }
 function showTrackInfo(track: Track) { if (!track.path) return; viewingTrack.value = track; closeQueue(); setView("track-info"); }
 /** Close an overlay (track info, editors, sponsor) back to the page underneath. */
-function closeOverlay() { setView(baseView.value); }
+function closeOverlay() {
+  setView(baseView.value);
+  if (baseView.value === "wall") wallFocusToken.value += 1;
+}
 function onPlaylistSaved(id: string) { artistFilter.value = null; albumFilter.value = null; sourceFilter.value = null; playlistFilter.value = id; setView("tracks"); }
 function onPlaylistEditorCancel() { navigate("library"); }
 function onPlaylistDeleted(id: string) {
