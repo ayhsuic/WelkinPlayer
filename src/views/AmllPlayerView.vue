@@ -43,7 +43,32 @@ useWakeLock(() => props.active);
 
 const positionMs = ref(0);
 const showRemaining = ref(false);
+const rootEl = ref<HTMLElement | null>(null);
 let frame = 0;
+
+/**
+ * Mobile: a downward drag folds the AMLL player back to the wall; the pure
+ * lyrics layout has no on-screen back button.
+ */
+let pullStartY = 0;
+let pullStartX = 0;
+function onPullTouchStart(event: TouchEvent) {
+  const touch = event.touches[0];
+  if (!touch) return;
+  pullStartY = touch.clientY;
+  pullStartX = touch.clientX;
+}
+function onPullTouchMove(event: TouchEvent) {
+  const touch = event.touches[0];
+  if (!touch) return;
+  const deltaY = touch.clientY - pullStartY;
+  const deltaX = touch.clientX - pullStartX;
+  if (Math.abs(deltaX) > Math.abs(deltaY)) return;
+  if (deltaY > 10) {
+    event.preventDefault();
+    emit("navigate", props.returnView);
+  }
+}
 
 /**
  * The page starts translated off-screen and only slides in once the AMLL
@@ -161,6 +186,8 @@ onMounted(() => {
   window.addEventListener("pointerdown", bumpControls);
   window.addEventListener("wheel", bumpControls, { passive: true });
   window.addEventListener("resize", syncFullscreen);
+  rootEl.value?.addEventListener("touchstart", onPullTouchStart, { passive: true });
+  rootEl.value?.addEventListener("touchmove", onPullTouchMove, { passive: false });
 });
 onBeforeUnmount(() => {
   cancelAnimationFrame(frame);
@@ -170,6 +197,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("pointerdown", bumpControls);
   window.removeEventListener("wheel", bumpControls);
   window.removeEventListener("resize", syncFullscreen);
+  rootEl.value?.removeEventListener("touchstart", onPullTouchStart);
+  rootEl.value?.removeEventListener("touchmove", onPullTouchMove);
 });
 
 watch(
@@ -292,6 +321,7 @@ function onLyricSeek(timeMs: number) {
 <template>
   <div
     v-if="player.currentTrack"
+    ref="rootEl"
     class="amll-page fixed inset-0 z-50 flex flex-col overflow-hidden text-white"
     :class="{ 'is-open': visible }"
     @transitionend="onTransitionEnd"
@@ -314,24 +344,7 @@ function onLyricSeek(timeMs: number) {
     <div class="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/40 to-transparent"></div>
     <div class="pointer-events-none absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-black/60 to-transparent"></div>
 
-    <header class="pointer-events-none absolute inset-x-0 top-[env(safe-area-inset-top)] z-20 h-16 px-4 md:hidden">
-      <div class="flex h-full min-w-0 items-center gap-3">
-        <span
-          class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-md text-sm font-black text-white/90"
-          :style="{ backgroundColor: player.currentTrack.color }"
-        >
-          <img v-if="player.currentTrack.cover" :src="player.currentTrack.cover" alt="" decoding="async" class="h-full w-full object-cover" />
-          <LoaderCircle v-else-if="coverPending(player.currentTrack)" :size="16" :stroke-width="2" class="animate-spin" />
-          <template v-else>{{ initial(player.currentTrack) }}</template>
-        </span>
-        <span class="grid min-w-0 gap-0.5">
-          <strong class="truncate text-sm font-semibold leading-tight">{{ player.currentTrack.title }}</strong>
-          <small class="truncate text-xs leading-tight text-white/70">{{ player.currentTrack.artist }}</small>
-        </span>
-      </div>
-    </header>
-
-    <div class="pointer-events-none absolute right-8 top-[calc(env(safe-area-inset-top)+2rem)] z-30">
+    <div class="pointer-events-none absolute right-8 top-[calc(env(safe-area-inset-top)+2rem)] z-30 hidden md:block">
       <div class="flex items-center gap-4 transition-all duration-300 ease-out" :class="revealClass">
         <button
           type="button"
@@ -356,7 +369,7 @@ function onLyricSeek(timeMs: number) {
     </div>
 
     <div class="relative z-10 flex min-h-0 flex-1 flex-col px-6 pt-[env(safe-area-inset-top)] md:grid md:grid-cols-[minmax(240px,0.82fr)_minmax(0,1.18fr)] md:grid-rows-1 md:gap-14 md:px-14 md:pt-0 lg:px-24">
-      <div class="amll-controls order-2 shrink-0 md:order-none md:min-h-0" :data-collapsed="controlsVisible ? 'false' : 'true'">
+      <div class="amll-controls order-2 hidden shrink-0 md:block md:order-none md:min-h-0" :data-collapsed="controlsVisible ? 'false' : 'true'">
         <div class="relative flex flex-col items-center justify-center gap-6 px-6 pb-6 pt-4 md:h-full md:gap-6 md:px-0 md:py-10">
         <div class="relative hidden w-full max-w-[420px] md:block">
           <div class="aspect-square w-full overflow-hidden rounded-2xl shadow-2xl shadow-black/40" :style="{ backgroundColor: player.currentTrack.color }">
@@ -432,7 +445,7 @@ function onLyricSeek(timeMs: number) {
         </div>
       </div>
 
-      <div class="order-1 flex min-h-0 flex-1 flex-col justify-center pt-16 md:order-none md:pt-0">
+      <div class="order-1 flex min-h-0 flex-1 flex-col justify-center pt-[env(safe-area-inset-top)] md:order-none md:pt-0">
         <p v-if="lyrics.status === 'loading'" class="text-center text-white/70">{{ t("lyrics.loading") }}</p>
         <div v-else-if="lyrics.hasLyrics" class="relative min-h-0 flex-1">
           <AmllLyrics
@@ -453,7 +466,7 @@ function onLyricSeek(timeMs: number) {
         <p v-else-if="!lyrics.suppressed" class="text-center text-white/70">{{ t("lyrics.empty") }}</p>
       </div>
     </div>
-    <RealtimeWaveform fit class="pointer-events-none relative z-30 shrink-0 text-white md:absolute md:inset-x-0 md:bottom-0" />
+    <RealtimeWaveform fit class="pointer-events-none relative z-30 hidden shrink-0 text-white md:absolute md:inset-x-0 md:bottom-0 md:block" />
   </div>
 </template>
 

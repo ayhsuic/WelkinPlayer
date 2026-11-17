@@ -5,7 +5,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { Bug, CircleCheck, Copy, ExternalLink, GitFork, HardDrive, HardDriveDownload, HeartHandshake, Info, Mic2, Moon, Music2, Play, SlidersHorizontal, Sun, Users } from "@lucide/vue";
+import { Bug, CircleCheck, Copy, ExternalLink, GitFork, HardDrive, HardDriveDownload, Info, Mic2, Moon, Music2, Play, SlidersHorizontal, Sun, Users } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { invoke } from "../api";
@@ -375,7 +375,7 @@ button.text-dim:hover:not(:disabled) {
 
         <section class="ak-frame grid gap-6 border border-line bg-surface p-6 lg:grid-cols-[1fr_1.3fr]">
           <div><h2 class="text-sm font-bold uppercase tracking-[0.2em]">{{ t("settings.downloads.title") }}</h2><p class="mt-2 text-sm text-muted">{{ t("settings.downloads.desc") }}</p></div>
-          <div class="grid gap-3 sm:grid-cols-3">
+          <div class="grid gap-3 sm:grid-cols-2">
             <button type="button" class="flex flex-col items-start gap-2 border border-line bg-bg p-4 text-left transition-colors hover:border-accent" @click="emit('downloading')">
               <HardDriveDownload :size="18" class="text-accent" />
               <span class="text-[13px] font-semibold">{{ t("settings.downloads.downloading") }}</span>
@@ -383,10 +383,6 @@ button.text-dim:hover:not(:disabled) {
             <button type="button" class="flex flex-col items-start gap-2 border border-line bg-bg p-4 text-left transition-colors hover:border-accent" @click="emit('downloaded')">
               <CircleCheck :size="18" class="text-accent" />
               <span class="text-[13px] font-semibold">{{ t("settings.downloads.downloaded") }}</span>
-            </button>
-            <button type="button" class="flex flex-col items-start gap-2 border border-line bg-bg p-4 text-left transition-colors hover:border-accent" @click="emit('sponsor')">
-              <HeartHandshake :size="18" class="text-accent" />
-              <span class="text-[13px] font-semibold">{{ t("settings.downloads.sponsor") }}</span>
             </button>
           </div>
         </section>

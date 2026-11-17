@@ -5,7 +5,6 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
-import { useI18n } from "vue-i18n";
 import MobileTabBar from "./MobileTabBar.vue";
 import type { MainTab } from "../lib/app";
 
@@ -13,8 +12,9 @@ import type { MainTab } from "../lib/app";
  * Full-screen mobile drawer, modelled on lmusic's BottomSheetLayout: the sheet
  * is a separate layer above the playing wall. Its body renders the active tab
  * page (provided through the default slot); the bottom holds the four-tab bar.
- * When the body is scrolled to the top, a further downward drag collapses the
- * drawer back onto the wall.
+ * Once every scrollable ancestor in the touched page is pinned to its top, a
+ * further downward drag collapses the drawer back onto the wall — the whole
+ * body participates, not just a top handle strip.
  */
 const props = defineProps<{ open: boolean; activeTab: MainTab }>();
 const emit = defineEmits<{
@@ -22,7 +22,6 @@ const emit = defineEmits<{
   select: [tab: MainTab];
   close: [];
 }>();
-const { t } = useI18n();
 
 function close() {
   emit("update:open", false);
@@ -35,21 +34,22 @@ function onSelect(tab: MainTab) {
 
 const bodyEl = ref<HTMLElement | null>(null);
 let startY = 0;
+let startX = 0;
 let scrollChain: HTMLElement[] = [];
 
 /**
  * Collect every vertically scrollable ancestor from the touched node up to the
  * sheet. Some pages scroll their own root, others rely on the wrapper, so the
  * gesture must check the whole chain rather than a single nearest scroller.
+ * Containers that do not overflow still count: their scrollTop stays 0, which
+ * reads as "already at the top".
  */
 function collectScrollChain(node: EventTarget | null): HTMLElement[] {
   const chain: HTMLElement[] = [];
   let current = node as HTMLElement | null;
   while (current && current !== bodyEl.value) {
     const style = getComputedStyle(current);
-    if (/auto|scroll/.test(style.overflowY) && current.scrollHeight > current.clientHeight) {
-      chain.push(current);
-    }
+    if (/auto|scroll/.test(style.overflowY)) chain.push(current);
     current = current.parentElement;
   }
   return chain;
@@ -59,19 +59,20 @@ function onTouchStart(event: TouchEvent) {
   const touch = event.touches[0];
   if (!touch) return;
   startY = touch.clientY;
+  startX = touch.clientX;
   scrollChain = collectScrollChain(event.target);
 }
 
 function onTouchMove(event: TouchEvent) {
-  if (!scrollChain.length) return;
   const touch = event.touches[0];
   if (!touch) return;
   const deltaY = touch.clientY - startY;
-  // A downward drag only collapses the sheet once every scrollable ancestor in
-  // the chain is already pinned to its top; this mirrors lmusic's nested-scroll
-  // hand-off: the list keeps scrolling first, and reaching the top passes the
-  // further pull to the sheet. Any ancestor still scrolled down keeps its own
-  // native scroll and the gesture is left alone.
+  const deltaX = touch.clientX - startX;
+  // Ignore sideways swipes so a horizontal list keeps its own gesture.
+  if (Math.abs(deltaX) > Math.abs(deltaY)) return;
+  // A short page with no scrollable ancestor passes the pull straight to the
+  // sheet; otherwise only collapse once every ancestor is already at its top,
+  // mirroring lmusic's nested-scroll hand-off to the bottom sheet.
   const allAtTop = scrollChain.every((scroller) => scroller.scrollTop <= 0);
   if (deltaY > 8 && allAtTop) {
     event.preventDefault();
@@ -111,14 +112,6 @@ onBeforeUnmount(() => unbind?.());
         role="navigation"
         aria-label="navigation"
       >
-        <button
-          type="button"
-          class="flex h-6 w-full shrink-0 items-center justify-center bg-transparent"
-          :aria-label="t('controls.collapse')"
-          @click="close"
-        >
-          <span class="h-[3px] w-10 rounded-full bg-dim/60" aria-hidden="true" />
-        </button>
         <div class="relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <slot />
         </div>

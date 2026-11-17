@@ -42,8 +42,36 @@ const lyrics = useLyricsStore();
 useWakeLock();
 
 const lyricsScroll = ref<HTMLElement | null>(null);
+const rootEl = ref<HTMLElement | null>(null);
 const lyricAtTop = ref(true);
 const lyricAtBottom = ref(false);
+
+/**
+ * Mobile: once the lyric sheet is already at its top, a further downward drag
+ * folds the player back to the wall, like the drawer pull-down. There is no
+ * on-screen back button in the pure-lyrics mobile layout.
+ */
+let pullStartY = 0;
+let pullStartX = 0;
+function onPullTouchStart(event: TouchEvent) {
+  const touch = event.touches[0];
+  if (!touch) return;
+  pullStartY = touch.clientY;
+  pullStartX = touch.clientX;
+}
+function onPullTouchMove(event: TouchEvent) {
+  const touch = event.touches[0];
+  if (!touch) return;
+  const deltaY = touch.clientY - pullStartY;
+  const deltaX = touch.clientX - pullStartX;
+  if (Math.abs(deltaX) > Math.abs(deltaY)) return;
+  const scroller = lyricsScroll.value;
+  const atTop = !scroller || scroller.scrollTop <= 0;
+  if (deltaY > 10 && atTop) {
+    event.preventDefault();
+    emit("navigate", props.returnView);
+  }
+}
 const lyricsVirtualizer = ref<VirtualizerHandle | null>(null);
 /** Whether a user scroll is currently holding automatic line following. */
 let manualScroll = false;
@@ -514,6 +542,8 @@ onMounted(() => {
   window.addEventListener("wheel", bumpControls, { passive: true });
   window.addEventListener("resize", scheduleSyncFullscreen);
   document.addEventListener("visibilitychange", onVisibilityChange);
+  rootEl.value?.addEventListener("touchstart", onPullTouchStart, { passive: true });
+  rootEl.value?.addEventListener("touchmove", onPullTouchMove, { passive: false });
 });
 onBeforeUnmount(() => {
   stopLoop();
@@ -531,6 +561,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("wheel", bumpControls);
   window.removeEventListener("resize", scheduleSyncFullscreen);
   document.removeEventListener("visibilitychange", onVisibilityChange);
+  rootEl.value?.removeEventListener("touchstart", onPullTouchStart);
+  rootEl.value?.removeEventListener("touchmove", onPullTouchMove);
 });
 
 watch(
@@ -626,36 +658,11 @@ watch(
 </script>
 
 <template>
-  <div v-if="player.currentTrack" class="fixed inset-0 z-50 flex h-screen flex-col overflow-hidden bg-bg text-fg">
+  <div v-if="player.currentTrack" ref="rootEl" class="fixed inset-0 z-50 flex h-screen flex-col overflow-hidden bg-bg text-fg">
     <div class="pointer-events-none absolute inset-0 opacity-20" :style="{ background: `radial-gradient(circle at 20% 20%, ${player.currentTrack.color}, transparent 55%), radial-gradient(circle at 80% 80%, ${player.currentTrack.color}, transparent 55%)` }"></div>
     <div class="pointer-events-none absolute -right-32 top-1/2 h-[150%] w-40 rotate-[18deg] bg-accent/10"></div>
     <div class="pointer-events-none absolute -left-24 bottom-0 h-[60%] w-24 -rotate-[18deg] bg-accent/5"></div>
-    <header class="pointer-events-none absolute inset-x-0 top-[env(safe-area-inset-top)] z-20 h-16 px-4 md:hidden">
-      <div class="flex h-full min-w-0 items-center gap-3">
-        <span
-          class="ak-frame grid h-10 w-10 shrink-0 place-items-center overflow-hidden text-sm font-black text-white/90"
-          :style="{ backgroundColor: player.currentTrack.color }"
-        >
-          <img v-if="player.currentTrack.cover" :src="player.currentTrack.cover" alt="" decoding="async" class="h-full w-full object-cover" />
-          <LoaderCircle v-else-if="coverPending(player.currentTrack)" :size="16" :stroke-width="2" class="animate-spin" />
-          <template v-else>{{ initial(player.currentTrack) }}</template>
-        </span>
-        <span class="grid min-w-0 gap-0.5">
-          <strong class="truncate text-sm font-semibold leading-tight">{{ player.currentTrack.title }}</strong>
-          <button
-            v-if="player.currentTrack.artist"
-            type="button"
-            class="truncate text-left text-xs leading-tight text-dim transition-colors hover:text-accent"
-            :title="t('library.openArtist')"
-            @click="emit('openArtist', player.currentTrack.artist)"
-          >
-            {{ player.currentTrack.artist }}
-          </button>
-        </span>
-      </div>
-    </header>
-
-    <div class="pointer-events-none absolute right-8 top-[calc(env(safe-area-inset-top)+2rem)] z-30">
+    <div class="pointer-events-none absolute right-8 top-[calc(env(safe-area-inset-top)+2rem)] z-30 hidden md:block">
       <div class="flex items-center gap-4 transition-all duration-300 ease-out" :class="revealClass">
         <button
           type="button"
@@ -680,7 +687,7 @@ watch(
       </div>
     </div>
     <div class="relative z-10 grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-6 overflow-hidden px-5 pt-[env(safe-area-inset-top)] py-4 md:grid-cols-[minmax(220px,0.34fr)_minmax(0,0.66fr)] md:grid-rows-1 md:gap-12 md:px-10 md:py-8 lg:grid-cols-[minmax(280px,0.32fr)_minmax(0,0.68fr)] lg:gap-16 lg:px-16">
-      <div class="amll-controls order-2 flex min-h-0 flex-col justify-end md:order-none md:justify-center" :data-collapsed="controlsVisible ? 'false' : 'true'">
+      <div class="amll-controls order-2 hidden min-h-0 flex-col justify-end md:flex md:order-none md:justify-center" :data-collapsed="controlsVisible ? 'false' : 'true'">
         <div class="ak-frame mx-auto hidden aspect-square w-full max-w-[420px] overflow-hidden md:block" :style="{ backgroundColor: player.currentTrack.color }">
           <img v-if="player.currentTrack.cover" :src="player.currentTrack.cover" alt="" decoding="async" class="h-full w-full object-cover" />
           <span v-else-if="coverPending(player.currentTrack)" class="grid h-full w-full place-items-center text-white/90"><LoaderCircle :size="40" :stroke-width="1.8" class="animate-spin" /></span>
@@ -740,7 +747,7 @@ watch(
           </div>
         </div>
       </div>
-      <div class="order-1 flex min-h-0 min-w-0 flex-col justify-center pt-16 md:order-none md:pt-0">
+      <div class="order-1 flex min-h-0 min-w-0 flex-col justify-center pt-[env(safe-area-inset-top)] md:order-none md:pt-0">
          <div ref="lyricsScroll" class="lyrics-scroll min-h-0 flex-1 overflow-y-auto pl-6 md:max-h-[76vh] md:border-l md:border-line md:pl-10" :class="{ 'lyric-at-top': lyricAtTop, 'lyric-at-bottom': lyricAtBottom }" :style="{ '--line-size': `${lyrics.classic.lineSize}px`, '--translation-size': `${lyrics.classic.translationSize}px`, '--line-spacing': `${lyrics.classic.lineSpacing}px`, '--line-weight': lyrics.classic.fontWeight, '--line-weight-active': lyricActiveWeight, fontFamily: lyricFontFamily }">
           <Virtualizer
             ref="lyricsVirtualizer"
@@ -771,7 +778,7 @@ watch(
         </div>
       </div>
     </div>
-    <div class="player-waveform pointer-events-none relative z-30 shrink-0 text-accent md:absolute md:inset-x-0 md:bottom-0">
+    <div class="player-waveform pointer-events-none relative z-30 hidden shrink-0 text-accent md:absolute md:inset-x-0 md:bottom-0 md:block">
       <RealtimeWaveform fit class="text-accent" />
     </div>
   </div>
