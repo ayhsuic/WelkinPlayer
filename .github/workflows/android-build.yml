@@ -2,15 +2,12 @@ name: Android Build (fix verification)
 
 # Android compile smoke test for the ndk-context double-init fix.
 #
-# Triggers manually (Actions -> Android Build -> Run workflow) or on push to
-# the `android-build` branch. Builds debug APKs so NO signing secrets are
+# Manual-only compile smoke test. Builds debug APKs so NO signing secrets are
 # required; uploads the APKs as artifacts for inspection. This proves the Rust
-# fix compiles and bundles for Android without touching release.yml (which only
-# runs on `v*` tags and needs repository secrets).
+# fix compiles and bundles for Android. Tag-triggered release APKs live in
+# `android-release.yml`; this workflow no longer runs on every branch push.
 on:
   workflow_dispatch:
-  push:
-    branches: ["android-build"]
 
 jobs:
   android:

@@ -70,6 +70,27 @@ pnpm tauri android build --apk # 构建 Android APK
 
 > Android release 签名通过环境变量注入：`ANDROID_KEYSTORE_PATH`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`；未配置时回退为 debug 签名。
 
+### CI 出包（仅安卓）
+
+推送 `v*` 标签时，`.github/workflows/android-release.yml` 只构建 arm64-v8a 的 release APK（已 strip 瘦身，不出 debug 包），并上传到该标签的 GitHub Release；桌面全平台流程不再随标签自动触发。
+
+在仓库 Settings → Secrets and variables → Actions 配置以下密钥后才会用 release 证书签名，留空则回退 debug 签名：
+
+| Secret | 内容 |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | release keystore 文件的 base64 编码 |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore 密码 |
+| `ANDROID_KEY_ALIAS` | 密钥别名 |
+| `ANDROID_KEY_PASSWORD` | 密钥密码 |
+
+生成 keystore：
+
+```bash
+keytool -genkeypair -v -keystore welkin-release.jks -alias welkin \
+  -keyalg RSA -keysize 2048 -validity 10000
+# 再把 welkin-release.jks 编码为 base64 填入 ANDROID_KEYSTORE_BASE64
+```
+
 ## 目录结构
 
 ```

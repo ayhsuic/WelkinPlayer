@@ -1,0 +1,136 @@
+name: Android Release
+
+# Tag-triggered Android-only release. No desktop bundles are built here.
+#
+# Pushing a `v*` tag (or running this manually) builds a stripped release APK
+# for arm64-v8a and uploads it to that tag's GitHub Release. The release
+# profile (`src-tauri/Cargo.toml`: lto + strip + opt-level 3) keeps the native
+# library small; this deliberately does NOT pass `--debug`, which ships an
+# unstripped debug library and balloons the APK to hundreds of MB.
+#
+# Signing secrets are optional. When `ANDROID_KEYSTORE_BASE64` is set the four
+# Android signing env vars are injected; when absent the build falls back to the
+# debug signing key (see README "构建" note). Required secrets:
+#   ANDROID_KEYSTORE_BASE64   base64 of the release keystore file
+#   ANDROID_KEYSTORE_PASSWORD keystore password
+#   ANDROID_KEY_ALIAS         key alias
+#   ANDROID_KEY_PASSWORD      key password
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 17
+
+      - name: Use the preinstalled Android SDK
+        run: |
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          sdkmanager=$(find "$sdk/cmdline-tools" -maxdepth 3 -type f -name sdkmanager 2>/dev/null | sort | tail -n1)
+          if [ -n "$sdkmanager" ]; then
+            yes | "$sdkmanager" --licenses >/dev/null 2>&1 || true
+          fi
+          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$sdk" >> "$GITHUB_ENV"
+
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26b
+          add-to-path: false
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sync version from package.json
+        run: pnpm version:sync
+
+      - name: Decode Android signing keystore (optional)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/welkin.keystore"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/welkin.keystore" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "Signing: using the configured release keystore."
+          else
+            echo "Signing: no release keystore secret set, falling back to the debug signing key."
+          fi
+
+      - name: Build release arm64-v8a APK
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: pnpm tauri android build --apk --target aarch64 --ci
+
+      - name: Stage APK
+        run: |
+          mkdir -p dist/android
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" | head -n1)
+          if [ -z "$apk" ]; then
+            echo "No APK was produced under src-tauri/gen/android/app/build/outputs/apk" >&2
+            exit 1
+          fi
+          cp "$apk" "dist/android/Welkin-${GITHUB_REF_NAME}-arm64-v8a.apk"
+          ls -l dist/android
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-arm64-v8a
+          path: dist/android
+          if-no-files-found: error
+
+      - name: Publish APK to the tag Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/compose-release-notes.mjs --dist dist/android --tag "${GITHUB_REF_NAME}" --out release-notes.md
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" dist/android/*.apk --clobber
+          else
+            [ -s changelog.md ] || printf 'Welkin %s\n' "${GITHUB_REF_NAME}" > changelog.md
+            gh release create "${GITHUB_REF_NAME}" dist/android/*.apk \
+              --title "Welkin ${GITHUB_REF_NAME}" --notes-file release-notes.md
+          fi

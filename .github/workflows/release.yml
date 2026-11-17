@@ -1,9 +1,11 @@
 name: Release
 
-# Publishing a tag like `v1.0.0` builds and signs every platform in parallel,
-# uploads the bundles as build artifacts, and a final `release` job collects
-# them into a single GitHub Release (with the updater manifest `latest.json`).
-# Nothing is published until every build has succeeded.
+# Manual full-platform build only. Tag-triggered publishing now lives in
+# `android-release.yml`, which builds and uploads the Android arm64-v8a APK to
+# the tag's Release. This workflow no longer runs automatically on `v*` tags;
+# trigger it by hand from Actions when a desktop/desktop+android smoke build
+# is wanted. The final `release` job still collects bundles into a GitHub
+# Release (with the updater manifest `latest.json`) when run on a tag ref.
 #
 # The release notes come from `changelog.md`, which is authored locally by
 # `scripts/prepare-release.mjs` (DeepSeek-assisted, maintainer-reviewed) and
@@ -22,8 +24,7 @@ name: Release
 # The generated Tauri key has no password, so no
 # TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is needed (GitHub rejects empty ones).
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
 
 jobs:
   desktop:
