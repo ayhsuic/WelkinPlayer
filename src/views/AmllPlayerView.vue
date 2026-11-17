@@ -47,16 +47,48 @@ const rootEl = ref<HTMLElement | null>(null);
 let frame = 0;
 
 /**
- * Mobile: a downward drag folds the AMLL player back to the wall; the pure
- * lyrics layout has no on-screen back button.
+ * Mobile: a downward drag follows the finger and folds the AMLL player back to
+ * the wall on release; the pure lyrics layout has no on-screen back button.
  */
+const pullOffset = ref(0);
+const pullAnimated = ref(false);
+const closing = ref(false);
+const pullActive = ref(false);
 let pullStartY = 0;
 let pullStartX = 0;
+let dragging = false;
+let lastY = 0;
+let lastT = 0;
+let velocity = 0;
+let closeTimer = 0;
+let reboundTimer = 0;
+const CLOSE_PX = 110;
+const VELOCITY_PX_PER_MS = 0.4;
+
+const rootStyle = computed(() => {
+  const style: Record<string, string> = {};
+  if (!pullActive.value) return style;
+  style.transform = closing.value ? "translateY(100%)" : `translateY(${pullOffset.value}px)`;
+  if (pullAnimated.value || closing.value) {
+    style.transition = "transform 320ms cubic-bezier(0.2,0.8,0.2,1)";
+  }
+  return style;
+});
+
 function onPullTouchStart(event: TouchEvent) {
   const touch = event.touches[0];
   if (!touch) return;
   pullStartY = touch.clientY;
   pullStartX = touch.clientX;
+  dragging = false;
+  closing.value = false;
+  pullOffset.value = 0;
+  pullAnimated.value = false;
+  pullActive.value = false;
+  window.clearTimeout(reboundTimer);
+  velocity = 0;
+  lastY = touch.clientY;
+  lastT = performance.now();
 }
 function onPullTouchMove(event: TouchEvent) {
   const touch = event.touches[0];
@@ -64,10 +96,40 @@ function onPullTouchMove(event: TouchEvent) {
   const deltaY = touch.clientY - pullStartY;
   const deltaX = touch.clientX - pullStartX;
   if (Math.abs(deltaX) > Math.abs(deltaY)) return;
-  if (deltaY > 10) {
-    event.preventDefault();
-    emit("navigate", props.returnView);
+  if (deltaY <= 0) {
+    pullOffset.value = 0;
+    dragging = false;
+    return;
   }
+  dragging = true;
+  pullActive.value = true;
+  if (event.cancelable) event.preventDefault();
+  pullOffset.value = deltaY <= 120 ? deltaY : 120 + (deltaY - 120) * 0.4;
+  const now = performance.now();
+  const dt = now - lastT;
+  if (dt > 0) velocity = (touch.clientY - lastY) / dt;
+  lastY = touch.clientY;
+  lastT = now;
+}
+function onPullTouchEnd() {
+  if (dragging) {
+    const shouldClose = pullOffset.value >= CLOSE_PX || velocity > VELOCITY_PX_PER_MS;
+    pullAnimated.value = true;
+    if (shouldClose) {
+      closing.value = true;
+      closeTimer = window.setTimeout(() => {
+        emit("navigate", props.returnView);
+        finishClose();
+      }, 320);
+    } else {
+      pullOffset.value = 0;
+      reboundTimer = window.setTimeout(() => {
+        pullActive.value = false;
+        pullAnimated.value = false;
+      }, 320);
+    }
+  }
+  dragging = false;
 }
 
 /**
@@ -188,6 +250,8 @@ onMounted(() => {
   window.addEventListener("resize", syncFullscreen);
   rootEl.value?.addEventListener("touchstart", onPullTouchStart, { passive: true });
   rootEl.value?.addEventListener("touchmove", onPullTouchMove, { passive: false });
+  rootEl.value?.addEventListener("touchend", onPullTouchEnd);
+  rootEl.value?.addEventListener("touchcancel", onPullTouchEnd);
 });
 onBeforeUnmount(() => {
   cancelAnimationFrame(frame);
@@ -199,6 +263,10 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", syncFullscreen);
   rootEl.value?.removeEventListener("touchstart", onPullTouchStart);
   rootEl.value?.removeEventListener("touchmove", onPullTouchMove);
+  rootEl.value?.removeEventListener("touchend", onPullTouchEnd);
+  rootEl.value?.removeEventListener("touchcancel", onPullTouchEnd);
+  window.clearTimeout(closeTimer);
+  window.clearTimeout(reboundTimer);
 });
 
 watch(
@@ -325,7 +393,7 @@ function onLyricSeek(timeMs: number) {
     class="amll-page fixed inset-0 z-50 flex flex-col overflow-hidden text-white"
     :class="{ 'is-open': visible }"
     @transitionend="onTransitionEnd"
-    :style="{
+    :style="[rootStyle, {
       backgroundColor: player.currentTrack.color,
       '--accent': '#ffffff',
       '--accent-fg': '#0b0c0f',
@@ -335,7 +403,7 @@ function onLyricSeek(timeMs: number) {
       '--fg': '#ffffff',
       '--muted': 'rgba(255, 255, 255, 0.72)',
       '--dim': 'rgba(255, 255, 255, 0.55)',
-    }"
+    }]"
   >
     <div class="absolute inset-0">
       <AmllBackground :album="cover" :fps="30" :render-scale="0.5" @ready="onBackgroundReady" />

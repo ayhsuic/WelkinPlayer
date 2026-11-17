@@ -48,16 +48,48 @@ const lyricAtBottom = ref(false);
 
 /**
  * Mobile: once the lyric sheet is already at its top, a further downward drag
- * folds the player back to the wall, like the drawer pull-down. There is no
- * on-screen back button in the pure-lyrics mobile layout.
+ * follows the finger and folds the player back to the wall on release. There
+ * is no on-screen back button in the pure-lyrics mobile layout.
  */
+const pullOffset = ref(0);
+const pullAnimated = ref(false);
+const closing = ref(false);
+const pullActive = ref(false);
 let pullStartY = 0;
 let pullStartX = 0;
+let dragging = false;
+let lastY = 0;
+let lastT = 0;
+let velocity = 0;
+let closeTimer = 0;
+let reboundTimer = 0;
+const CLOSE_PX = 110;
+const VELOCITY_PX_PER_MS = 0.4;
+
+const rootStyle = computed(() => {
+  const style: Record<string, string> = {};
+  if (!pullActive.value) return style;
+  style.transform = closing.value ? "translateY(100%)" : `translateY(${pullOffset.value}px)`;
+  if (pullAnimated.value || closing.value) {
+    style.transition = "transform 280ms cubic-bezier(0.2,0.8,0.2,1)";
+  }
+  return style;
+});
+
 function onPullTouchStart(event: TouchEvent) {
   const touch = event.touches[0];
   if (!touch) return;
   pullStartY = touch.clientY;
   pullStartX = touch.clientX;
+  dragging = false;
+  closing.value = false;
+  pullOffset.value = 0;
+  pullAnimated.value = false;
+  pullActive.value = false;
+  window.clearTimeout(reboundTimer);
+  velocity = 0;
+  lastY = touch.clientY;
+  lastT = performance.now();
 }
 function onPullTouchMove(event: TouchEvent) {
   const touch = event.touches[0];
@@ -67,10 +99,38 @@ function onPullTouchMove(event: TouchEvent) {
   if (Math.abs(deltaX) > Math.abs(deltaY)) return;
   const scroller = lyricsScroll.value;
   const atTop = !scroller || scroller.scrollTop <= 0;
-  if (deltaY > 10 && atTop) {
-    event.preventDefault();
-    emit("navigate", props.returnView);
+  if (!atTop) return;
+  if (deltaY <= 0) {
+    pullOffset.value = 0;
+    dragging = false;
+    return;
   }
+  dragging = true;
+  pullActive.value = true;
+  if (event.cancelable) event.preventDefault();
+  pullOffset.value = deltaY <= 120 ? deltaY : 120 + (deltaY - 120) * 0.4;
+  const now = performance.now();
+  const dt = now - lastT;
+  if (dt > 0) velocity = (touch.clientY - lastY) / dt;
+  lastY = touch.clientY;
+  lastT = now;
+}
+function onPullTouchEnd() {
+  if (dragging) {
+    const shouldClose = pullOffset.value >= CLOSE_PX || velocity > VELOCITY_PX_PER_MS;
+    pullAnimated.value = true;
+    if (shouldClose) {
+      closing.value = true;
+      closeTimer = window.setTimeout(() => emit("navigate", props.returnView), 280);
+    } else {
+      pullOffset.value = 0;
+      reboundTimer = window.setTimeout(() => {
+        pullActive.value = false;
+        pullAnimated.value = false;
+      }, 280);
+    }
+  }
+  dragging = false;
 }
 const lyricsVirtualizer = ref<VirtualizerHandle | null>(null);
 /** Whether a user scroll is currently holding automatic line following. */
@@ -544,6 +604,8 @@ onMounted(() => {
   document.addEventListener("visibilitychange", onVisibilityChange);
   rootEl.value?.addEventListener("touchstart", onPullTouchStart, { passive: true });
   rootEl.value?.addEventListener("touchmove", onPullTouchMove, { passive: false });
+  rootEl.value?.addEventListener("touchend", onPullTouchEnd);
+  rootEl.value?.addEventListener("touchcancel", onPullTouchEnd);
 });
 onBeforeUnmount(() => {
   stopLoop();
@@ -563,6 +625,10 @@ onBeforeUnmount(() => {
   document.removeEventListener("visibilitychange", onVisibilityChange);
   rootEl.value?.removeEventListener("touchstart", onPullTouchStart);
   rootEl.value?.removeEventListener("touchmove", onPullTouchMove);
+  rootEl.value?.removeEventListener("touchend", onPullTouchEnd);
+  rootEl.value?.removeEventListener("touchcancel", onPullTouchEnd);
+  window.clearTimeout(closeTimer);
+  window.clearTimeout(reboundTimer);
 });
 
 watch(
@@ -658,7 +724,7 @@ watch(
 </script>
 
 <template>
-  <div v-if="player.currentTrack" ref="rootEl" class="fixed inset-0 z-50 flex h-screen flex-col overflow-hidden bg-bg text-fg">
+  <div v-if="player.currentTrack" ref="rootEl" class="fixed inset-0 z-50 flex h-screen flex-col overflow-hidden bg-bg text-fg" :style="rootStyle">
     <div class="pointer-events-none absolute inset-0 opacity-20" :style="{ background: `radial-gradient(circle at 20% 20%, ${player.currentTrack.color}, transparent 55%), radial-gradient(circle at 80% 80%, ${player.currentTrack.color}, transparent 55%)` }"></div>
     <div class="pointer-events-none absolute -right-32 top-1/2 h-[150%] w-40 rotate-[18deg] bg-accent/10"></div>
     <div class="pointer-events-none absolute -left-24 bottom-0 h-[60%] w-24 -rotate-[18deg] bg-accent/5"></div>

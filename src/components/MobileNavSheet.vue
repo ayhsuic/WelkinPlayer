@@ -4,7 +4,7 @@
 -->
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import MobileTabBar from "./MobileTabBar.vue";
 import type { MainTab } from "../lib/app";
 
@@ -41,6 +41,36 @@ let startX = 0;
 let axis: "none" | "x" | "y" = "none";
 let scrollChain: HTMLElement[] = [];
 
+// Drag-to-dismiss: the sheet follows the finger once every scroller in the
+// touched page is pinned to its top; on release it either slides out past the
+// threshold or springs back to its resting position.
+const pullOffset = ref(0);
+const pullAnimated = ref(false);
+const closing = ref(false);
+const pullActive = ref(false);
+let dragging = false;
+let lastY = 0;
+let lastT = 0;
+let velocity = 0;
+let closeTimer = 0;
+let reboundTimer = 0;
+
+const CLOSE_PX = 110;
+const VELOCITY_PX_PER_MS = 0.4;
+
+const sheetStyle = computed(() => {
+  const style: Record<string, string> = { touchAction: "pan-y" };
+  // Outside an active gesture leave transform/transition to the outer enter/
+  // leave transition class; only take over while the finger or the settle
+  // animation owns the element.
+  if (!pullActive.value) return style;
+  style.transform = closing.value ? "translateY(100%)" : `translateY(${pullOffset.value}px)`;
+  if (pullAnimated.value || closing.value) {
+    style.transition = "transform 280ms cubic-bezier(0.2,0.8,0.2,1)";
+  }
+  return style;
+});
+
 /**
  * Collect every vertically scrollable ancestor from the touched node up to the
  * sheet. Containers that do not overflow still count: their scrollTop stays 0,
@@ -64,6 +94,15 @@ function onTouchStart(event: TouchEvent) {
   startX = touch.clientX;
   axis = "none";
   scrollChain = collectScrollChain(event.target);
+  dragging = false;
+  closing.value = false;
+  pullOffset.value = 0;
+  pullAnimated.value = false;
+  pullActive.value = false;
+  window.clearTimeout(reboundTimer);
+  velocity = 0;
+  lastY = touch.clientY;
+  lastT = performance.now();
 }
 
 function onTouchMove(event: TouchEvent) {
@@ -81,21 +120,58 @@ function onTouchMove(event: TouchEvent) {
   if (axis === "x") return;
 
   // A short page with no scrollable ancestor passes the pull straight to the
-  // sheet; otherwise only collapse once every ancestor is already at its top.
+  // sheet; otherwise only follow once every ancestor is already at its top.
   const allAtTop = scrollChain.every((scroller) => scroller.scrollTop <= 0);
-  if (dy > 10 && allAtTop) {
-    if (event.cancelable) event.preventDefault();
-    close();
+  if (!allAtTop) return;
+
+  // An upward pull hands back to the list; only a downward pull drags the sheet.
+  if (dy <= 0) {
+    pullOffset.value = 0;
+    dragging = false;
+    return;
   }
+
+  dragging = true;
+  pullActive.value = true;
+  if (event.cancelable) event.preventDefault();
+  // Resistance after the first 120px so the sheet does not chase the finger to
+  // the bottom of the screen.
+  pullOffset.value = dy <= 120 ? dy : 120 + (dy - 120) * 0.4;
+
+  const now = performance.now();
+  const dt = now - lastT;
+  if (dt > 0) velocity = (touch.clientY - lastY) / dt;
+  lastY = touch.clientY;
+  lastT = now;
 }
 
 function onTouchEnd() {
+  if (dragging) {
+    const shouldClose = pullOffset.value >= CLOSE_PX || velocity > VELOCITY_PX_PER_MS;
+    pullAnimated.value = true;
+    if (shouldClose) {
+      closing.value = true;
+      closeTimer = window.setTimeout(() => close(), 280);
+    } else {
+      pullOffset.value = 0;
+      reboundTimer = window.setTimeout(() => {
+        pullActive.value = false;
+        pullAnimated.value = false;
+      }, 280);
+    }
+  }
   axis = "none";
   scrollChain = [];
+  dragging = false;
 }
 
-let unbind: (() => void) | null = null;
-onMounted(() => {
+// The component stays mounted while the section itself is `v-if="open"`, so
+// the refs are null on first mount. Bind only after the section has rendered,
+// and detach when it closes; otherwise the gesture never attaches at all.
+let boundEls: HTMLElement[] = [];
+
+function bindGesture() {
+  detachGesture();
   const els = [bodyEl.value, contentEl.value].filter((el): el is HTMLElement => Boolean(el));
   for (const el of els) {
     el.addEventListener("touchstart", onTouchStart, { passive: true });
@@ -103,16 +179,39 @@ onMounted(() => {
     el.addEventListener("touchend", onTouchEnd);
     el.addEventListener("touchcancel", onTouchEnd);
   }
-  unbind = () => {
-    for (const el of els) {
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("touchend", onTouchEnd);
-      el.removeEventListener("touchcancel", onTouchEnd);
+  boundEls = els;
+}
+
+function detachGesture() {
+  for (const el of boundEls) {
+    el.removeEventListener("touchstart", onTouchStart);
+    el.removeEventListener("touchmove", onTouchMove);
+    el.removeEventListener("touchend", onTouchEnd);
+    el.removeEventListener("touchcancel", onTouchEnd);
+  }
+  boundEls = [];
+}
+
+watch(
+  () => props.open,
+  async (open) => {
+    if (open) {
+      await nextTick();
+      bindGesture();
+    } else {
+      detachGesture();
     }
-  };
+  }
+);
+
+onMounted(() => {
+  if (props.open) void nextTick().then(bindGesture);
 });
-onBeforeUnmount(() => unbind?.());
+onBeforeUnmount(() => {
+  window.clearTimeout(closeTimer);
+  window.clearTimeout(reboundTimer);
+  detachGesture();
+});
 </script>
 
 <template>
@@ -122,7 +221,7 @@ onBeforeUnmount(() => unbind?.());
         v-if="open"
         ref="bodyEl"
         class="fixed inset-0 z-[71] flex flex-col bg-bg pt-[env(safe-area-inset-top)] md:hidden"
-        style="touch-action: pan-y"
+        :style="sheetStyle"
         role="navigation"
         aria-label="navigation"
       >
