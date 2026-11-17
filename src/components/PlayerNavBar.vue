@@ -15,11 +15,13 @@ import { pushToast } from "../lib/toast";
 /**
  * Mobile transport strip, modelled on the lmusic seekbar:
  *
- *   - one tall progress bar carrying the elapsed / total time;
+ *   - one rounded progress bar carrying the elapsed / total time;
  *   - drag horizontally to seek;
  *   - tap the left third for previous, the middle for play/pause, the right
  *     third for next;
- *   - long-press cycles the play mode (order -> shuffle -> repeat-one);
+ *   - long-press turns the bar into an in-bar three-way mode switcher: the
+ *     order / repeat-one / shuffle icons appear in a row, slide to a third and
+ *     release to pick that mode (no separate popup sheet);
  *   - an upward swipe opens the navigation drawer.
  *
  * Desktop keeps the full `PlayerBar`; this strip is mobile-only.
@@ -36,19 +38,25 @@ const sliderValue = () => seekValue.value ?? player.progress;
 
 let pointerSeeking = false;
 let dragMoved = false;
-let longFired = false;
 let downX = 0;
 let downY = 0;
 let barRect: DOMRect | null = null;
 let pressTimer = 0;
 
-/** Three play modes offered in the long-press sheet, left to right. */
+/* ------------------------------------------------------- mode switcher */
+
+/**
+ * The three play modes laid out left to right inside the long-press
+ * switcher, matching lmusic: list recycle, repeat-one, shuffle.
+ */
 const MODES: { id: PlayMode; icon: typeof Shuffle }[] = [
-  { id: "shuffle", icon: Shuffle },
   { id: "order", icon: ListMusic },
   { id: "one", icon: Repeat1 },
+  { id: "shuffle", icon: Shuffle },
 ];
-const showModes = ref(false);
+
+/** True while the bar is in the long-press mode-switching state. */
+const switching = ref(false);
 
 /** Localized label for the three play modes. */
 function playModeLabel(mode: PlayMode): string {
@@ -61,22 +69,16 @@ function playModeLabel(mode: PlayMode): string {
   return i18n.global.t(key);
 }
 
-function closeModes() {
-  showModes.value = false;
-}
-
 function selectMode(mode: PlayMode) {
   if (player.playMode() !== mode) void player.applyPlayMode(mode);
   pushToast("info", playModeLabel(mode));
-  closeModes();
+  switching.value = false;
 }
 
-/** Swipe to the neighbouring mode inside the sheet. */
-function stepMode(delta: number) {
-  const current = player.playMode();
-  const index = MODES.findIndex((item) => item.id === current);
-  const next = MODES[(index + delta + MODES.length) % MODES.length];
-  if (next) selectMode(next.id);
+function modeAtRatio(ratio: number): PlayMode {
+  if (ratio < 1 / 3) return MODES[0].id;
+  if (ratio < 2 / 3) return MODES[1].id;
+  return MODES[2].id;
 }
 
 function ratioFromEvent(clientX: number): number {
@@ -90,15 +92,15 @@ function onBarDown(event: PointerEvent) {
   barRect = el.getBoundingClientRect();
   pointerSeeking = true;
   dragMoved = false;
-  longFired = false;
+  switching.value = false;
   downX = event.clientX;
   downY = event.clientY;
   seekValue.value = player.progress;
   el.setPointerCapture?.(event.pointerId);
-  // Long press opens the mode sheet; a plain tap toggles play/pause or seeks.
+  // Long press opens the in-bar mode switcher; a plain tap toggles play/pause
+  // or seeks.
   pressTimer = window.setTimeout(() => {
-    longFired = true;
-    showModes.value = true;
+    switching.value = true;
   }, 500);
 }
 
@@ -106,6 +108,10 @@ function onBarMove(event: PointerEvent) {
   if (!pointerSeeking) return;
   const dx = event.clientX - downX;
   const dy = event.clientY - downY;
+
+  // Inside the switcher the gesture only aims at a mode, it never seeks.
+  if (switching.value) return;
+
   if (!dragMoved && Math.hypot(dx, dy) > 8) {
     // A vertical gesture belongs to the drawer swipe, not the seek drag.
     if (Math.abs(dx) < Math.abs(dy)) {
@@ -125,17 +131,15 @@ function onBarUp(event: PointerEvent) {
   window.clearTimeout(pressTimer);
   if (!pointerSeeking) return;
   pointerSeeking = false;
-  if (longFired) {
-    longFired = false;
+
+  // Releasing from the long-press switcher picks the mode under the finger.
+  if (switching.value) {
+    const ratio = ratioFromEvent(event.clientX);
+    selectMode(modeAtRatio(ratio));
     seekValue.value = null;
     return;
   }
-  // A tap while the sheet is open dismisses it instead of changing track.
-  if (showModes.value) {
-    closeModes();
-    seekValue.value = null;
-    return;
-  }
+
   if (dragMoved) {
     const value = seekValue.value ?? player.progress;
     seekValue.value = null;
@@ -153,26 +157,8 @@ function onBarCancel() {
   window.clearTimeout(pressTimer);
   pointerSeeking = false;
   dragMoved = false;
+  switching.value = false;
   seekValue.value = null;
-}
-
-/* --------------------------------------------- mode sheet swipe select */
-
-let sheetTouchX = 0;
-let sheetSwiped = false;
-
-function onSheetTouchStart(event: TouchEvent) {
-  if (event.touches.length !== 1) return;
-  sheetTouchX = event.touches[0].clientX;
-  sheetSwiped = false;
-}
-
-function onSheetTouchMove(event: TouchEvent) {
-  if (sheetSwiped || event.touches.length !== 1) return;
-  const dx = event.touches[0].clientX - sheetTouchX;
-  if (Math.abs(dx) < 24) return;
-  sheetSwiped = true;
-  stepMode(dx < 0 ? 1 : -1);
 }
 
 /* --------------------------------------------- swipe up opens the drawer */
@@ -255,30 +241,10 @@ onBeforeUnmount(() => {
 
 <template>
   <footer ref="root" class="transport no-scrollbar" role="group" aria-label="Playback controls">
-    <Transition name="mode-sheet">
-      <div
-        v-if="showModes"
-        class="mode-sheet"
-        @touchstart="onSheetTouchStart"
-        @touchmove="onSheetTouchMove"
-      >
-        <button
-          v-for="mode in MODES"
-          :key="mode.id"
-          type="button"
-          class="mode-option"
-          :class="{ 'is-active': player.playMode() === mode.id }"
-          :aria-label="playModeLabel(mode.id)"
-          @click.stop="selectMode(mode.id)"
-        >
-          <component :is="mode.icon" :size="20" />
-          <span class="mode-option-label">{{ playModeLabel(mode.id) }}</span>
-        </button>
-      </div>
-    </Transition>
     <div
       ref="bar"
       class="seekbar"
+      :class="{ 'is-switching': switching }"
       :style="{ '--fill': percent(sliderValue()) }"
       role="slider"
       :aria-valuenow="Math.round(sliderValue())"
@@ -291,8 +257,23 @@ onBeforeUnmount(() => {
       @pointercancel="onBarCancel"
     >
       <div class="seekbar-fill" :style="{ width: percent(sliderValue()) }" />
-      <span class="seekbar-time seekbar-time--start">{{ player.elapsedTime }}</span>
-      <span class="seekbar-time seekbar-time--end">{{ player.totalTime }}</span>
+      <template v-if="!switching">
+        <span class="seekbar-time seekbar-time--start">{{ player.elapsedTime }}</span>
+        <span class="seekbar-time seekbar-time--end">{{ player.totalTime }}</span>
+      </template>
+      <div v-if="switching" class="seekbar-switcher">
+        <button
+          v-for="mode in MODES"
+          :key="mode.id"
+          type="button"
+          class="switcher-option"
+          :class="{ 'is-active': player.playMode() === mode.id }"
+          :aria-label="playModeLabel(mode.id)"
+          @click.stop="selectMode(mode.id)"
+        >
+          <component :is="mode.icon" :size="20" />
+        </button>
+      </div>
     </div>
   </footer>
 </template>
@@ -300,16 +281,10 @@ onBeforeUnmount(() => {
 <style scoped>
 .transport {
   position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: calc(env(safe-area-inset-bottom) + 12px);
+  left: 16px;
+  right: 16px;
+  bottom: calc(env(safe-area-inset-bottom) + 18px);
   z-index: 60;
-  padding: 6px;
-  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
-  background: color-mix(in srgb, var(--surface) 78%, transparent);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.26);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -318,9 +293,11 @@ onBeforeUnmount(() => {
 
 .seekbar {
   position: relative;
-  height: 48px;
+  height: 44px;
   overflow: hidden;
+  border-radius: 14px;
   background: color-mix(in srgb, var(--line) 55%, transparent);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.26);
   cursor: pointer;
   touch-action: none;
 }
@@ -330,6 +307,7 @@ onBeforeUnmount(() => {
   top: 0;
   bottom: 0;
   left: 0;
+  border-radius: 14px 0 0 14px;
   background: var(--accent);
   pointer-events: none;
 }
@@ -354,48 +332,33 @@ onBeforeUnmount(() => {
   right: 14px;
 }
 
-.mode-sheet {
+.seekbar-switcher {
+  position: absolute;
+  inset: 0;
   display: flex;
-  gap: 6px;
-  margin-bottom: 6px;
-  padding: 6px;
-  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
-  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-around;
+  padding: 0 4px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
 }
 
-.mode-option {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  padding: 10px 6px;
-  border: 1px solid transparent;
+.switcher-option {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
   background: transparent;
-  color: var(--fg);
+  color: rgba(255, 255, 255, 0.72);
   cursor: pointer;
 }
 
-.mode-option.is-active {
+.switcher-option.is-active {
   background: var(--accent);
   color: #fff;
-}
-
-.mode-option-label {
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.mode-sheet-enter-active,
-.mode-sheet-leave-active {
-  transition: opacity 180ms ease, transform 180ms ease;
-}
-
-.mode-sheet-enter-from,
-.mode-sheet-leave-to {
-  opacity: 0;
-  transform: translateY(8px);
 }
 
 /* Desktop keeps the full player bar, so this strip is mobile-only. */

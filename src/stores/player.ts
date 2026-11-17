@@ -426,8 +426,10 @@ export const usePlayerStore = defineStore("player", () => {
     } else if (mode === "one") {
       await setRepeat("one");
     } else {
+      // Order plays the whole queue on repeat: the last track wraps back to the
+      // first instead of stopping.
       await setShuffle(false);
-      await setRepeat("off");
+      await setRepeat("all");
     }
   }
 
@@ -446,7 +448,7 @@ export const usePlayerStore = defineStore("player", () => {
       await setRepeat("one");
     } else {
       await setShuffle(false);
-      await setRepeat("off");
+      await setRepeat("all");
     }
     return next;
   }

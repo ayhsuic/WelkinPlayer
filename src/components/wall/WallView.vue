@@ -10,7 +10,7 @@ import { Music2, Pause, Play } from "@lucide/vue";
 import { usePlayerStore } from "../../stores/player";
 import type { Track } from "../../stores/player";
 import { useLyricsStore } from "../../stores/lyrics";
-import { cameraAt, centerOf, geometryFor, layoutWall, locateNearest, visibleBounds, worldTransform, neighborWindow, grownWindowIndex, focusSlotRect, pitchOf, slotsForBlock } from "./geometry";
+import { cameraAt, centerOf, geometryFor, layoutWall, locateNearest, visibleBounds, worldTransform, neighborWindow, grownWindowIndex, focusSlotRect, pitchOf } from "./geometry";
 import type { WallFocus, WallInstance } from "./geometry";
 import { trackKey } from "../../lib/sources";
 import { requestMeta } from "../../directives/requestMeta";
@@ -447,25 +447,6 @@ function onWheel(event: WheelEvent) {
 
 /* ------------------------------------------------------------- open, close */
 
-/**
- * Centre of the plain seat the grown card came from, in world space. Keeping the
- * card's own repeat copy and its seat (not the block centre) means closing the
- * card drops back onto the same poster instead of jumping to another copy.
- */
-function plainSlotCenter(block: { column: number; row: number }, slotIndex: number) {
-  const geo = geometry.value;
-  const repeatX = Math.floor(block.column / geo.blocksPerRow);
-  const repeatY = Math.floor(block.row / geo.blockRows);
-  const localColumn = block.column - repeatX * geo.blocksPerRow;
-  const localRow = block.row - repeatY * geo.blockRows;
-  const slot = slotsForBlock(localColumn, localRow)[slotIndex];
-  const pitch = pitchOf(metrics.value);
-  return {
-    x: repeatX * geo.cellWidth + localColumn * geo.blockWidth + (slot.x + slot.cols / 2) * pitch,
-    y: repeatY * geo.cellHeight + localRow * geo.blockHeight + (slot.y + slot.rows / 2) * pitch,
-  };
-}
-
 /** Centre of the big card opened on `focusSlot`, in world space. */
 function expandedCenter(block: { column: number; row: number }, focusSlot: number) {
   const geo = geometry.value;
@@ -481,17 +462,14 @@ function expandedCenter(block: { column: number; row: number }, focusSlot: numbe
   };
 }
 
-/** Tapping a poster opens its block; tapping the open card closes it. */
+/** Tapping a poster opens its block; tapping the open card toggles playback. */
 function onTileClick(tile: WallInstance) {
   resetIdle();
   if (performance.now() < ignoreClickUntil) return;
   if (tile.expanded) {
-    // Close back onto the same poster's plain seat in the same repeat copy.
-    // The seat centre (not the block centre) and the current zoom are kept, so
-    // the camera does not jump to another copy or snap the scale back to 1.
-    const block = { column: tile.blockColumn, row: tile.blockRow };
-    selected.value = null;
-    panTo(plainSlotCenter(block, tile.slotIndex), SETTLE_MS);
+    // The grown card's cover is a play/pause target, not a close button: tapping
+    // it never shrinks the card or drops the playback focus.
+    playCard();
     return;
   }
 
@@ -588,7 +566,7 @@ onMounted(() => {
   observer.observe(el);
   if (total.value > 0 && !centred) {
     centred = true;
-    centerOn(currentIndex.value >= 0 ? currentIndex.value : 0, false, true);
+    centerOn(currentIndex.value >= 0 ? currentIndex.value : 0, currentIndex.value >= 0, true);
   }
   resetIdle();
 });
@@ -599,7 +577,7 @@ watch(total, (next, previous) => {
   // that the camera belongs to the user and must not jump under their finger.
   if (!previous && !centred) {
     centred = true;
-    centerOn(currentIndex.value >= 0 ? currentIndex.value : 0, false, true);
+    centerOn(currentIndex.value >= 0 ? currentIndex.value : 0, currentIndex.value >= 0, true);
   }
 });
 
@@ -607,12 +585,12 @@ watch(total, (next, previous) => {
 watch(currentIndex, (index, previous) => {
   if (index >= 0 && previous < 0 && !centred) {
     centred = true;
-    centerOn(index, false, true);
+    centerOn(index, true, true);
   }
 });
 
 /** A long press on the navigation strip asks the wall to re-centre on the playing track. */
-watch(() => props.focusToken, () => focusCurrent());
+watch(() => props.focusToken, () => focusCurrent(), { immediate: true });
 
 /**
  * When playback moves to a new track it grows to the centre; the track that was
@@ -658,6 +636,15 @@ defineExpose({ focusCurrent, focusFirst });
         <span v-if="!tile.expanded && orderOf(tile) > 0" class="wall-tile-order">{{ orderOf(tile) }}</span>
         <template v-if="tile.expanded && cardTrack">
           <span class="wall-card-shade" aria-hidden="true" />
+          <button
+            type="button"
+            class="wall-card-center"
+            :aria-label="isCardCurrent && player.isPlaying ? 'Pause' : 'Play'"
+            @click.stop="playCard()"
+          >
+            <Pause v-if="isCardCurrent && player.isPlaying" :size="26" />
+            <Play v-else :size="26" />
+          </button>
           <div class="wall-card">
             <h2 class="wall-card-title">{{ cardTrack.title }}</h2>
             <span class="wall-card-artist">{{ cardTrack.artist }}</span>
@@ -667,10 +654,6 @@ defineExpose({ focusCurrent, focusFirst });
               <p class="wall-card-lyric is-next">{{ lyricLines[2] }}</p>
             </div>
             <div class="wall-card-actions">
-              <button type="button" class="wall-card-action is-primary" :aria-label="isCardCurrent && player.isPlaying ? 'Pause' : 'Play'" @click.stop="playCard()">
-                <Pause v-if="isCardCurrent && player.isPlaying" :size="20" />
-                <Play v-else :size="20" />
-              </button>
               <button type="button" class="wall-card-action" aria-label="Lyrics" @click.stop="openCardLyrics()">
                 <Music2 :size="18" />
               </button>
@@ -859,12 +842,25 @@ defineExpose({ focusCurrent, focusFirst });
   cursor: pointer;
 }
 
-.wall-card-action.is-primary {
-  width: 52px;
-  height: 52px;
-  border-color: transparent;
-  background: var(--accent);
-  color: var(--accent-fg);
+.wall-card-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.42);
+  color: #fff;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.34);
+  cursor: pointer;
+  z-index: 3;
 }
 
 .wall-empty {
