@@ -301,7 +301,9 @@ onBeforeUnmount(() => {
   position: fixed;
   left: 16px;
   right: 16px;
-  bottom: calc(env(safe-area-inset-bottom) + 18px);
+  max-width: 320px;
+  margin-inline: auto;
+  bottom: calc(env(safe-area-inset-bottom) + 76px);
   z-index: 60;
   touch-action: none;
   user-select: none;
@@ -311,7 +313,7 @@ onBeforeUnmount(() => {
 
 .seekbar {
   position: relative;
-  height: 44px;
+  height: 40px;
   overflow: hidden;
   border-radius: 14px;
   background: color-mix(in srgb, var(--line) 55%, transparent);

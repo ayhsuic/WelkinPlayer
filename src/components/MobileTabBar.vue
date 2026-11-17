@@ -27,7 +27,6 @@ function onSelect(tab: MainTab) {
     class="tab-bar no-scrollbar"
     role="tablist"
     :aria-label="t('nav.menu')"
-    :style="{ paddingBottom: 'env(safe-area-inset-bottom)' }"
   >
     <button
       v-for="item in mainNavTabs"
@@ -40,6 +39,7 @@ function onSelect(tab: MainTab) {
       :aria-label="t(item.labelKey)"
       @click="onSelect(item.id)"
     >
+      <span class="item-highlight" aria-hidden="true" />
       <component :is="item.icon" class="tab-bar-icon" :size="21" :stroke-width="2" />
       <span v-if="props.active === item.id" class="tab-bar-label">{{ t(item.labelKey) }}</span>
     </button>
@@ -48,15 +48,21 @@ function onSelect(tab: MainTab) {
 
 <style scoped>
 .tab-bar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(env(safe-area-inset-bottom) + 12px);
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  height: 52px;
-  background: color-mix(in srgb, var(--surface) 95%, transparent);
-  border-top: 1px solid var(--line);
+  height: 56px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
 }
 
 .tab-bar-item {
+  position: relative;
   flex: 1 1 0;
   display: flex;
   flex-direction: column;
@@ -70,8 +76,28 @@ function onSelect(tab: MainTab) {
   transition: color 200ms ease, transform 200ms ease;
 }
 
+.item-highlight {
+  position: absolute;
+  inset: 5px;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+}
+
 .tab-bar-item.is-active {
   color: var(--accent);
+}
+
+.tab-bar-item.is-active .item-highlight {
+  opacity: 1;
+}
+
+.tab-bar-icon,
+.tab-bar-label {
+  position: relative;
+  z-index: 1;
 }
 
 .tab-bar-icon {

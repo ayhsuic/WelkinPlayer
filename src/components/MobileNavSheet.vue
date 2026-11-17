@@ -228,7 +228,7 @@ onBeforeUnmount(() => {
         <div
           ref="contentEl"
           class="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
-          style="touch-action: pan-y"
+          style="touch-action: pan-y; padding-bottom: calc(env(safe-area-inset-bottom) + 84px)"
         >
           <slot />
         </div>
