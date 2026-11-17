@@ -34,7 +34,12 @@ const player = usePlayerStore();
 const bar = ref<HTMLElement | null>(null);
 /** While dragging, the bar shows `seekValue` so engine ticks cannot yank it. */
 const seekValue = ref<number | null>(null);
-const sliderValue = () => seekValue.value ?? player.progress;
+/**
+ * While the long-press mode switcher is open the gesture only picks a mode, so
+ * the bar keeps following the real playhead instead of a frozen seek preview;
+ * releasing then cannot snap back to a stale position.
+ */
+const sliderValue = () => (switching.value ? player.progress : seekValue.value ?? player.progress);
 
 let pointerSeeking = false;
 let dragMoved = false;
@@ -59,6 +64,9 @@ const MODES: { id: PlayMode; icon: typeof Shuffle }[] = [
 const switching = ref(false);
 /** Finger position inside the switcher, 0..1; drives the sliding highlight thumb. */
 const switchRatio = ref(0.5);
+
+/** Buffered range never falls behind the playhead; mirrors the other three bars. */
+const bufferPercent = () => percent(Math.max(player.bufferedProgress, sliderValue()));
 
 /** Centre ratio of each mode's third, so the thumb starts over the active mode. */
 const MODE_CENTER: Record<PlayMode, number> = { order: 1 / 6, one: 3 / 6, shuffle: 5 / 6 };
@@ -284,6 +292,7 @@ onBeforeUnmount(() => {
       @pointerup="onBarUp"
       @pointercancel="onBarCancel"
     >
+      <div class="seekbar-buffer" :style="{ width: bufferPercent() }" />
       <div class="seekbar-fill" :style="{ width: percent(sliderValue()) }" />
       <template v-if="!switching">
         <span class="seekbar-time seekbar-time--start">{{ player.elapsedTime }}</span>
@@ -333,12 +342,23 @@ onBeforeUnmount(() => {
   touch-action: none;
 }
 
+.seekbar-buffer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--fg) 16%, transparent);
+  pointer-events: none;
+}
+
 .seekbar-fill {
   position: absolute;
   top: 0;
   bottom: 0;
   left: 0;
-  border-radius: 14px 0 0 14px;
+  z-index: 1;
+  border-radius: 14px;
   background: var(--accent);
   pointer-events: none;
 }

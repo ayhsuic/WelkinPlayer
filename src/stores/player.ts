@@ -228,10 +228,22 @@ export const usePlayerStore = defineStore("player", () => {
     isPlaying.value = snapshot.isPlaying;
     if (snapshot.currentSourceId && snapshot.currentPath) {
       const key = `${snapshot.currentSourceId}::${snapshot.currentPath}`;
+      const prevKey = currentTrack.value ? trackKey(currentTrack.value) : null;
       currentTrack.value =
         tracks.value.find((track) => trackKey(track) === key) ?? placeholderFromKey(key);
+      // A different track means the previous track's buffered/played range no
+      // longer applies: clear it so stale fill does not show for the first
+      // seconds until the engine reports fresh state.
+      if (prevKey !== key) {
+        bufferedProgress.value = 0;
+        position.value = 0;
+        progress.value = 0;
+      }
     } else {
       currentTrack.value = null;
+      bufferedProgress.value = 0;
+      position.value = 0;
+      progress.value = 0;
     }
   }
 
