@@ -66,6 +66,7 @@ import TracksView from "./views/TracksView.vue";
 import FavoritesView from "./views/FavoritesView.vue";
 import CategoriesView from "./views/CategoriesView.vue";
 import SearchView from "./views/SearchView.vue";
+import LibraryListView from "./views/LibraryListView.vue";
 import type { GroupKind } from "./lib/grouping";
 import DownloadingView from "./views/DownloadingView.vue";
 import DownloadedView from "./views/DownloadedView.vue";
@@ -130,16 +131,18 @@ const editingTrack = ref<Track | null>(null);
 const viewingTrack = ref<Track | null>(null);
 /** The bottom drawer the mobile navigation strip pulls up. */
 const sheetOpen = ref(false);
-/** Last main tab while a drill-down sub-page is open, so the tab bar keeps its highlight. */
-const lastTab = ref<MainTab>("home");
-/** Which bottom tab matches the current underlying view. */
-const navTab = computed<MainTab>(() => {
-  if (baseView.value === "library") return "home";
-  if (["playlists", "artists", "albums", "tracks", "genres", "years"].includes(baseView.value)) return "library";
-  if (baseView.value === "settings") return "settings";
-  if (baseView.value === "search") return "search";
-  return lastTab.value;
-});
+/** Active main tab inside the drawer; independent from the underlying wall view. */
+const sheetTab = ref<MainTab>("home");
+/** Which bottom tab matches the current drawer page. */
+const navTab = computed<MainTab>(() => sheetTab.value);
+
+/** Drill-down pages rendered inside the drawer instead of one of the four main tab pages. */
+const DRAWER_SUB_VIEWS: ReadonlySet<View> = new Set([
+  "tracks", "favorites", "artists", "albums", "years", "genres",
+  "folders", "webdav", "source-browser", "source-config", "playlists",
+  "playlist-new", "downloading", "downloaded", "sponsor",
+]);
+const drawerSubView = computed<View | null>(() => (DRAWER_SUB_VIEWS.has(baseView.value) ? baseView.value : null));
 /** Bumped to ask the cover wall to re-centre on the playing track. */
 const wallFocusToken = ref(0);
 /** Whether the AMLL full-screen player should be open. */
@@ -385,22 +388,25 @@ function onPlaylistDeleted(id: string) {
   if (playlistFilter.value === id) playlistFilter.value = null;
   setView("playlists");
 }
-/** Pull the drawer up from the playing wall; land on the home tab. */
+/** Pull the drawer up over the wall; land on the home tab without touching the wall view. */
 function openSheet() {
   sheetOpen.value = true;
-  lastTab.value = "home";
-  if (baseView.value === "wall") navigate("library");
+  sheetTab.value = "home";
 }
-/** Collapse the drawer back onto the cover wall. */
+/** Collapse the drawer back onto the playing wall; the wall underneath keeps its state. */
 function closeSheet() {
   sheetOpen.value = false;
-  navigate("wall");
 }
 function onTabSelect(tab: MainTab) {
   const item = mainNavTabs.find((entry) => entry.id === tab);
   if (!item) return;
-  lastTab.value = tab;
-  navigate(item.view);
+  sheetTab.value = tab;
+  clearCollectionFilters();
+  // Drop any drill-down state and return to this tab's main page. The library
+  // tab's main page is the list view, so its placeholder must not land on a
+  // drill-down view (playlists) that the drawer would render as a sub-page.
+  view.value = item.view;
+  baseView.value = tab === "library" ? "library" : item.view;
 }
 
 /** Background update probe at boot; a failure is intentionally silent. */
@@ -484,8 +490,14 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
   <Transition name="info"><SponsorView v-if="view === 'sponsor'" @back="closeOverlay" /></Transition>
   <SetupWizard v-if="booted && profile.firstRun" v-model:theme="theme" v-model:accent="accent" @finish="onWizardFinish" />
   <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg" :class="booted ? '' : 'opacity-0'">
-    <div class="relative flex min-h-0 flex-1">
-      <main class="relative min-w-0 flex-1 overflow-y-auto" :style="{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: sheetOpen ? 'calc(76px + env(safe-area-inset-bottom))' : '0' }">
+    <!-- Mobile: the playing wall is the persistent underlying layer; the drawer covers it when open. -->
+    <div class="relative flex min-h-0 flex-1 md:hidden">
+      <WallView :focus-token="wallFocusToken" @open-lyrics="navigate('player')" />
+    </div>
+
+    <!-- Desktop: the sidebar-driven main area. -->
+    <div class="relative hidden min-h-0 flex-1 md:flex">
+      <main class="relative min-w-0 flex-1 overflow-y-auto" :style="{ paddingTop: 'env(safe-area-inset-top)' }">
         <Transition name="page" mode="out-in">
           <WallView v-if="baseView === 'wall'" key="wall" :focus-token="wallFocusToken" @open-lyrics="navigate('player')" />
           <LibraryView v-else-if="baseView === 'library'" key="library" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
@@ -504,8 +516,27 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
       </main>
     </div>
     <PlayerBar v-if="player.currentTrack" class="hidden md:block" @open="navigate('player')" @open-artist="openArtist" @open-album="openAlbum" />
-    <PlayerNavBar v-if="baseView === 'wall' || view === 'player'" @sheet="openSheet" />
-    <MobileNavSheet v-model:open="sheetOpen" :active-tab="navTab" @select="onTabSelect" @close="closeSheet" />
+    <PlayerNavBar v-if="view === 'player' || baseView === 'wall' || !sheetOpen" @sheet="openSheet" />
+    <MobileNavSheet v-model:open="sheetOpen" :active-tab="navTab" @select="onTabSelect" @close="closeSheet">
+      <!-- Drill-down pages inside the drawer. -->
+      <template v-if="drawerSubView">
+        <TracksView v-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="sheet-tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
+        <SourcesView v-else-if="baseView === 'folders' || baseView === 'webdav' || (baseView === 'source-browser' && !browseSourceId)" :key="`sheet-sources-${sourcesPageKind}`" :kind="sourcesPageKind" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig(sourcesPageKind === 'webdav' ? 'webdav' : 'folders')" />
+        <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="sheet-source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate(browseSourceKind === 'webdav' ? 'webdav' : 'folders')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
+        <SourceConfigView v-else-if="baseView === 'source-config'" key="sheet-source-config" :kind="sourceConfigKind" @back="closeSourceConfig" />
+        <CategoriesView v-else-if="categoryActive" key="sheet-categories" :kind="baseView" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @navigate="navigate" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @open-group="onOpenGroupFrom" @refresh="refreshLibrary" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
+        <FavoritesView v-else-if="baseView === 'favorites'" key="sheet-favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
+        <DownloadingView v-else-if="baseView === 'downloading'" key="sheet-downloading" />
+        <DownloadedView v-else-if="baseView === 'downloaded'" key="sheet-downloaded" @open-artist="openArtist" @open-album="openAlbum" />
+        <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="sheet-playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
+      </template>
+
+      <!-- The four main tab pages. -->
+      <LibraryView v-else-if="sheetTab === 'home'" key="sheet-home" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
+      <LibraryListView v-else-if="sheetTab === 'library'" key="sheet-library" @navigate="navigate" @open-playlist="openUserPlaylist" @create-playlist="createPlaylist" />
+      <SettingsView v-else-if="sheetTab === 'settings'" key="sheet-settings" v-model:theme="theme" v-model:accent="accent" @sponsor="navigate('sponsor')" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
+      <SearchView v-else key="sheet-search" @open-artist="openArtist" @open-album="openAlbum" />
+    </MobileNavSheet>
     <ToastStack />
     <AudioQualityModal />
     <MeteredPlaybackModal />
