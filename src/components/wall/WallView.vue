@@ -6,7 +6,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Music2, Pause, Play } from "@lucide/vue";
+import { Music2, Play } from "@lucide/vue";
 import { usePlayerStore } from "../../stores/player";
 import type { Track } from "../../stores/player";
 import { useLyricsStore } from "../../stores/lyrics";
@@ -41,8 +41,21 @@ const lyrics = useLyricsStore();
 const stage = ref<HTMLElement | null>(null);
 const width = ref(0);
 const height = ref(0);
+/**
+ * Pinch zoom remembered across wall remounts: leaving for another page and
+ * coming back restores the scale the user left at, instead of refitting to a
+ * fixed expanded proportion.
+ */
+let rememberedScale = 1;
 /** `screen = camera + world * scale`. */
-const camera = ref({ x: 0, y: 0, scale: 1 });
+const camera = ref({ x: 0, y: 0, scale: rememberedScale });
+
+watch(
+  () => camera.value.scale,
+  (scale) => {
+    rememberedScale = scale;
+  },
+);
 /** The block the user opened, and which of its twelve posters the card shows. */
 const selected = ref<WallFocus | null>(null);
 
@@ -53,29 +66,16 @@ const tracks = computed(() => player.tracks);
  */
 const sourceList = computed(() => (player.queue.length > 0 ? player.queue : tracks.value));
 const total = computed(() => sourceList.value.length);
-/** One cell of the lattice; a phone shows roughly five across. */
-const metrics = computed(() => ({
-  cell: Math.round(Math.min(112, Math.max(52, (width.value || 400) * 0.19))),
-  gap: 0,
-}));
+/** One cell of the lattice; a phone shows roughly five across. The gap mirrors folia's 8/128 seam. */
+const metrics = computed(() => {
+  const cell = Math.round(Math.min(112, Math.max(52, (width.value || 400) * 0.19)));
+  return { cell, gap: Math.max(4, Math.round(cell * 0.0625)) };
+});
 const geometry = computed(() => geometryFor(total.value, metrics.value));
 const viewport = computed(() => ({ width: width.value, height: height.value, scale: camera.value.scale }));
 const MIN_SCALE = 0.45;
 const MAX_SCALE = 2.6;
 
-/**
- * Once a block is grown the whole block — big card plus the eleven ring posters —
- * must fit inside the narrow phone viewport. At the plain-wall base scale the
- * block is wider than the screen, so the side columns and the bottom strip land
- * off-screen and cannot be tapped. Fit the block to the viewport instead.
- */
-const expandedScale = computed(() => {
-  if (!width.value || !height.value || geometry.value.blockWidth <= 0) return 1;
-  const pad = 14;
-  const sx = (width.value - pad) / geometry.value.blockWidth;
-  const sy = (height.value - pad) / geometry.value.blockHeight;
-  return Math.max(MIN_SCALE, Math.min(1, sx, sy));
-});
 const bounds = computed(() => visibleBounds(
   centerOf(camera.value, viewport.value),
   viewport.value,
@@ -119,13 +119,9 @@ function tileTrack(tile: WallInstance): Track | null {
   return sourceList.value[tile.queueIndex] ?? null;
 }
 
-/** 1-based position of a poster's track inside the source list, for the corner badge. */
-function orderOf(tile: WallInstance): number {
-  const track = tileTrack(tile);
-  if (!track) return 0;
-  const key = trackKey(track);
-  const index = sourceList.value.findIndex((item) => trackKey(item) === key);
-  return index >= 0 ? index + 1 : 0;
+/** Artist · album line, shown above the title on a plain poster. */
+function metaOf(track: Track): string {
+  return [track.artist, track.album].filter(Boolean).join(" · ");
 }
 
 const cardTrack = computed(() => (openedTile.value ? focusWindow.value?.[0] ?? null : null));
@@ -483,13 +479,14 @@ function onTileClick(tile: WallInstance) {
 
   if (isGrownTile(tile)) {
     selected.value = { block, slotIndex: tile.slotIndex, centerKey, centerIndex };
-    panTo(expandedCenter(block, tile.slotIndex), SETTLE_MS, expandedScale.value);
+    // Keep the user's current zoom: opening a card never resets the pinch scale.
+    panTo(expandedCenter(block, tile.slotIndex), SETTLE_MS);
     return;
   }
 
   // Plain neighbour poster: open the block it sits in, with this track at the card.
   selected.value = { block, slotIndex: tile.slotIndex, centerKey, centerIndex };
-  panTo(expandedCenter(block, tile.slotIndex), SETTLE_MS, expandedScale.value);
+  panTo(expandedCenter(block, tile.slotIndex), SETTLE_MS);
 }
 
 function playCard() {
@@ -527,11 +524,11 @@ function centerOn(index: number, expand = false, instant = false) {
   const centerKey = centreTrack ? trackKey(centreTrack) : undefined;
   if (expand) {
     selected.value = { block, slotIndex: tile.slotIndex, centerKey };
-    panTo(expandedCenter(block, tile.slotIndex), instant ? 0 : SETTLE_MS, expandedScale.value);
+    // Re-centring on the grown card keeps the user's current pinch scale; the
+    // camera only moves the focus to the centre, it never resets the zoom.
+    panTo(expandedCenter(block, tile.slotIndex), instant ? 0 : SETTLE_MS);
   } else {
     selected.value = null;
-    // Keep the user's current zoom when re-centring a plain wall; only the grown
-    // block refits to the viewport.
     panTo({ x: tile.x + tile.width / 2, y: tile.y + tile.height / 2 }, instant ? 0 : SETTLE_MS);
   }
   pending = null;
@@ -632,33 +629,49 @@ defineExpose({ focusCurrent, focusFirst });
         @keydown.enter.prevent="onTileClick(tile)"
       >
         <img v-if="tileTrack(tile)?.cover" class="wall-cover" :src="tileTrack(tile)?.cover" alt="" loading="lazy" decoding="async" draggable="false" />
-        <span v-else class="wall-fallback" :style="{ background: tileTrack(tile)?.color ?? 'var(--line)' }">{{ tileTrack(tile)?.title?.slice(0, 1) ?? "" }}</span>
-        <span v-if="!tile.expanded && orderOf(tile) > 0" class="wall-tile-order">{{ orderOf(tile) }}</span>
+        <span v-else class="wall-fallback" :style="{ background: tileTrack(tile)?.color ?? 'var(--line)' }" />
+        <div v-if="!tile.expanded && tileTrack(tile)" class="wall-tile-copy">
+          <span class="wall-tile-meta">{{ metaOf(tileTrack(tile)!) }}</span>
+          <h3 class="wall-tile-title">{{ tileTrack(tile)!.title }}</h3>
+        </div>
         <template v-if="tile.expanded && cardTrack">
           <span class="wall-card-shade" aria-hidden="true" />
+
+          <!-- Idle card: a centred play button over the cover, copy at the bottom. -->
           <button
+            v-if="!isCardCurrent"
             type="button"
             class="wall-card-center"
-            :aria-label="isCardCurrent && player.isPlaying ? 'Pause' : 'Play'"
+            aria-label="Play"
             @click.stop="playCard()"
           >
-            <Pause v-if="isCardCurrent && player.isPlaying" :size="26" />
-            <Play v-else :size="26" />
+            <Play :size="26" />
           </button>
-          <div class="wall-card">
+
+          <div v-if="!isCardCurrent" class="wall-card wall-card--idle">
+            <button type="button" class="wall-card-meta" @click.stop="playCard()">
+              {{ metaOf(cardTrack) }}
+            </button>
             <h2 class="wall-card-title">{{ cardTrack.title }}</h2>
-            <span class="wall-card-artist">{{ cardTrack.artist }}</span>
+          </div>
+
+          <!-- Playing card: the button drops out and three lyric lines take the centre. -->
+          <div v-if="isCardCurrent" class="wall-card wall-card--playing">
             <div class="wall-card-lyrics">
               <p class="wall-card-lyric is-prev">{{ lyricLines[0] }}</p>
               <p class="wall-card-lyric is-current">{{ lyricLines[1] }}</p>
               <p class="wall-card-lyric is-next">{{ lyricLines[2] }}</p>
             </div>
-            <div class="wall-card-actions">
-              <button type="button" class="wall-card-action" aria-label="Lyrics" @click.stop="openCardLyrics()">
-                <Music2 :size="18" />
-              </button>
-            </div>
           </div>
+
+          <button
+            type="button"
+            class="wall-card-action wall-card-action--lyrics"
+            aria-label="Lyrics"
+            @click.stop="openCardLyrics()"
+          >
+            <Music2 :size="18" />
+          </button>
         </template>
       </div>
     </div>
@@ -725,31 +738,44 @@ defineExpose({ focusCurrent, focusFirst });
 }
 
 .wall-fallback {
-  display: grid;
+  display: block;
   width: 100%;
   height: 100%;
-  place-items: center;
-  font-size: 15px;
-  font-weight: 800;
-  color: var(--fg);
-  opacity: 0.35;
 }
 
-/* Corner queue-position badge (folia sonnet style). */
-.wall-tile-order {
+/* Plain poster copy: artist · album on top, full title at the bottom, folia layout. */
+.wall-tile-copy {
   position: absolute;
-  top: 4px;
-  left: 4px;
-  min-width: 17px;
-  padding: 1px 4px;
-  border-radius: 0;
-  background: rgba(0, 0, 0, 0.55);
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.2;
-  text-align: center;
   pointer-events: none;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.wall-tile-meta {
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.78;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.wall-tile-title {
+  margin: 0;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .wall-card-shade {
@@ -772,6 +798,26 @@ defineExpose({ focusCurrent, focusFirst });
   pointer-events: none;
 }
 
+/* Idle card: artist · album (underlined) above the title, anchored to the bottom. */
+.wall-card-meta {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.72;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
 .wall-card-title {
   margin: 0;
   font-size: 23px;
@@ -784,27 +830,28 @@ defineExpose({ focusCurrent, focusFirst });
   overflow: hidden;
 }
 
-.wall-card-artist {
-  font-size: 13px;
-  font-weight: 500;
-  opacity: 0.72;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* Playing card: the copy layer fills the card and centres the three lyric lines. */
+.wall-card--playing {
+  inset: 0;
+  justify-content: center;
+  align-items: center;
+  padding: 0 24px;
+  text-align: center;
 }
 
 .wall-card-lyrics {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-top: 2px;
-  min-height: calc(1.4em * 3 + 4px);
+  gap: 6px;
+  width: 100%;
+  min-height: calc(1.5em * 3 + 12px);
 }
 
 .wall-card-lyric {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 15px;
+  line-height: 1.5;
+  text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -816,16 +863,8 @@ defineExpose({ focusCurrent, focusFirst });
 }
 
 .wall-card-lyric.is-current {
-  opacity: 0.92;
-  font-weight: 600;
-}
-
-.wall-card-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-  pointer-events: auto;
+  opacity: 0.95;
+  font-weight: 700;
 }
 
 .wall-card-action {
@@ -840,6 +879,14 @@ defineExpose({ focusCurrent, focusFirst });
   color: #fff;
   backdrop-filter: blur(10px);
   cursor: pointer;
+}
+
+.wall-card-action--lyrics {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 3;
+  pointer-events: auto;
 }
 
 .wall-card-center {

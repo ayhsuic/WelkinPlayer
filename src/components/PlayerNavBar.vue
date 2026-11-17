@@ -57,6 +57,19 @@ const MODES: { id: PlayMode; icon: typeof Shuffle }[] = [
 
 /** True while the bar is in the long-press mode-switching state. */
 const switching = ref(false);
+/** Finger position inside the switcher, 0..1; drives the sliding highlight thumb. */
+const switchRatio = ref(0.5);
+
+/** Centre ratio of each mode's third, so the thumb starts over the active mode. */
+const MODE_CENTER: Record<PlayMode, number> = { order: 1 / 6, one: 3 / 6, shuffle: 5 / 6 };
+
+/** Which mode third the current finger position lands on. */
+function activeModeIndex(): number {
+  const ratio = Math.min(1, Math.max(0, switchRatio.value));
+  if (ratio < 1 / 3) return 0;
+  if (ratio < 2 / 3) return 1;
+  return 2;
+}
 
 /** Localized label for the three play modes. */
 function playModeLabel(mode: PlayMode): string {
@@ -93,6 +106,7 @@ function onBarDown(event: PointerEvent) {
   pointerSeeking = true;
   dragMoved = false;
   switching.value = false;
+  switchRatio.value = MODE_CENTER[player.playMode()];
   downX = event.clientX;
   downY = event.clientY;
   seekValue.value = player.progress;
@@ -109,8 +123,12 @@ function onBarMove(event: PointerEvent) {
   const dx = event.clientX - downX;
   const dy = event.clientY - downY;
 
-  // Inside the switcher the gesture only aims at a mode, it never seeks.
-  if (switching.value) return;
+  // Inside the switcher the gesture only aims at a mode: the highlight thumb
+  // follows the finger, it never seeks.
+  if (switching.value) {
+    switchRatio.value = ratioFromEvent(event.clientX);
+    return;
+  }
 
   if (!dragMoved && Math.hypot(dx, dy) > 8) {
     // A vertical gesture belongs to the drawer swipe, not the seek drag.
@@ -134,8 +152,7 @@ function onBarUp(event: PointerEvent) {
 
   // Releasing from the long-press switcher picks the mode under the finger.
   if (switching.value) {
-    const ratio = ratioFromEvent(event.clientX);
-    selectMode(modeAtRatio(ratio));
+    selectMode(modeAtRatio(switchRatio.value));
     seekValue.value = null;
     return;
   }
@@ -261,13 +278,14 @@ onBeforeUnmount(() => {
         <span class="seekbar-time seekbar-time--start">{{ player.elapsedTime }}</span>
         <span class="seekbar-time seekbar-time--end">{{ player.totalTime }}</span>
       </template>
-      <div v-if="switching" class="seekbar-switcher">
+      <div v-if="switching" class="seekbar-switcher" :style="{ '--ratio': `${switchRatio * 100}%` }">
+        <div class="switcher-thumb" aria-hidden="true" />
         <button
-          v-for="mode in MODES"
+          v-for="(mode, i) in MODES"
           :key="mode.id"
           type="button"
           class="switcher-option"
-          :class="{ 'is-active': player.playMode() === mode.id }"
+          :class="{ 'is-active': activeModeIndex() === i }"
           :aria-label="playModeLabel(mode.id)"
           @click.stop="selectMode(mode.id)"
         >
@@ -337,27 +355,38 @@ onBeforeUnmount(() => {
   inset: 0;
   display: flex;
   flex-direction: row;
-  align-items: center;
-  justify-content: space-around;
-  padding: 0 4px;
+  align-items: stretch;
+  padding: 4px;
   background: color-mix(in srgb, var(--surface) 82%, transparent);
 }
 
+/* Sliding highlight: one third of the bar wide, centred under the finger. */
+.switcher-thumb {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: clamp(0%, calc(var(--ratio, 50%) - 16.666%), 66.666%);
+  width: 33.333%;
+  border-radius: 10px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
 .switcher-option {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 32px;
   padding: 0;
   border: none;
   border-radius: 10px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(255, 255, 255, 0.6);
   cursor: pointer;
 }
 
 .switcher-option.is-active {
-  background: var(--accent);
   color: #fff;
 }
 
