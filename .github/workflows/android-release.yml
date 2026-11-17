@@ -97,6 +97,26 @@ jobs:
             echo "Signing: no release keystore secret set, falling back to the debug signing key."
           fi
 
+      # automix 2.0.1 unconditionally links the system librubberband (its Deck
+      # time-stretch FFI), which the NDK does not ship. This app only uses
+      # automix's pure-DSP analyser on Android, so compile an empty stub archive
+      # that satisfies the FFI symbols and add it to the native link search path.
+      # See src-tauri/android-stub/rubberband-stub.c.
+      - name: Stub librubberband for Android NDK
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          stub_dir="$RUNNER_TEMP/rubberband-stub"
+          mkdir -p "$stub_dir"
+          prebuilt="$(ls -d "$NDK_HOME"/toolchains/llvm/prebuilt/* | head -n1)"
+          "$prebuilt/bin/aarch64-linux-android26-clang" \
+            -c src-tauri/android-stub/rubberband-stub.c \
+            -o "$stub_dir/stub.o"
+          "$prebuilt/bin/llvm-ar" cru "$stub_dir/librubberband.a" "$stub_dir/stub.o"
+          "$prebuilt/bin/llvm-ar" t "$stub_dir/librubberband.a"
+          echo "RUSTFLAGS=${RUSTFLAGS:-} -L native=$stub_dir" >> "$GITHUB_ENV"
+
       - name: Build release arm64-v8a APK
         env:
           NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
