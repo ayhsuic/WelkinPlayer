@@ -106,6 +106,10 @@ function onBarDown(event: PointerEvent) {
   pointerSeeking = true;
   dragMoved = false;
   switching.value = false;
+  // Reset the swipe-up tracker so a stale axis from a previous gesture cannot
+  // open the drawer mid-tap or seek.
+  tracking = false;
+  axis = "none";
   switchRatio.value = MODE_CENTER[player.playMode()];
   downX = event.clientX;
   downY = event.clientY;
@@ -176,13 +180,17 @@ function onBarCancel() {
   dragMoved = false;
   switching.value = false;
   seekValue.value = null;
+  tracking = false;
+  axis = "none";
 }
 
 /* --------------------------------------------- swipe up opens the drawer */
 
 const AXIS_LOCK_PX = 8;
-const SHEET_STEP_PX = 24;
+const SHEET_STEP_PX = 32;
 const EDGE_PX = 24;
+/** A gesture only counts as vertical when the vertical component clearly dominates. */
+const VERTICAL_RATIO = 1.2;
 
 const root = ref<HTMLElement | null>(null);
 let tracking = false;
@@ -210,7 +218,10 @@ function onTouchMove(event: TouchEvent) {
 
   if (axis === "none") {
     if (Math.hypot(dx, dy) < AXIS_LOCK_PX) return;
-    if (Math.abs(dx) >= Math.abs(dy)) {
+    // The long-press mode switcher and an already-committed horizontal seek are
+    // horizontal gestures: never let them open the drawer.
+    const horizontal = switching.value || dragMoved || Math.abs(dx) * VERTICAL_RATIO >= Math.abs(dy);
+    if (horizontal) {
       axis = "x";
       return;
     }
@@ -299,10 +310,10 @@ onBeforeUnmount(() => {
 <style scoped>
 .transport {
   position: fixed;
-  left: 16px;
-  right: 16px;
-  max-width: 320px;
-  margin-inline: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 320px;
+  max-width: calc(100vw - 32px);
   bottom: calc(env(safe-area-inset-bottom) + 76px);
   z-index: 60;
   touch-action: none;

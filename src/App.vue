@@ -400,6 +400,12 @@ function openSheet() {
 /** Collapse the drawer back onto the playing wall; the wall underneath keeps its state. */
 function closeSheet() {
   sheetOpen.value = false;
+  // The persistent wall is the mobile baseline: drop the openSheet / drill-down
+  // `baseView` residue so the strip and wall re-render on the wall state instead
+  // of a stale library page.
+  view.value = "wall";
+  baseView.value = "wall";
+  window.location.hash = "";
 }
 function onTabSelect(tab: MainTab) {
   const item = mainNavTabs.find((entry) => entry.id === tab);
