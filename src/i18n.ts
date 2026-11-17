@@ -11,6 +11,11 @@ const messages = {
   "zh-CN": {
     nav: {
       wall: "封面墙",
+      home: "首页",
+      media: "媒体库",
+      search: "搜索",
+      searchPlaceholder: "搜索歌曲、歌手、专辑",
+      searchEmpty: "没有匹配的歌曲",
       library: "首页",
       favorites: "我喜欢",
       queue: "队列",
@@ -421,6 +426,13 @@ const messages = {
         authorName: "Atemukesu",
         version: "版本",
         edition: "标准版",
+      },
+      downloads: {
+        title: "下载与支持",
+        desc: "查看正在下载与已缓存的歌曲，或支持本项目。",
+        downloading: "正在下载",
+        downloaded: "已下载",
+        sponsor: "赞助",
       },
       update: {
         title: "软件更新",
@@ -922,6 +934,11 @@ const messages = {
   en: {
     nav: {
       wall: "Cover wall",
+      home: "Home",
+      media: "Library",
+      search: "Search",
+      searchPlaceholder: "Search songs, artists, albums",
+      searchEmpty: "No matching songs",
       library: "Home",
       favorites: "Favorites",
       queue: "Queue",
@@ -1332,6 +1349,13 @@ const messages = {
         authorName: "Atemukesu",
         version: "Version",
         edition: "Standard",
+      },
+      downloads: {
+        title: "Downloads & support",
+        desc: "Check tracks downloading or cached, or support the project.",
+        downloading: "Downloading",
+        downloaded: "Downloaded",
+        sponsor: "Sponsor",
       },
       update: {
         title: "Software update",

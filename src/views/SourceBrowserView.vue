@@ -6,7 +6,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import { requestMeta } from "../directives/requestMeta";
-import { ChevronRight, Folder, FolderOpen, Play, Search, Server, HardDrive, ArrowUp, ArrowLeft } from "@lucide/vue";
+import { ChevronRight, Folder, FolderOpen, Play, Server, HardDrive, ArrowUp, ArrowLeft } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
@@ -42,7 +42,6 @@ const currentPath = ref("");
 const entries = ref<RemoteEntry[]>([]);
 const loadingDir = ref(false);
 const error = ref("");
-const query = ref("");
 const contextTrack = ref<Track | null>(null);
 const contextPosition = ref({ x: 0, y: 0 });
 
@@ -58,12 +57,7 @@ const crumbs = computed<Crumb[]>(() => {
   return trail;
 });
 
-const filteredEntries = computed(() => {
-  const value = query.value.trim().toLocaleLowerCase();
-  const list = entries.value;
-  if (!value) return list;
-  return list.filter((entry) => entry.name.toLocaleLowerCase().includes(value));
-});
+const filteredEntries = computed(() => entries.value);
 
 const folderCount = computed(() => entries.value.filter((entry) => entry.isDir).length);
 const fileCount = computed(() => entries.value.filter((entry) => !entry.isDir).length);
@@ -105,16 +99,14 @@ async function load(path: string) {
   }
 }
 
-/** Open a folder: drill into it and reset the search box. */
+/** Open a folder: drill into it. */
 function openFolder(entry: RemoteEntry) {
-  query.value = "";
   void load(entry.localPath);
 }
 
 /** Jump to a breadcrumb segment. */
 function navigateCrumb(crumb: Crumb) {
   if (crumb.path === currentPath.value) return;
-  query.value = "";
   void load(crumb.path);
 }
 
@@ -204,7 +196,6 @@ watch(() => currentPath.value, () => void nextTick(() => scrollEl.value?.scrollT
 
         <div class="mt-4 flex items-center gap-3">
           <button v-if="currentPath" type="button" class="grid h-10 w-10 shrink-0 place-items-center border border-line text-dim transition-colors hover:border-accent hover:text-accent" :title="t('sourceBrowser.up')" @click="navigateCrumb(crumbs[crumbs.length - 2])"><ArrowUp :size="16" :stroke-width="2" /></button>
-          <label class="flex h-10 min-w-0 flex-1 items-center gap-2 border border-line bg-surface px-3 @2xl:w-72 @2xl:flex-none"><Search :size="16" class="text-dim" /><input v-model="query" class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-dim" :placeholder="t('sourceBrowser.search')" aria-label="Search folder" /></label>
         </div>
       </header>
 
@@ -214,8 +205,8 @@ watch(() => currentPath.value, () => void nextTick(() => scrollEl.value?.scrollT
 
       <div v-else-if="filteredEntries.length === 0" class="ak-frame mt-8 grid place-items-center gap-3 border border-dashed border-line bg-surface/50 px-6 py-20 text-center">
         <FolderOpen :size="36" class="text-dim" />
-        <p class="text-base font-semibold uppercase tracking-[0.2em]">{{ query ? t("sourceBrowser.noMatch") : t("sourceBrowser.empty") }}</p>
-        <p v-if="!query" class="max-w-md text-sm text-muted">{{ t("sourceBrowser.emptyDesc") }}</p>
+        <p class="text-base font-semibold uppercase tracking-[0.2em]">{{ t("sourceBrowser.empty") }}</p>
+        <p class="max-w-md text-sm text-muted">{{ t("sourceBrowser.emptyDesc") }}</p>
       </div>
 
       <ul v-else class="mt-6 divide-y divide-line border-t border-line">

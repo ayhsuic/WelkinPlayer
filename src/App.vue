@@ -10,7 +10,7 @@ import { describeError, invoke } from "./api";
 import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { initAudio, resumeAt } from "./lib/audio";
-import { accents } from "./lib/app";
+import { accents, mainNavTabs, type MainTab } from "./lib/app";
 import type { Accent, Theme, View } from "./lib/app";
 import { albumKey, primaryArtist } from "./lib/grouping";
 import { trackKey, type SourceKind } from "./lib/sources";
@@ -49,7 +49,6 @@ import { useCacheStore } from "./stores/cache";
 import { useLicenseStore } from "./stores/license";
 import { useWindowBehaviorStore } from "./stores/windowBehavior";
 import { useUpdateStore } from "./stores/update";
-import QueuePanel from "./components/QueuePanel.vue";
 import PlayerBar from "./components/PlayerBar.vue";
 import PlayerNavBar from "./components/PlayerNavBar.vue";
 import MobileNavSheet from "./components/MobileNavSheet.vue";
@@ -65,8 +64,8 @@ import SettingsView from "./views/SettingsView.vue";
 import SponsorView from "./views/SponsorView.vue";
 import TracksView from "./views/TracksView.vue";
 import FavoritesView from "./views/FavoritesView.vue";
-import QueueView from "./views/QueueView.vue";
 import CategoriesView from "./views/CategoriesView.vue";
+import SearchView from "./views/SearchView.vue";
 import type { GroupKind } from "./lib/grouping";
 import DownloadingView from "./views/DownloadingView.vue";
 import DownloadedView from "./views/DownloadedView.vue";
@@ -81,7 +80,7 @@ import SourceConfigView from "./views/SourceConfigView.vue";
 const AmllPlayerView = defineAsyncComponent(() => import("./views/AmllPlayerView.vue"));
 
 /** Hash routes the app can restore on boot; must be initialised before `view` calls `getViewFromHash`. */
-const VIEW_ROUTES: ReadonlySet<string> = new Set(["wall", "settings", "sponsor", "player", "tracks", "queue", "favorites", "artists", "albums", "years", "genres", "sources", "folders", "webdav", "source-config", "source-browser", "playlists", "playlist-new", "lyrics-edit", "track-edit", "track-info", "downloading", "downloaded"]);
+const VIEW_ROUTES: ReadonlySet<string> = new Set(["wall", "settings", "sponsor", "player", "tracks", "search", "favorites", "artists", "albums", "years", "genres", "sources", "folders", "webdav", "source-config", "source-browser", "playlists", "playlist-new", "lyrics-edit", "track-edit", "track-info", "downloading", "downloaded"]);
 const { t, locale } = useI18n();
 const player = usePlayerStore();
 const sources = useSourcesStore();
@@ -129,9 +128,18 @@ const editingPlaylist = ref<string | null>(null);
 const editingLyricsTrack = ref<Track | null>(null);
 const editingTrack = ref<Track | null>(null);
 const viewingTrack = ref<Track | null>(null);
-const showQueue = ref(false);
-/** The bottom sheet the mobile navigation strip pulls up. */
+/** The bottom drawer the mobile navigation strip pulls up. */
 const sheetOpen = ref(false);
+/** Last main tab while a drill-down sub-page is open, so the tab bar keeps its highlight. */
+const lastTab = ref<MainTab>("home");
+/** Which bottom tab matches the current underlying view. */
+const navTab = computed<MainTab>(() => {
+  if (baseView.value === "library") return "home";
+  if (["playlists", "artists", "albums", "tracks", "genres", "years"].includes(baseView.value)) return "library";
+  if (baseView.value === "settings") return "settings";
+  if (baseView.value === "search") return "search";
+  return lastTab.value;
+});
 /** Bumped to ask the cover wall to re-centre on the playing track. */
 const wallFocusToken = ref(0);
 /** Whether the AMLL full-screen player should be open. */
@@ -363,9 +371,9 @@ function openArtist(artist: string) { const key = primaryArtist(artist); if (key
 function openAlbum(album: string) { const key = albumKey(album); if (key) openGroup("albums", key); }
 function createPlaylist() { clearCollectionFilters(); editingPlaylist.value = null; setView("playlist-new"); }
 function editPlaylist(id: string) { clearCollectionFilters(); editingPlaylist.value = id; setView("playlist-new"); }
-function editLyrics(track: Track) { if (!track.path) return; editingLyricsTrack.value = track; closeQueue(); setView("lyrics-edit"); }
-function editInfo(track: Track) { if (!track.path) return; editingTrack.value = track; closeQueue(); setView("track-edit"); }
-function showTrackInfo(track: Track) { if (!track.path) return; viewingTrack.value = track; closeQueue(); setView("track-info"); }
+function editLyrics(track: Track) { if (!track.path) return; editingLyricsTrack.value = track; setView("lyrics-edit"); }
+function editInfo(track: Track) { if (!track.path) return; editingTrack.value = track; setView("track-edit"); }
+function showTrackInfo(track: Track) { if (!track.path) return; viewingTrack.value = track; setView("track-info"); }
 /** Close an overlay (track info, editors, sponsor) back to the page underneath. */
 function closeOverlay() {
   setView(baseView.value);
@@ -377,14 +385,23 @@ function onPlaylistDeleted(id: string) {
   if (playlistFilter.value === id) playlistFilter.value = null;
   setView("playlists");
 }
-function toggleQueue() {
-  if (showQueue.value) closeQueue();
-  else openQueue();
+/** Pull the drawer up from the playing wall; land on the home tab. */
+function openSheet() {
+  sheetOpen.value = true;
+  lastTab.value = "home";
+  if (baseView.value === "wall") navigate("library");
 }
-function openQueue() { showQueue.value = true; }
-function closeQueue() { showQueue.value = false; }
-
-function onSheetNavigate(next: View) { navigate(next); }
+/** Collapse the drawer back onto the cover wall. */
+function closeSheet() {
+  sheetOpen.value = false;
+  navigate("wall");
+}
+function onTabSelect(tab: MainTab) {
+  const item = mainNavTabs.find((entry) => entry.id === tab);
+  if (!item) return;
+  lastTab.value = tab;
+  navigate(item.view);
+}
 
 /** Background update probe at boot; a failure is intentionally silent. */
 async function checkUpdatesOnBoot() {
@@ -460,7 +477,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
 
 <template>
   <AmllPlayerView v-if="amllMounted && player.currentTrack" :active="amllActive" :return-view="baseView" @navigate="navigate" @closed="amllMounted = false" />
-  <Transition name="slide"><PlayerView v-if="view === 'player' && player.currentTrack && !lyrics.useAmll" :return-view="baseView" @navigate="navigate" @queue="toggleQueue" @open-artist="openArtist" @open-album="openAlbum" /></Transition>
+  <Transition name="slide"><PlayerView v-if="view === 'player' && player.currentTrack && !lyrics.useAmll" :return-view="baseView" @navigate="navigate" @open-artist="openArtist" @open-album="openAlbum" /></Transition>
   <Transition name="info"><TrackInfoView v-if="view === 'track-info' && viewingTrack" :path="viewingTrack.path ?? null" :source-id="viewingTrack.sourceId" @back="closeOverlay" /></Transition>
   <Transition name="info"><LyricsEditorView v-if="view === 'lyrics-edit' && editingLyricsTrack" :path="editingLyricsTrack.path ?? null" :source-id="editingLyricsTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
   <Transition name="info"><TrackEditorView v-if="view === 'track-edit' && editingTrack" :path="editingTrack.path ?? null" :source-id="editingTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
@@ -468,7 +485,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
   <SetupWizard v-if="booted && profile.firstRun" v-model:theme="theme" v-model:accent="accent" @finish="onWizardFinish" />
   <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg" :class="booted ? '' : 'opacity-0'">
     <div class="relative flex min-h-0 flex-1">
-      <main class="relative min-w-0 flex-1 overflow-y-auto" :style="{ paddingTop: 'env(safe-area-inset-top)' }">
+      <main class="relative min-w-0 flex-1 overflow-y-auto" :style="{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: sheetOpen ? 'calc(76px + env(safe-area-inset-bottom))' : '0' }">
         <Transition name="page" mode="out-in">
           <WallView v-if="baseView === 'wall'" key="wall" :focus-token="wallFocusToken" @open-lyrics="navigate('player')" />
           <LibraryView v-else-if="baseView === 'library'" key="library" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
@@ -478,18 +495,17 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
           <SourceConfigView v-else-if="baseView === 'source-config'" key="source-config" :kind="sourceConfigKind" @back="closeSourceConfig" />
           <CategoriesView v-else-if="categoryActive" key="categories" :kind="baseView" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @navigate="navigate" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @open-group="onOpenGroupFrom" @refresh="refreshLibrary" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
           <FavoritesView v-else-if="baseView === 'favorites'" key="favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-          <QueueView v-else-if="baseView === 'queue'" key="queue" />
+          <SearchView v-else-if="baseView === 'search'" key="search" @open-artist="openArtist" @open-album="openAlbum" />
           <DownloadingView v-else-if="baseView === 'downloading'" key="downloading" />
           <DownloadedView v-else-if="baseView === 'downloaded'" key="downloaded" @open-artist="openArtist" @open-album="openAlbum" />
           <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
-          <SettingsView v-else key="settings" v-model:theme="theme" v-model:accent="accent" @sponsor="navigate('sponsor')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
+          <SettingsView v-else key="settings" v-model:theme="theme" v-model:accent="accent" @sponsor="navigate('sponsor')" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
         </Transition>
       </main>
-      <Transition name="queue-panel"><div v-if="showQueue" class="absolute inset-y-0 right-0 z-20 w-80 border-l border-line bg-surface"><QueuePanel @close="closeQueue" /></div></Transition>
     </div>
-    <PlayerBar v-if="player.currentTrack" class="hidden md:block" @open="navigate('player')" @queue="toggleQueue" @open-artist="openArtist" @open-album="openAlbum" />
-    <PlayerNavBar v-if="baseView === 'wall' || view === 'player'" @sheet="sheetOpen = true" />
-    <MobileNavSheet v-model:open="sheetOpen" :active-view="baseView" @navigate="onSheetNavigate" />
+    <PlayerBar v-if="player.currentTrack" class="hidden md:block" @open="navigate('player')" @open-artist="openArtist" @open-album="openAlbum" />
+    <PlayerNavBar v-if="baseView === 'wall' || view === 'player'" @sheet="openSheet" />
+    <MobileNavSheet v-model:open="sheetOpen" :active-tab="navTab" @select="onTabSelect" @close="closeSheet" />
     <ToastStack />
     <AudioQualityModal />
     <MeteredPlaybackModal />

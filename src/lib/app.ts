@@ -4,9 +4,9 @@
  */
 
 import type { Component } from "vue";
-import { CalendarDays, CircleCheck, Disc3, Folder, HardDriveDownload, LayoutGrid, Library, ListMusic, ListOrdered, ListPlus, Mic2, Music, Server } from "@lucide/vue";
+import { CalendarDays, CircleCheck, Disc3, Folder, HardDriveDownload, LayoutGrid, Library, ListMusic, ListPlus, Mic2, Music, Search, Server, Settings2 } from "@lucide/vue";
 
-export type View = "wall" | "library" | "tracks" | "queue" | "favorites" | "artists" | "albums" | "years" | "genres" | "sources" | "folders" | "webdav" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "downloading" | "downloaded" | "settings" | "sponsor" | "player";
+export type View = "wall" | "library" | "tracks" | "queue" | "favorites" | "artists" | "albums" | "years" | "genres" | "sources" | "folders" | "webdav" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "downloading" | "downloaded" | "settings" | "sponsor" | "search" | "player";
 export type Theme = "light" | "dark";
 export type Accent = "amber" | "orange" | "cyan" | "red" | "green" | "blue";
 
@@ -17,11 +17,28 @@ export interface NavItem {
   icon: Component;
 }
 
-/** Primary group: the cover wall and the play queue. */
+/** Primary group: the cover wall and the library entry. */
 export const primaryNavItems: NavItem[] = [
   { id: "wall", labelKey: "nav.wall", index: "00", icon: LayoutGrid },
-  { id: "library", labelKey: "nav.library", index: "01", icon: Library },
-  { id: "queue", labelKey: "nav.queue", index: "02", icon: ListOrdered },
+  { id: "library", labelKey: "nav.media", index: "01", icon: Library },
+];
+
+/** The four bottom tabs of the mobile drawer, modelled on lmusic's NavigateTabBar. */
+export type MainTab = "home" | "library" | "settings" | "search";
+
+export interface MainTabItem {
+  id: MainTab;
+  /** Underlying view the tab opens inside the drawer. */
+  view: View;
+  labelKey: string;
+  icon: Component;
+}
+
+export const mainNavTabs: MainTabItem[] = [
+  { id: "home", view: "library", labelKey: "nav.home", icon: Library },
+  { id: "library", view: "playlists", labelKey: "nav.media", icon: LayoutGrid },
+  { id: "settings", view: "settings", labelKey: "nav.settings", icon: Settings2 },
+  { id: "search", view: "search", labelKey: "nav.search", icon: Search },
 ];
 
 /** Library group: playlists plus the swipeable classifications. */

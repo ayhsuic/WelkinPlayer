@@ -6,7 +6,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { VList } from "virtua/vue";
-import { Check, ImagePlus, LoaderCircle, Music2, Search, Trash2, X } from "@lucide/vue";
+import { Check, ImagePlus, LoaderCircle, Music2, Trash2, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
@@ -34,8 +34,6 @@ const pendingCover = ref<string | null>(null);
 const coverTrack = ref<string | undefined>(editing.value?.coverTrack);
 const mode = ref<"upload" | "icon">(coverTrack.value ? "icon" : "upload");
 const cropSrc = ref<string | null>(null);
-const trackQuery = ref("");
-const listQuery = ref("");
 const selected = ref<Set<string>>(new Set(editing.value?.tracks ?? []));
 /** Two-step delete guard: the first click arms, the second within the window deletes. */
 const pendingDelete = ref<string | null>(null);
@@ -48,15 +46,8 @@ const selectedPaths = computed(() => {
   return [...known, ...[...selected.value].filter((key) => !knownSet.has(key))];
 });
 const preview = computed<Playlist>(() => ({ id: "preview", name: name.value || t("playlistEditor.untitled"), tracks: selectedPaths.value, cover: legacyCover.value, coverFile: coverFile.value, coverTrack: coverTrack.value }));
-const pickerTracks = computed(() => {
-  const value = trackQuery.value.trim().toLocaleLowerCase();
-  return player.tracks.filter((track) => track.path && (!value || `${track.title} ${track.artist}`.toLocaleLowerCase().includes(value)));
-});
-const listTracks = computed(() => {
-  const value = listQuery.value.trim().toLocaleLowerCase();
-  const source = player.tracks.filter((track) => track.path);
-  return value ? source.filter((track) => `${track.title} ${track.artist} ${track.album}`.toLocaleLowerCase().includes(value)) : source;
-});
+const pickerTracks = computed(() => player.tracks.filter((track) => track.path));
+const listTracks = computed(() => player.tracks.filter((track) => track.path));
 
 const GAP = 12;
 const SCROLLBAR = 8;
@@ -177,7 +168,6 @@ function removePlaylist() {
 
         <div v-else class="mt-4 grid gap-3">
           <p class="text-[12px] text-dim">{{ t("playlistEditor.pickTrack") }}</p>
-          <label class="flex h-10 items-center gap-2 border border-line bg-surface px-3"><Search :size="15" class="text-dim" /><input v-model="trackQuery" class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-dim" :placeholder="t('library.search')" /></label>
           <p v-if="pickerTracks.length === 0" class="py-8 text-center text-sm text-muted">{{ t("playlistEditor.noTracks") }}</p>
           <div v-else ref="pickerEl" class="h-72">
             <VList :data="pickerRowIndexes" :item-size="pickerRowHeight" class="h-full">
@@ -208,7 +198,6 @@ function removePlaylist() {
         <h2 class="text-sm font-bold uppercase tracking-[0.2em]">{{ t("playlistEditor.tracks") }}</h2>
         <span class="font-mono text-[11px] uppercase tracking-[0.2em] text-dim">{{ t("library.selected", { count: selected.size }) }}</span>
       </div>
-      <label class="mt-4 flex h-10 items-center gap-2 border border-line bg-surface px-3"><Search :size="15" class="text-dim" /><input v-model="listQuery" class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-dim" :placeholder="t('library.search')" /></label>
       <div class="mt-4 h-80 min-h-0">
         <TrackList v-model:selected="selected" :tracks="listTracks" empty-key="playlistEditor.noTracks" selectable />
       </div>

@@ -5,7 +5,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { HardDriveDownload, Heart, ListChecks, Play, Search } from "@lucide/vue";
+import { HardDriveDownload, Heart, ListChecks, Play } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
@@ -28,16 +28,12 @@ const contextPosition = ref({ x: 0, y: 0 });
 const selectMode = ref(false);
 const selected = ref<Set<string>>(new Set());
 const selectedCount = computed(() => selected.value.size);
-const query = ref("");
 const scrollEl = ref<HTMLElement | null>(null);
 const sourceTracks = computed(() => tracksForPaths(profile.favorites, player.tracks));
 /** Source order with the chosen sort applied; the play queue follows this so "next" matches the screen. */
 const { key: sortKey, dir: sortDir } = useTrackSort("favorites");
 const orderedTracks = computed(() => sortTracks(sourceTracks.value, sortKey.value, sortDir.value));
-const tracks = computed(() => {
-  const value = query.value.trim().toLocaleLowerCase();
-  return value ? orderedTracks.value.filter((track) => `${track.title} ${track.artist} ${track.album}`.toLocaleLowerCase().includes(value)) : orderedTracks.value;
-});
+const tracks = computed(() => orderedTracks.value);
 /** The A–Z rail, only while sorting by title and not in multi-select mode. */
 const letterIndex = computed(() => (sortKey.value === "title" && !selectMode.value ? titleLetterIndex(tracks.value) : null));
 
@@ -73,7 +69,6 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
             <p class="mt-2 font-mono text-sm uppercase tracking-[0.2em] text-dim">{{ t("library.tracks", { count: tracks.length }) }}</p>
             <div class="mt-auto flex flex-wrap items-center gap-3 pt-4">
               <button type="button" class="ak-clip-tr order-1 flex h-10 shrink-0 items-center gap-2 bg-accent px-4 text-[13px] font-bold text-accent-fg transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50" :disabled="!tracks.length" @click="playFirst"><Play :size="15" :stroke-width="2.2" />{{ t("library.play") }}</button>
-              <label class="order-2 flex h-10 min-w-0 flex-1 items-center gap-2 border border-line bg-surface px-3 @2xl:order-3 @2xl:ml-auto @2xl:w-64 @2xl:flex-none"><Search :size="16" class="text-dim" /><input v-model="query" class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-dim" :placeholder="t('library.search')" aria-label="Search library" /></label>
               <div class="order-3 flex w-full items-center gap-3 @2xl:order-4 @2xl:w-auto">
                 <TrackSortMenu context="favorites" />
                 <ViewModeToggle />

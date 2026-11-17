@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { CalendarDays, ChevronRight, Disc3, Mic2, Music, Search } from "@lucide/vue";
+import { computed } from "vue";
+import { CalendarDays, ChevronRight, Disc3, Mic2, Music } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
@@ -12,7 +12,6 @@ const props = withDefaults(defineProps<{ kind: GroupKind; loading?: boolean }>()
 const emit = defineEmits<{ open: [key: string] }>();
 const { t } = useI18n();
 const player = usePlayerStore();
-const query = ref("");
 // Each grid page keeps its own persistent choice; the component remounts per kind.
 const { key: sortKey, dir: sortDir } = useGroupSort(props.kind);
 
@@ -38,7 +37,6 @@ interface GroupCard {
 }
 
 const cards = computed<GroupCard[]>(() => {
-  const value = query.value.trim().toLocaleLowerCase();
   const list = allGroups.value.map((group) => {
     const name = isUnknownGroup(group.key) ? t(kindMeta.value.unknown) : group.key;
     const coverTrack = group.tracks.find((track) => track.cover) ?? group.tracks[0];
@@ -47,8 +45,7 @@ const cards = computed<GroupCard[]>(() => {
     const secondary = props.kind === "albums" && coverTrack?.artist ? `${coverTrack.artist} · ${label}` : label;
     return { key: group.key, name, count, coverTrack, secondary };
   });
-  const filtered = value ? list.filter((card) => card.name.toLocaleLowerCase().includes(value)) : list;
-  return sortGroups(filtered, sortKey.value, sortDir.value);
+  return sortGroups(list, sortKey.value, sortDir.value);
 });
 </script>
 
@@ -60,7 +57,6 @@ const cards = computed<GroupCard[]>(() => {
         <h1 class="mt-4 truncate text-4xl font-black leading-none tracking-tight sm:text-5xl">{{ t(kindMeta.title) }}</h1>
         <p class="mt-3 text-sm text-muted">{{ t(kindMeta.subtitle) }}</p>
         <div class="mt-5 flex flex-wrap items-center gap-3">
-          <label class="flex h-10 min-w-0 flex-1 items-center gap-2 border border-line bg-surface px-3 sm:w-64 sm:flex-none"><Search :size="16" class="text-dim" /><input v-model="query" class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-dim" :placeholder="t(kindMeta.search)" /></label>
           <GroupSortMenu :context="kind" />
           <span class="font-mono text-sm uppercase tracking-[0.2em] text-dim">{{ t(kindMeta.count, { count: total }) }}</span>
         </div>

@@ -5,7 +5,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { CircleCheck, HardDrive, ListChecks, Play, Search, Trash2 } from "@lucide/vue";
+import { CircleCheck, HardDrive, ListChecks, Play, Trash2 } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useCacheStore } from "../stores/cache";
 import { usePlayerStore } from "../stores/player";
@@ -22,7 +22,6 @@ const { t } = useI18n();
 const cache = useCacheStore();
 const player = usePlayerStore();
 const scrollEl = ref<HTMLElement | null>(null);
-const query = ref("");
 const selectMode = ref(false);
 const selected = ref<Set<string>>(new Set());
 
@@ -83,10 +82,7 @@ const sourceTracks = computed<Track[]>(() => {
 
 const { key: sortKey, dir: sortDir } = useTrackSort("downloaded");
 const orderedTracks = computed(() => sortTracks(sourceTracks.value, sortKey.value, sortDir.value));
-const tracks = computed(() => {
-  const value = query.value.trim().toLocaleLowerCase();
-  return value ? orderedTracks.value.filter((track) => `${track.title} ${track.artist} ${track.album}`.toLocaleLowerCase().includes(value)) : orderedTracks.value;
-});
+const tracks = computed(() => orderedTracks.value);
 const letterIndex = computed(() => (sortKey.value === "title" && !selectMode.value ? titleLetterIndex(tracks.value) : null));
 const selectedCount = computed(() => selected.value.size);
 const totalBytes = computed(() => cache.completedBytes);
@@ -134,7 +130,6 @@ async function removeSelected() {
 
             <div class="mt-auto flex flex-wrap items-center gap-3 pt-4">
               <button type="button" class="ak-clip-tr order-1 flex h-10 shrink-0 items-center gap-2 bg-accent px-4 text-[13px] font-bold text-accent-fg transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50" :disabled="!tracks.length" @click="playFirst"><Play :size="15" :stroke-width="2.2" />{{ t("downloads.playAll") }}</button>
-              <label class="order-2 flex h-10 min-w-0 flex-1 items-center gap-2 border border-line bg-surface px-3 @2xl:order-3 @2xl:ml-auto @2xl:w-64 @2xl:flex-none"><Search :size="16" class="text-dim" /><input v-model="query" class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-dim" :placeholder="t('downloads.search')" aria-label="Search downloaded tracks" /></label>
               <div class="order-3 flex w-full items-center gap-3 @2xl:order-4 @2xl:w-auto">
                 <TrackSortMenu context="downloaded" />
                 <ViewModeToggle />

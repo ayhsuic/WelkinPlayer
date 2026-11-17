@@ -5,7 +5,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { HardDriveDownload, ListChecks, Pencil, Play, RefreshCw, Search, TrendingUp } from "@lucide/vue";
+import { HardDriveDownload, ListChecks, Pencil, Play, RefreshCw, TrendingUp } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
@@ -29,7 +29,6 @@ const player = usePlayerStore();
 const profile = useProfileStore();
 const sources = useSourcesStore();
 const cache = useCacheStore();
-const query = ref("");
 const contextTrack = ref<Track | null>(null);
 const contextPosition = ref({ x: 0, y: 0 });
 const selectMode = ref(false);
@@ -75,10 +74,7 @@ const sortContext = computed<TrackSortContext>(() => activePlaylist.value ? "pla
 const sortDir = computed(() => useTrackSort(sortContext.value).dir.value);
 /** Source order with the chosen sort applied; the play queue follows this so "next" matches the screen. */
 const orderedTracks = computed(() => smartPlays.value ? sourceTracks.value : sortTracks(sourceTracks.value, sortKey.value, sortDir.value));
-const tracks = computed(() => {
-  const value = query.value.trim().toLocaleLowerCase();
-  return value ? orderedTracks.value.filter((track) => `${track.title} ${track.artist} ${track.album}`.toLocaleLowerCase().includes(value)) : orderedTracks.value;
-});
+const tracks = computed(() => orderedTracks.value);
 /** The A–Z rail, only on the pages that opted in while sorting by title. */
 const letterIndex = computed(() => (sortKey.value === "title" && !smartPlays.value && !selectMode.value && (sortContext.value === "tracks" || sortContext.value === "playlist") ? titleLetterIndex(tracks.value) : null));
 
@@ -139,7 +135,6 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
 
             <div class="mt-auto flex flex-wrap items-center gap-3 pt-4">
               <div class="flex w-full min-w-0 items-center gap-3 @2xl:order-2 @2xl:ml-auto @2xl:w-auto" :class="activePlaylist || smartPlays ? 'order-2' : 'order-1'">
-                <label class="flex h-10 min-w-0 flex-1 items-center gap-2 border border-line bg-surface px-3 @2xl:w-64 @2xl:flex-none"><Search :size="16" class="text-dim" /><input v-model="query" class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-dim" :placeholder="t('library.search')" aria-label="Search library" /></label>
                 <button v-if="!activePlaylist && !smartPlays && !isGroup" type="button" class="grid h-10 w-10 shrink-0 place-items-center border border-line text-dim transition-colors hover:border-accent hover:text-accent disabled:opacity-50" :title="t('library.refresh')" :disabled="refreshing" @click="emit('refresh')"><RefreshCw :size="16" :stroke-width="2" :class="refreshing ? 'animate-spin' : ''" /></button>
               </div>
               <div v-if="activePlaylist || smartPlays || isGroup" class="flex items-center gap-3 @2xl:order-1" :class="activePlaylist || smartPlays ? 'order-1' : 'order-2'">

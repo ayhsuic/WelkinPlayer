@@ -5,7 +5,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { Bug, Copy, ExternalLink, GitFork, HardDrive, Info, Mic2, Moon, Music2, Play, SlidersHorizontal, Sun, Users } from "@lucide/vue";
+import { Bug, CircleCheck, Copy, ExternalLink, GitFork, HardDrive, HardDriveDownload, HeartHandshake, Info, Mic2, Moon, Music2, Play, SlidersHorizontal, Sun, Users } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { invoke } from "../api";
@@ -28,7 +28,7 @@ import pkg from "../../package.json";
 
 const theme = defineModel<Theme>("theme", { required: true });
 const accent = defineModel<Accent>("accent", { required: true });
-const emit = defineEmits<{ sponsor: []; sources: []; friendlyError: [error: unknown] }>();
+const emit = defineEmits<{ sponsor: []; sources: []; downloading: []; downloaded: []; friendlyError: [error: unknown] }>();
 const { t, locale } = useI18n();
 const appVersion = pkg.version;
 /** Settings categories. Only the active panel is shown, so the page stays
@@ -370,6 +370,24 @@ button.text-dim:hover:not(:disabled) {
             <p class="text-sm text-muted">{{ t("settings.sources.count", { count: sources.sources.length }) }}</p>
             <p class="flex items-center gap-2 text-[11px] text-dim"><span class="h-2 w-2" :class="sources.hasCloudSync ? 'bg-accent' : 'bg-dim'"></span>{{ sources.hasCloudSync ? t("settings.sources.cloudAvailable") : t("settings.sources.cloudUnavailable") }}</p>
             <div class="flex justify-end"><button type="button" class="ak-clip-tr flex h-10 items-center gap-2 bg-accent px-5 text-[13px] font-bold uppercase tracking-[0.25em] text-accent-fg" @click="emit('sources')"><HardDrive :size="15" />{{ t("settings.sources.manage") }}</button></div>
+          </div>
+        </section>
+
+        <section class="ak-frame grid gap-6 border border-line bg-surface p-6 lg:grid-cols-[1fr_1.3fr]">
+          <div><h2 class="text-sm font-bold uppercase tracking-[0.2em]">{{ t("settings.downloads.title") }}</h2><p class="mt-2 text-sm text-muted">{{ t("settings.downloads.desc") }}</p></div>
+          <div class="grid gap-3 sm:grid-cols-3">
+            <button type="button" class="flex flex-col items-start gap-2 border border-line bg-bg p-4 text-left transition-colors hover:border-accent" @click="emit('downloading')">
+              <HardDriveDownload :size="18" class="text-accent" />
+              <span class="text-[13px] font-semibold">{{ t("settings.downloads.downloading") }}</span>
+            </button>
+            <button type="button" class="flex flex-col items-start gap-2 border border-line bg-bg p-4 text-left transition-colors hover:border-accent" @click="emit('downloaded')">
+              <CircleCheck :size="18" class="text-accent" />
+              <span class="text-[13px] font-semibold">{{ t("settings.downloads.downloaded") }}</span>
+            </button>
+            <button type="button" class="flex flex-col items-start gap-2 border border-line bg-bg p-4 text-left transition-colors hover:border-accent" @click="emit('sponsor')">
+              <HeartHandshake :size="18" class="text-accent" />
+              <span class="text-[13px] font-semibold">{{ t("settings.downloads.sponsor") }}</span>
+            </button>
           </div>
         </section>
       </div>
