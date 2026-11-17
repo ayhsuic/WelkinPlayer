@@ -190,7 +190,7 @@ watch(() => props.path, load, { immediate: true });
 </script>
 
 <template>
-  <div class="fixed inset-0 z-40 flex flex-col overflow-hidden bg-bg text-fg">
+  <div class="fixed inset-0 z-[80] flex flex-col overflow-hidden bg-bg text-fg">
     <CoverSearch :open="showCoverSearch" :initial-query="coverSearchInitialQuery" @select="onCoverSearchSelect" @close="showCoverSearch = false" />
     <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-bg">
       <header class="flex h-16 shrink-0 items-center gap-4 border-b border-line px-5">
