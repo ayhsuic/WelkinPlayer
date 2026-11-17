@@ -55,6 +55,13 @@ getrandom = "0.2"
 fontdb = "0.24.0"
 # SemVer comparison for update checks and the cumulative changelog range.
 semver = "1"
+# Smart transitions reuse an existing pure-DSP implementation instead of
+# hand-writing BPM/key/loudness analysis and crossfade-point selection. It has
+# no C/FFmpeg dependency (only `thiserror`) and uses Rust 2024.
+automix = "2.0.1"
+# Exact Held-Karp TSP solver used to order a playlist for the smoothest chain of
+# transitions. Exact up to 20 nodes, which covers ordinary playlists.
+held-karp-core = "0.1.1"
 
 # Password storage uses the platform-native keychain. Each backend is enabled
 # only for its own target so we never compile another OS's dependencies.
@@ -147,4 +154,11 @@ strip = true
 # profile's `opt-level = 0` it cannot keep up with realtime playback, so build
 # just this dependency optimized even in `cargo run` / `tauri dev`.
 [profile.dev.package.wsola]
+opt-level = 3
+
+# The smart-transition analyser is the same story: `automix` runs the onset /
+# Goertzel / MFCC loops over two 60-second buffers per track. Unoptimised it
+# takes tens of seconds per track, which looks like a hang. Optimise it (and
+# only it) in the dev profile so analysis stays interactive.
+[profile.dev.package.automix]
 opt-level = 3

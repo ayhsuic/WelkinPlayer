@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { ChevronRight, Heart, ListMusic, Pencil, Plus, TrendingUp } from "@lucide/vue";
+import { ChevronRight, Heart, ListMusic, Pencil, Plus, Sparkles, TrendingUp } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useProfileStore } from "../stores/profile";
 import { usePlayerStore } from "../stores/player";
@@ -61,7 +61,11 @@ const rankedCount = computed(() => rankTracksByPlayCount(player.tracks, profile.
           <button type="button" class="flex min-w-0 flex-1 items-center gap-4 text-left" :title="t('playlistsPage.open')" @click="emit('openPlaylist', playlist.id)">
             <span class="grid h-11 w-11 shrink-0 place-items-center overflow-hidden"><PlaylistCover :playlist="playlist" class="h-full w-full text-lg" :icon-size="18" /></span>
             <span class="grid min-w-0 flex-1 gap-0.5">
-              <strong class="truncate text-sm font-semibold tracking-wide">{{ playlist.name }}</strong>
+              <strong class="flex min-w-0 items-center gap-1.5">
+                <span class="truncate">{{ playlist.name }}</span>
+                <span v-if="playlist.smartTransition?.status === 'ready'" class="flex shrink-0 items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-accent"><Sparkles :size="11" />{{ t("playlistsPage.smartBadge") }}</span>
+                <span v-else-if="playlist.smartTransition?.status === 'stale'" class="shrink-0 border border-amber-500/50 px-1 text-[10px] font-mono uppercase text-amber-400">{{ t("playlistsPage.smartStale") }}</span>
+              </strong>
               <small class="font-mono text-xs uppercase tracking-[0.15em] text-dim">{{ t("playlistsPage.count", { count: playlist.tracks.length }) }}</small>
             </span>
           </button>

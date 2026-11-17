@@ -40,7 +40,8 @@ import { pushToast } from "./lib/toast";
 import { usePlayerStore } from "./stores/player";
 import type { Track, PlaybackSnapshot } from "./stores/player";
 import { useSourcesStore } from "./stores/sources";
-import { useProfileStore } from "./stores/profile";
+import { useProfileStore, tracksForPaths } from "./stores/profile";
+import { useSmartTransitionStore } from "./stores/smartTransition";
 import { usePlaybackStore } from "./stores/playback";
 import { useLyricsStore } from "./stores/lyrics";
 import { useMetadataStore } from "./stores/metadata";
@@ -86,6 +87,7 @@ const { t, locale } = useI18n();
 const player = usePlayerStore();
 const sources = useSourcesStore();
 const profile = useProfileStore();
+const smart = useSmartTransitionStore();
 const playback = usePlaybackStore();
 const lyrics = useLyricsStore();
 const metadata = useMetadataStore();
@@ -251,7 +253,9 @@ watch(
     // Prefer the saved play queue so the exact playlist/context resumes; fall
     // back to just the track when no queue was stored (older state).
     if (playback.queue.length > 0) {
-      void player.restoreQueue(playback.queue, playback.queueIndex, stored);
+      void player.restoreQueue(playback.queue, playback.queueIndex, stored).then((ok) => {
+        if (ok) void armRestoredSmart(playback.queue);
+      });
     } else if (track) {
       void player.playInQueue([track], track);
     }
@@ -266,6 +270,28 @@ watch(
 /** Resolve a stored playback key to its track. */
 function findTrackByKey(key: string): Track | undefined {
   return player.tracks.find((item) => trackKey(item) === key);
+}
+
+/**
+ * Re-arm smart transitions after restoring the last queue. The saved order was
+ * already the analysed order while the playlist was locked, so we only need to
+ * find the matching playlist, re-install the order and pin it again.
+ */
+async function armRestoredSmart(keys: string[]) {
+  if (keys.length === 0) return;
+  const wanted = new Set(keys);
+  const playlist = profile.playlists.find((item) => {
+    if (!item.smartTransition?.enabled || item.smartTransition.status !== "ready") return false;
+    const playlistKeys = tracksForPaths(item.tracks, player.tracks)
+      .map(trackKey)
+      .filter((key): key is string => !!key);
+    return playlistKeys.length === wanted.size && playlistKeys.every((key) => wanted.has(key));
+  });
+  if (!playlist) return;
+  const summary = await smart.load(playlist.id);
+  if (!summary || summary.incomplete) return;
+  await player.reorderQueue(summary.order);
+  await smart.armPlayback(playlist.id);
 }
 
 // Persist the playback position: on track changes, on pause/seek/hide/exit, and
@@ -348,6 +374,10 @@ function navigate(nextView: View) {
   // Returning to the wall re-grows the playing track into the centred card.
   if (nextView === "wall") wallFocusToken.value += 1;
 }
+/** Open the full-screen player without disturbing the page (and its filters) underneath. */
+function openPlayer() { setView("player"); }
+/** Fold the player away back to the page it was opened over, keeping that page's filters. */
+function returnFromPlayer() { setView(baseView.value); }
 function syncViewFromHash() { view.value = getViewFromHash(); }
 function openUserPlaylist(id: string) { clearCollectionFilters(); playlistFilter.value = id; setView("tracks"); }
 /** Open a source in the file-manager browser instead of the flat track list. */
@@ -495,8 +525,8 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
 </script>
 
 <template>
-  <AmllPlayerView v-if="amllMounted && player.currentTrack" :active="amllActive" :return-view="baseView" @navigate="navigate" @closed="amllMounted = false" />
-  <Transition name="slide"><PlayerView v-if="view === 'player' && player.currentTrack && !lyrics.useAmll" :return-view="baseView" @navigate="navigate" @open-artist="openArtist" @open-album="openAlbum" /></Transition>
+  <AmllPlayerView v-if="amllMounted && player.currentTrack" :active="amllActive" :return-view="baseView" @navigate="returnFromPlayer" @closed="amllMounted = false" />
+  <Transition name="slide"><PlayerView v-if="view === 'player' && player.currentTrack && !lyrics.useAmll" :return-view="baseView" @navigate="returnFromPlayer" @open-artist="openArtist" @open-album="openAlbum" /></Transition>
   <Transition name="info"><TrackInfoView v-if="view === 'track-info' && viewingTrack" :path="viewingTrack.path ?? null" :source-id="viewingTrack.sourceId" @back="closeOverlay" /></Transition>
   <Transition name="info"><LyricsEditorView v-if="view === 'lyrics-edit' && editingLyricsTrack" :path="editingLyricsTrack.path ?? null" :source-id="editingLyricsTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
   <Transition name="info"><TrackEditorView v-if="view === 'track-edit' && editingTrack" :path="editingTrack.path ?? null" :source-id="editingTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
@@ -528,7 +558,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
         </Transition>
       </main>
     </div>
-    <PlayerBar v-if="player.currentTrack" class="hidden md:block" @open="navigate('player')" @open-artist="openArtist" @open-album="openAlbum" />
+    <PlayerBar v-if="player.currentTrack" class="hidden md:block" @open="openPlayer" @open-artist="openArtist" @open-album="openAlbum" />
     <PlayerNavBar v-if="view === 'player' || baseView === 'wall' || !sheetOpen" @sheet="openSheet" />
     <MobileNavSheet v-model:open="sheetOpen" :active-tab="navTab" @select="onTabSelect" @close="closeSheet">
       <!-- Drill-down pages inside the drawer. -->

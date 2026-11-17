@@ -18,11 +18,12 @@ use std::sync::Mutex;
 // `Duration` is only needed by the Android media-control poller below.
 #[cfg(target_os = "android")]
 use std::time::Duration;
+use std::time::Instant;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::playback::engine::{Command, Engine};
+use crate::playback::engine::{AudioState, Command, CrossfadeState, Engine};
 
 /// Separator between a source id and a track path inside a track key.
 pub const KEY_SEPARATOR: &str = "::";
@@ -33,6 +34,107 @@ pub const KEY_SEPARATOR: &str = "::";
 pub struct QueueItem {
     pub source_id: String,
     pub path: String,
+}
+
+/// One transition handed to the context for scheduling.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybackTransition {
+    /// `sourceId::path` of the outgoing track.
+    pub from: String,
+    /// `sourceId::path` of the incoming track.
+    pub to: String,
+    /// Absolute seconds in the outgoing track where the fade starts.
+    pub out_at: f64,
+    /// Absolute seconds in the incoming track to drop the playhead at, so the
+    /// new track enters on its musical Mix In point.
+    #[serde(default)]
+    pub in_at: f64,
+    /// Fade length in seconds.
+    pub blend_secs: f64,
+    /// Playback-rate multiplier for the incoming deck (beat matching).
+    #[serde(default = "unity")]
+    pub tempo_ratio: f32,
+    /// Linear gain for the incoming deck during the overlap (loudness match).
+    #[serde(default = "unity")]
+    pub in_gain: f32,
+}
+
+fn unity() -> f32 {
+    1.0
+}
+
+/// How long before the Mix Out point the incoming deck is opened and prefilled.
+const CROSSFADE_PREPARE_LEAD_SECS: f64 = 8.0;
+/// Plans discovered later than this fall back to the sequential fade instead of
+/// trying to open a remote stream at the last moment.
+const CROSSFADE_MIN_LEAD_SECS: f64 = 0.4;
+
+/// The transition envelope currently in flight.
+enum FadePhase {
+    Idle,
+    /// The incoming deck is being opened/prefilled on the engine's helper
+    /// thread; the outgoing track keeps playing untouched.
+    Preparing {
+        from: String,
+        to: String,
+        out_at: f64,
+        in_at: f64,
+        blend_secs: f64,
+        tempo_ratio: f32,
+        in_gain: f32,
+        token: u64,
+        failed: bool,
+    },
+    /// Both decks are mixed by the engine's equal-power envelope.
+    Crossfading {
+        from: String,
+        to: String,
+        in_at: f64,
+        blend_secs: f64,
+        in_gain: f32,
+        token: u64,
+    },
+    /// Fading the outgoing track down to silence.
+    Out {
+        from: String,
+        to: String,
+        /// Fade time accumulated while the transport was actually playing.
+        elapsed: f64,
+        /// Previous tick, used to add only playing time. A pause between ticks
+        /// is clamped away instead of jumping the envelope forward.
+        last_tick: Instant,
+        duration: f64,
+        /// Mix In point of the incoming track, applied after the advance.
+        in_at: f64,
+    },
+    /// Fading the incoming track up from silence. `last_tick` is `None` while
+    /// the queue is still waiting for the outgoing track to end and advance.
+    In {
+        from: String,
+        to: String,
+        elapsed: f64,
+        last_tick: Option<Instant>,
+        duration: f64,
+    },
+}
+
+impl Default for FadePhase {
+    fn default() -> Self {
+        FadePhase::Idle
+    }
+}
+
+#[derive(Default)]
+struct TransitionRuntime {
+    plans: Vec<PlaybackTransition>,
+    phase: FadePhase,
+    /// Monotonic token so a late preparation result cannot start a stale fade.
+    crossfade_token: u64,
+}
+
+fn track_key(item: &QueueItem) -> String {
+    format!("{}{}{}", item.source_id, KEY_SEPARATOR, item.path)
 }
 
 /// Repeat modes, mirroring the frontend's `RepeatMode`.
@@ -80,6 +182,9 @@ pub struct ContextSnapshot {
     pub current_path: Option<String>,
     /// Whether the engine is currently playing.
     pub is_playing: bool,
+    /// When true the queue is pinned to the analysed smart-transition order:
+    /// shuffle is ignored and the order never reshuffles.
+    pub order_locked: bool,
 }
 
 /// The mutable playback context, guarded by a single mutex. All intent commands
@@ -91,6 +196,8 @@ pub struct PlaybackContext {
     /// cached-only queue; the context may outlive the webview that set it.
     app: AppHandle,
     inner: Mutex<Inner>,
+    /// Smart-transition plans and the fade envelope currently in flight.
+    transition: Mutex<TransitionRuntime>,
 }
 
 #[derive(Default)]
@@ -110,6 +217,8 @@ struct Inner {
     cached_only: bool,
     /// Bumped when the same item is reselected, to force an engine restart.
     nonce: u64,
+    /// Pinned to the analysed order while smart transitions are enabled.
+    order_locked: bool,
 }
 
 impl PlaybackContext {
@@ -118,6 +227,7 @@ impl PlaybackContext {
             engine,
             app,
             inner: Mutex::new(Inner::default()),
+            transition: Mutex::new(TransitionRuntime::default()),
         }
     }
 
@@ -184,19 +294,28 @@ impl PlaybackContext {
     /// Replace the whole queue (e.g. "play these tracks starting here").
     ///
     /// `cached_only` narrows the request to tracks that can play without the
-    /// network (local files or completed manual cache entries). The webview
-    /// already filters the list so the start track is known, but the context
-    /// enforces it again so a backgrounded or dead webview cannot resume cloud
-    /// playback the user declined on a metered connection.
-    pub fn set_queue(&self, keys: Vec<String>, start_key: Option<&str>, cached_only: bool) {
+    /// network (local files or completed manual cache entries). When
+    /// `lock_order` is set the queue is the analysed smart-transition order and
+    /// shuffle is ignored for its whole lifetime.
+    pub fn set_queue(
+        &self,
+        keys: Vec<String>,
+        start_key: Option<&str>,
+        cached_only: bool,
+        lock_order: bool,
+    ) {
+        // A new queue invalidates the previous playlist's plans; the caller arms
+        // the new ones after the queue is installed.
+        self.clear_transition_plans();
         let mut items = Self::items_from_keys(&keys);
         if cached_only {
             items = self.cached_items(items);
         }
         let mut inner = self.inner.lock().unwrap();
         inner.cached_only = cached_only;
+        inner.order_locked = lock_order;
         inner.base_queue = items.clone();
-        let (queue, index) = if inner.shuffle && !items.is_empty() {
+        let (queue, index) = if inner.shuffle && !lock_order && !items.is_empty() {
             // Keep the chosen start first, then shuffle the remainder.
             if let Some(start) = start_key.and_then(Self::split_key) {
                 let start_item = QueueItem {
@@ -241,6 +360,7 @@ impl PlaybackContext {
 
     /// Reselect the current queue item (same track) without changing order.
     pub fn select_index(&self, index: i64) {
+        self.reset_transition();
         let mut inner = self.inner.lock().unwrap();
         if inner.queue.is_empty() || index < 0 || index as usize >= inner.queue.len() {
             return;
@@ -269,6 +389,7 @@ impl PlaybackContext {
 
     /// Toggle play/pause.
     pub fn toggle(&self) {
+        self.reset_transition();
         let mut inner = self.inner.lock().unwrap();
         let was_playing = inner.playing;
         inner.playing = !inner.playing;
@@ -290,6 +411,7 @@ impl PlaybackContext {
 
     /// Explicit play (resume).
     pub fn play(&self) {
+        self.reset_transition();
         let mut inner = self.inner.lock().unwrap();
         inner.playing = true;
         let snapshot = self.snapshot_locked(&inner);
@@ -304,6 +426,7 @@ impl PlaybackContext {
 
     /// Explicit pause.
     pub fn pause(&self) {
+        self.reset_transition();
         let mut inner = self.inner.lock().unwrap();
         inner.playing = false;
         let snapshot = self.snapshot_locked(&inner);
@@ -315,6 +438,7 @@ impl PlaybackContext {
     /// Seek to an absolute position (seconds). Drives the engine directly so the
     /// native MediaSession's scrub bar works without the webview.
     pub fn seek(&self, position_secs: f64) {
+        self.reset_transition();
         if !position_secs.is_finite() || position_secs < 0.0 {
             return;
         }
@@ -396,6 +520,7 @@ impl PlaybackContext {
 
     /// Advance to the next track (honouring repeat-one / repeat-all / end).
     pub fn next(&self) {
+        self.reset_transition();
         let mut inner = self.inner.lock().unwrap();
         if inner.queue.is_empty() {
             return;
@@ -419,7 +544,7 @@ impl PlaybackContext {
                 self.emit(snapshot);
                 return;
             }
-            if inner.shuffle && inner.queue.len() > 1 {
+            if inner.shuffle && !inner.order_locked && inner.queue.len() > 1 {
                 let current = inner.queue[inner.index as usize].clone();
                 let mut reshuffled = Self::shuffled(inner.queue.clone());
                 // Avoid starting the new cycle on the same track.
@@ -439,6 +564,7 @@ impl PlaybackContext {
 
     /// Go to the previous track.
     pub fn previous(&self) {
+        self.reset_transition();
         let mut inner = self.inner.lock().unwrap();
         if inner.queue.is_empty() {
             return;
@@ -465,6 +591,11 @@ impl PlaybackContext {
     /// Toggle shuffle. When turning on, reshuffle keeping the current track
     /// first; when off, restore the base order and re-locate the current track.
     pub fn toggle_shuffle(&self) {
+        // Smart transitions pin the played order, so shuffle cannot reorder it.
+        if self.inner.lock().unwrap().order_locked {
+            return;
+        }
+        self.reset_transition();
         let mut inner = self.inner.lock().unwrap();
         inner.shuffle = !inner.shuffle;
         let current = inner
@@ -513,6 +644,7 @@ impl PlaybackContext {
 
     /// Cycle repeat mode (off -> all -> one -> off).
     pub fn cycle_repeat(&self) {
+        self.reset_transition();
         let mut inner = self.inner.lock().unwrap();
         inner.repeat = inner.repeat.cycle();
         // One implies shuffle off for a sane cycle, matching the frontend.
@@ -583,6 +715,10 @@ impl PlaybackContext {
 
     /// Set shuffle explicitly (used for restore / settings).
     pub fn set_shuffle(&self, on: bool) {
+        if self.inner.lock().unwrap().order_locked {
+            return;
+        }
+        self.reset_transition();
         let mut inner = self.inner.lock().unwrap();
         if inner.shuffle == on {
             return;
@@ -634,6 +770,7 @@ impl PlaybackContext {
     /// when present (more reliable than a stale index). Returns false when the
     /// queue could not be rebuilt.
     pub fn restore(&self, keys: &[String], index: i64, current_key: Option<&str>) -> bool {
+        self.reset_transition();
         let items = Self::items_from_keys(keys);
         if items.is_empty() {
             return false;
@@ -672,6 +809,574 @@ impl PlaybackContext {
         true
     }
 
+    /// Replace the scheduled smart-transition plans. Passing an empty list
+    /// disables transitions. The envelope is reset so a stale fade never leaks
+    /// into the next queue.
+    pub fn set_transition_plans(&self, plans: Vec<PlaybackTransition>) {
+        // Plans describe the analysed order, so possessing them pins the queue
+        // to that order; clearing them releases the lock.
+        let order_locked = !plans.is_empty();
+        let changed = {
+            let mut inner = self.inner.lock().unwrap();
+            let changed = inner.order_locked != order_locked;
+            inner.order_locked = order_locked;
+            changed
+        };
+        if changed {
+            // Surface the lock state so the UI can disable/enable shuffle.
+            let snapshot = {
+                let inner = self.inner.lock().unwrap();
+                self.snapshot_locked(&inner)
+            };
+            self.emit(snapshot);
+        }
+        // Replacing the plans invalidates any prepared or live crossfade.
+        self.reset_transition();
+        let mut runtime = self.transition.lock().unwrap();
+        runtime.plans = plans;
+    }
+
+    /// Clear all transition plans and restore unity gain.
+    pub fn clear_transition_plans(&self) {
+        self.set_transition_plans(Vec::new());
+    }
+
+    /// Reorder the current queue in place, keeping the playing track.
+    ///
+    /// Used when smart transitions are switched on mid-playback: the queue was
+    /// possibly shuffled or sorted, and must become the analysed order without
+    /// restarting the current track. Items that are not in `keys` (for example
+    /// cloud tracks filtered out on a metered connection) keep their relative
+    /// order at the end. The order is pinned so shuffle cannot undo it.
+    pub fn reorder(&self, keys: &[String]) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.queue.is_empty() {
+            return;
+        }
+        let current = inner
+            .index
+            .try_into()
+            .ok()
+            .filter(|&i: &usize| i < inner.queue.len())
+            .map(|i| inner.queue[i].clone());
+        let base = if inner.base_queue.is_empty() {
+            inner.queue.clone()
+        } else {
+            inner.base_queue.clone()
+        };
+        let mut ordered: Vec<QueueItem> = Vec::with_capacity(base.len());
+        for key in keys {
+            let Some((source_id, path)) = Self::split_key(key) else {
+                continue;
+            };
+            let item = QueueItem { source_id, path };
+            if !ordered.contains(&item) && base.contains(&item) {
+                ordered.push(item);
+            }
+        }
+        for item in base {
+            if !ordered.contains(&item) {
+                ordered.push(item);
+            }
+        }
+        if ordered.is_empty() {
+            return;
+        }
+        inner.index = current
+            .and_then(|current| ordered.iter().position(|item| item == &current))
+            .map(|i| i as i64)
+            .unwrap_or(0);
+        inner.queue = ordered.clone();
+        inner.base_queue = ordered;
+        inner.order_locked = true;
+        let snapshot = self.snapshot_locked(&inner);
+        drop(inner);
+        // Keep the currently playing track untouched; only the upcoming order
+        // changes. The caller re-arms plans for the new adjacency afterwards.
+        self.emit(snapshot);
+    }
+
+    fn reset_transition(&self) {
+        let mut runtime = self.transition.lock().unwrap();
+        runtime.phase = FadePhase::Idle;
+        // Invalidate any in-flight preparation and stop a live crossfade; the
+        // engine restores the audible deck to unity through its gain ramp.
+        runtime.crossfade_token = runtime.crossfade_token.wrapping_add(1);
+        drop(runtime);
+        let _ = self.engine.send(Command::CancelCrossfade);
+        self.engine.shared().set_transition_gain(1.0);
+    }
+
+    /// Drive the smart-transition envelope. Called from the engine events thread
+    /// every 50 ms, so the fade stays smooth without another timer.
+    pub fn on_tick(&self, state: &AudioState) {
+        if !state.playing {
+            return;
+        }
+        let (current, next) = {
+            let inner = self.inner.lock().unwrap();
+            let index: usize = match inner.index.try_into() {
+                Ok(index) => index,
+                Err(_) => return,
+            };
+            let current = inner.queue.get(index).map(track_key);
+            let next = if inner.repeat == RepeatMode::One {
+                None
+            } else if index + 1 < inner.queue.len() {
+                Some(track_key(&inner.queue[index + 1]))
+            } else if inner.repeat == RepeatMode::All && !inner.queue.is_empty() {
+                Some(track_key(&inner.queue[0]))
+            } else {
+                None
+            };
+            (current, next)
+        };
+        let position = state.position_ms / 1000.0;
+        let track_duration = state.duration_ms / 1000.0;
+        // When the fade completes early (musical Mix Out before the file's
+        // final samples) we advance ourselves and then drop the next track at
+        // its Mix In point. This is recorded here and applied after the lock is
+        // released so queue loading never runs under the transition mutex.
+        let mut advance_to: Option<f64> = None;
+
+        let mut runtime = self.transition.lock().unwrap();
+        let phase = std::mem::replace(&mut runtime.phase, FadePhase::Idle);
+        let shared = self.engine.shared();
+        let mut handover: Option<String> = None;
+        runtime.phase = match phase {
+            FadePhase::Idle => {
+                let trigger = current.as_deref().and_then(|current| {
+                    next.as_deref().and_then(|next| {
+                        runtime
+                            .plans
+                            .iter()
+                            .find(|plan| plan.from == current && plan.to == next)
+                            .cloned()
+                    })
+                });
+                match trigger {
+                    Some(plan) => {
+                        let start = plan.out_at.max(0.0);
+                        let remaining = start - position;
+                        let duration = if track_duration > 0.5 {
+                            plan.blend_secs
+                                .min((track_duration - position).max(0.0))
+                                .clamp(0.35, 30.0)
+                        } else {
+                            plan.blend_secs.clamp(0.35, 30.0)
+                        };
+                        if position + 0.02 >= start {
+                            // If the user seeks past the Mix Out point, shrink
+                            // the fade to whatever time is actually left so it
+                            // never runs past the file's end.
+                            FadePhase::Out {
+                                from: plan.from,
+                                to: plan.to,
+                                elapsed: 0.0,
+                                last_tick: Instant::now(),
+                                duration,
+                                in_at: plan.in_at.max(0.0),
+                            }
+                        } else if remaining > CROSSFADE_MIN_LEAD_SECS {
+                            // Request the second deck only once the lead window
+                            // is reached; token 0 means "not requested yet".
+                            let token = if remaining <= CROSSFADE_PREPARE_LEAD_SECS {
+                                let token = runtime.crossfade_token.wrapping_add(1);
+                                runtime.crossfade_token = token;
+                                if let Some((source_id, path)) =
+                                    Self::split_key(&plan.to)
+                                {
+                                    let _ = self.engine.send(Command::PrepareCrossfade {
+                                        token,
+                                        source_id,
+                                        path,
+                                        in_at: plan.in_at.max(0.0),
+                                        tempo_ratio: plan.tempo_ratio,
+                                    });
+                                }
+                                token
+                            } else {
+                                0
+                            };
+                            FadePhase::Preparing {
+                                from: plan.from,
+                                to: plan.to,
+                                out_at: start,
+                                in_at: plan.in_at.max(0.0),
+                                blend_secs: plan.blend_secs,
+                                tempo_ratio: plan.tempo_ratio,
+                                in_gain: plan.in_gain,
+                                token,
+                                failed: false,
+                            }
+                        } else {
+                            // Too late to open a second deck safely.
+                            FadePhase::Preparing {
+                                from: plan.from,
+                                to: plan.to,
+                                out_at: start,
+                                in_at: plan.in_at.max(0.0),
+                                blend_secs: plan.blend_secs,
+                                tempo_ratio: plan.tempo_ratio,
+                                in_gain: plan.in_gain,
+                                token: 0,
+                                failed: true,
+                            }
+                        }
+                    }
+                    None => FadePhase::Idle,
+                }
+            }
+            FadePhase::Preparing {
+                from,
+                to,
+                out_at,
+                in_at,
+                blend_secs,
+                tempo_ratio,
+                in_gain,
+                token,
+                mut failed,
+            } => {
+                if current.as_deref() != Some(from.as_str()) {
+                    let _ = self.engine.send(Command::CancelCrossfade);
+                    shared.set_transition_gain(1.0);
+                    FadePhase::Idle
+                } else {
+                    let state = shared.crossfade_state();
+                    if state == CrossfadeState::Failed {
+                        shared.take_crossfade_state(CrossfadeState::Failed);
+                        failed = true;
+                    }
+                    if position + 0.02 >= out_at {
+                        if !failed && state == CrossfadeState::Ready {
+                            let _ = self.engine.send(Command::StartCrossfade {
+                                token,
+                                blend_secs,
+                                in_gain,
+                            });
+                            FadePhase::Crossfading {
+                                from,
+                                to,
+                                in_at,
+                                blend_secs,
+                                in_gain,
+                                token,
+                            }
+                        } else {
+                            // No usable second deck: cancel it and run the old
+                            // sequential fade from the current position.
+                            let _ = self.engine.send(Command::CancelCrossfade);
+                            shared.set_transition_gain(1.0);
+                            let duration = if track_duration > 0.5 {
+                                blend_secs
+                                    .min((track_duration - position).max(0.0))
+                                    .clamp(0.35, 30.0)
+                            } else {
+                                blend_secs.clamp(0.35, 30.0)
+                            };
+                            FadePhase::Out {
+                                from,
+                                to,
+                                elapsed: 0.0,
+                                last_tick: Instant::now(),
+                                duration,
+                                in_at,
+                            }
+                        }
+                    } else if position > out_at + 2.0 {
+                        let _ = self.engine.send(Command::CancelCrossfade);
+                        shared.set_transition_gain(1.0);
+                        FadePhase::Idle
+                    } else if !failed && token == 0 {
+                        let remaining = out_at - position;
+                        if remaining > CROSSFADE_MIN_LEAD_SECS
+                            && remaining <= CROSSFADE_PREPARE_LEAD_SECS
+                        {
+                            // Entered the lead window: request the second deck.
+                            let token = runtime.crossfade_token.wrapping_add(1);
+                            runtime.crossfade_token = token;
+                            if let Some((source_id, path)) = Self::split_key(&to) {
+                                let _ = self.engine.send(Command::PrepareCrossfade {
+                                    token,
+                                    source_id,
+                                    path,
+                                    in_at,
+                                    tempo_ratio,
+                                });
+                            }
+                            FadePhase::Preparing {
+                                from,
+                                to,
+                                out_at,
+                                in_at,
+                                blend_secs,
+                                tempo_ratio,
+                                in_gain,
+                                token,
+                                failed: false,
+                            }
+                        } else if remaining <= CROSSFADE_MIN_LEAD_SECS {
+                            // Too late now: use the sequential fallback.
+                            FadePhase::Preparing {
+                                from,
+                                to,
+                                out_at,
+                                in_at,
+                                blend_secs,
+                                tempo_ratio,
+                                in_gain,
+                                token: 0,
+                                failed: true,
+                            }
+                        } else {
+                            FadePhase::Preparing {
+                                from,
+                                to,
+                                out_at,
+                                in_at,
+                                blend_secs,
+                                tempo_ratio,
+                                in_gain,
+                                token: 0,
+                                failed: false,
+                            }
+                        }
+                    } else {
+                        FadePhase::Preparing {
+                            from,
+                            to,
+                            out_at,
+                            in_at,
+                            blend_secs,
+                            tempo_ratio,
+                            in_gain,
+                            token,
+                            failed,
+                        }
+                    }
+                }
+            }
+            FadePhase::Crossfading {
+                from,
+                to,
+                in_at,
+                blend_secs,
+                in_gain,
+                token,
+            } => {
+                if current.as_deref() != Some(from.as_str()) {
+                    let _ = self.engine.send(Command::CancelCrossfade);
+                    shared.set_transition_gain(1.0);
+                    FadePhase::Idle
+                } else {
+                    match shared.crossfade_state() {
+                        CrossfadeState::Done => {
+                            shared.take_crossfade_state(CrossfadeState::Done);
+                            shared.set_transition_gain(1.0);
+                            handover = Some(to.clone());
+                            FadePhase::Idle
+                        }
+                        CrossfadeState::Failed | CrossfadeState::None => {
+                            shared.take_crossfade_state(CrossfadeState::Failed);
+                            // Drop the half-built second deck before falling back
+                            // so it cannot keep consuming CPU or download budget.
+                            let _ = self.engine.send(Command::CancelCrossfade);
+                            shared.set_transition_gain(1.0);
+                            // The second deck could not take over: finish with
+                            // the sequential fade so the next track still
+                            // enters at its Mix In point.
+                            let duration = if track_duration > 0.5 {
+                                blend_secs
+                                    .min((track_duration - position).max(0.0))
+                                    .clamp(0.35, 30.0)
+                            } else {
+                                blend_secs.clamp(0.35, 30.0)
+                            };
+                            FadePhase::Out {
+                                from,
+                                to,
+                                elapsed: 0.0,
+                                last_tick: Instant::now(),
+                                duration,
+                                in_at,
+                            }
+                        }
+                        _ => FadePhase::Crossfading {
+                            from,
+                            to,
+                            in_at,
+                            blend_secs,
+                            in_gain,
+                            token,
+                        },
+                    }
+                }
+            }
+            FadePhase::Out {
+                from,
+                to,
+                elapsed,
+                last_tick,
+                duration,
+                in_at,
+            } => {
+                if current.as_deref() == Some(to.as_str()) {
+                    // The track ended and the queue advanced before the envelope
+                    // finished ticking: start the new track silent so the fade-in
+                    // still happens instead of unmuting abruptly.
+                    shared.set_transition_gain(0.0);
+                    FadePhase::In {
+                        from,
+                        to,
+                        elapsed: 0.0,
+                        last_tick: None,
+                        duration: 1.2,
+                    }
+                } else if current.as_deref() != Some(from.as_str()) {
+                    // The user moved to some other track: cancel the fade.
+                    shared.set_transition_gain(1.0);
+                    FadePhase::Idle
+                } else {
+                    let now = Instant::now();
+                    // Only add the time between two ticks while playing. A pause
+                    // leaves a large gap; clamping it keeps the envelope from
+                    // jumping forward when playback resumes.
+                    let delta = now
+                        .saturating_duration_since(last_tick)
+                        .as_secs_f64()
+                        .min(0.25);
+                    let elapsed = (elapsed + delta).max(0.0);
+                    let t = (elapsed / duration).clamp(0.0, 1.0);
+                    if t >= 1.0 {
+                        // The outgoing track is now silent. Advance immediately
+                        // instead of waiting for its natural end, so the next
+                        // track enters on the musical Mix In point.
+                        shared.set_transition_gain(0.0);
+                        advance_to = Some(in_at);
+                        FadePhase::In {
+                            from,
+                            to,
+                            elapsed: 0.0,
+                            last_tick: None,
+                            duration: 1.2,
+                        }
+                    } else {
+                        // Equal-power fade-out: cos(t * pi/2).
+                        let gain = ((1.0 - t) * std::f64::consts::FRAC_PI_2).cos() as f32;
+                        shared.set_transition_gain(gain);
+                        FadePhase::Out {
+                            from,
+                            to,
+                            elapsed,
+                            last_tick: now,
+                            duration,
+                            in_at,
+                        }
+                    }
+                }
+            }
+            FadePhase::In {
+                from,
+                to,
+                elapsed,
+                last_tick,
+                duration,
+            } => {
+                if current.as_deref() == Some(to.as_str()) {
+                    // The queue has advanced: fade the new track up.
+                    let now = Instant::now();
+                    let (elapsed, last_tick) = match last_tick {
+                        Some(last) => {
+                            let delta = now.saturating_duration_since(last).as_secs_f64().min(0.25);
+                            ((elapsed + delta).max(0.0), now)
+                        }
+                        None => (0.0, now),
+                    };
+                    let t = (elapsed / duration).clamp(0.0, 1.0);
+                    if t >= 1.0 {
+                        shared.set_transition_gain(1.0);
+                        FadePhase::Idle
+                    } else {
+                        // Equal-power fade-in: sin(t * pi/2).
+                        let gain = (t * std::f64::consts::FRAC_PI_2).sin() as f32;
+                        shared.set_transition_gain(gain);
+                        FadePhase::In {
+                            from,
+                            to,
+                            elapsed,
+                            last_tick: Some(last_tick),
+                            duration,
+                        }
+                    }
+                } else if current.as_deref() == Some(from.as_str()) {
+                    // Still on the outgoing track for a tick or two: stay silent
+                    // until the natural end advances the queue, instead of
+                    // jumping back to full volume.
+                    shared.set_transition_gain(0.0);
+                    FadePhase::In {
+                        from,
+                        to,
+                        elapsed,
+                        last_tick: None,
+                        duration,
+                    }
+                } else {
+                    // The user moved to some other track: restore unity gain.
+                    shared.set_transition_gain(1.0);
+                    FadePhase::Idle
+                }
+            }
+        };
+        drop(runtime);
+
+        if let Some(to) = handover {
+            // The engine already switched to the incoming deck; only the queue
+            // index needs to follow so the UI and the next plan agree.
+            self.on_handover(&to);
+        }
+
+        if let Some(in_at) = advance_to {
+            // Safe to load: the outgoing track is inaudible (gain 0). Loading
+            // and then seeking happen on the engine worker in command order,
+            // so the seek lands on the freshly loaded incoming track.
+            self.on_ended();
+            if in_at > 0.05 {
+                let _ = self.engine.send(Command::Seek {
+                    position_secs: in_at,
+                });
+            }
+        }
+    }
+
+    /// The overlapping crossfade promoted its incoming deck to the audible one.
+    /// Advance the queue index to that track *without* reloading the engine,
+    /// because the incoming deck is already playing at the right position.
+    fn on_handover(&self, to: &str) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.queue.is_empty() {
+            return;
+        }
+        let len = inner.queue.len() as i64;
+        let current = inner.index.rem_euclid(len);
+        let mut found = None;
+        for offset in 1..=len {
+            let index = (current + offset).rem_euclid(len);
+            if track_key(&inner.queue[index as usize]) == to {
+                found = Some(index);
+                break;
+            }
+        }
+        let Some(index) = found else {
+            return;
+        };
+        inner.index = index;
+        inner.playing = true;
+        let snapshot = self.snapshot_locked(&inner);
+        drop(inner);
+        self.emit(snapshot);
+    }
+
     /// Called by the engine events thread when the current track ends. Advances
     /// the queue the same way a user "next" would, then loads. This is what lets
     /// auto-advance survive a dead webview.
@@ -697,7 +1402,7 @@ impl PlaybackContext {
                 self.emit(snapshot);
                 return;
             }
-            if inner.shuffle && inner.queue.len() > 1 {
+            if inner.shuffle && !inner.order_locked && inner.queue.len() > 1 {
                 let current = inner.queue[inner.index as usize].clone();
                 let mut reshuffled = Self::shuffled(inner.queue.clone());
                 if reshuffled[0] == current && reshuffled.len() > 1 {
@@ -788,6 +1493,7 @@ impl PlaybackContext {
             current_source_id: current.as_ref().map(|item| item.source_id.clone()),
             current_path: current.as_ref().map(|item| item.path.clone()),
             is_playing: inner.playing,
+            order_locked: inner.order_locked,
         }
     }
 

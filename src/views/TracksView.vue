@@ -5,15 +5,18 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { HardDriveDownload, ListChecks, Pencil, Play, RefreshCw, TrendingUp } from "@lucide/vue";
+import { ListChecks, Pencil, Play, RefreshCw, Sparkles, TrendingUp } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
-import { useCacheStore } from "../stores/cache";
 import { tracksForPaths, useProfileStore } from "../stores/profile";
+import type { Playlist } from "../lib/profile";
+import { useSmartTransitionStore } from "../stores/smartTransition";
 import { useSourcesStore } from "../stores/sources";
 import { RECENT_PLAYS_ID } from "../lib/app";
 import { rankTracksByPlayCount } from "../lib/playRanking";
+import { trackKey } from "../lib/sources";
+import { pushToast } from "../lib/toast";
 import { groupKeys, isUnknownGroup, type GroupKind } from "../lib/grouping";
 import { sortTracks, titleLetterIndex, useTrackSort, type TrackSortContext } from "../lib/sort";
 import TrackList from "../components/TrackList.vue";
@@ -21,20 +24,21 @@ import TrackContextMenu from "../components/TrackContextMenu.vue";
 import TrackSortMenu from "../components/TrackSortMenu.vue";
 import ViewModeToggle from "../components/ViewModeToggle.vue";
 import PlaylistCover from "../components/PlaylistCover.vue";
+import SmartTransitionDialog from "../components/SmartTransitionDialog.vue";
 
 const props = withDefaults(defineProps<{ playlistId?: string | null; artist?: string | null; album?: string | null; year?: string | null; genre?: string | null; sourceId?: string | null; loading: boolean; refreshing?: boolean; downloadingTrackId?: number | null }>(), { playlistId: null, artist: null, album: null, year: null, genre: null, sourceId: null, refreshing: false, downloadingTrackId: null });
 const emit = defineEmits<{ refresh: []; edit: [id: string]; openArtist: [artist: string]; openAlbum: [album: string]; downloadMetadata: [track: Track]; editLyrics: [track: Track]; editInfo: [track: Track]; showInfo: [track: Track] }>();
 const { t } = useI18n();
 const player = usePlayerStore();
 const profile = useProfileStore();
+const smart = useSmartTransitionStore();
 const sources = useSourcesStore();
-const cache = useCacheStore();
 const contextTrack = ref<Track | null>(null);
 const contextPosition = ref({ x: 0, y: 0 });
 const selectMode = ref(false);
 const selected = ref<Set<string>>(new Set());
-const selectedCount = computed(() => selected.value.size);
 const scrollEl = ref<HTMLElement | null>(null);
+const smartOpen = ref(false);
 
 const activePlaylist = computed(() => props.playlistId ? profile.playlists.find((item) => item.id === props.playlistId) ?? null : null);
 /** The generated play-ranking playlist: not stored, resolved from play counts. */
@@ -75,28 +79,146 @@ const sortDir = computed(() => useTrackSort(sortContext.value).dir.value);
 /** Source order with the chosen sort applied; the play queue follows this so "next" matches the screen. */
 const orderedTracks = computed(() => smartPlays.value ? sourceTracks.value : sortTracks(sourceTracks.value, sortKey.value, sortDir.value));
 const tracks = computed(() => orderedTracks.value);
+const smartEnabled = computed(() => activePlaylist.value?.smartTransition?.enabled === true);
+const smartReady = computed(() => activePlaylist.value?.smartTransition?.status === "ready");
+/** Smart transitions pin playback to the analysed order. */
+const smartLocked = computed(() => smartEnabled.value && smartReady.value);
+/** Tracks in the analysed order, when that document is loaded. */
+const smartOrderTracks = computed<Track[] | null>(() => {
+  const playlist = activePlaylist.value;
+  const summary = playlist ? smart.summaryFor(playlist.id) : null;
+  if (!playlist || !summary || summary.incomplete) return null;
+  const byKey = new Map<string, Track>();
+  for (const track of sourceTracks.value) {
+    const key = trackKey(track);
+    if (key) byKey.set(key, track);
+  }
+  const ordered: Track[] = [];
+  for (const key of summary.order) {
+    const track = byKey.get(key);
+    if (track) ordered.push(track);
+  }
+  // Never drop tracks the analysis did not know about.
+  for (const track of sourceTracks.value) {
+    if (!ordered.includes(track)) ordered.push(track);
+  }
+  return ordered;
+});
+/**
+ * The queue smart playback uses: the analysed order when locked, otherwise
+ * the visible sort. This is why shuffle/sequential never diverge while smart
+ * transitions are on.
+ */
+const queueTracks = computed(() => (smartLocked.value ? (smartOrderTracks.value ?? sourceTracks.value) : orderedTracks.value));
 /** The A–Z rail, only on the pages that opted in while sorting by title. */
 const letterIndex = computed(() => (sortKey.value === "title" && !smartPlays.value && !selectMode.value && (sortContext.value === "tracks" || sortContext.value === "playlist") ? titleLetterIndex(tracks.value) : null));
 
 watch([() => props.playlistId, () => props.artist, () => props.album, () => props.year, () => props.genre], () => { selectMode.value = false; selected.value = new Set(); });
+// Load the analysis document when opening an enabled playlist so playback can
+// use its exact order even before the dialog is opened.
+watch(
+  () => props.playlistId,
+  (id) => {
+    if (!id) return;
+    const playlist = profile.playlists.find((item) => item.id === id);
+    if (playlist?.smartTransition?.enabled) void smart.load(id);
+  },
+  { immediate: true },
+);
 
 function toggleSelectMode() {
   selectMode.value = !selectMode.value;
   if (!selectMode.value) selected.value = new Set();
 }
-async function cacheSelected() {
-  if (selected.value.size === 0) return;
-  const keys = [...selected.value];
-  selected.value = new Set();
-  await cache.pinMany(keys);
+/** Install smart-transition plans for the playlist that is now playing. */
+async function armTransition() {
+  const playlist = activePlaylist.value;
+  if (!playlist) return;
+  if (smartLocked.value) {
+    // The queue is already pinned to the analysed order; plans match it.
+    await smart.armPlayback(playlist.id);
+    return;
+  }
+  if (sortKey.value !== "default" || player.shuffle) {
+    // The audible order differs from the analysed order, so the plans would be
+    // wrong. Clear them and fall back to hard transitions.
+    await smart.clearPlans();
+    return;
+  }
+  await smart.armPlayback(playlist.id);
 }
-function play(track: Track) { player.playInQueue(orderedTracks.value, track); }
-function playFirst() {
-  const pool = tracks.value.filter((track) => track.path);
+async function play(track: Track) {
+  await ensureSmartSummary();
+  await player.playInQueue(queueTracks.value, track, smartLocked.value);
+  // `playback_set_queue` clears old plans, so arm after the queue is installed.
+  await armTransition();
+}
+async function playFirst() {
+  await ensureSmartSummary();
+  const pool = (smartLocked.value ? queueTracks.value : tracks.value).filter((track) => track.path);
   if (pool.length === 0) return;
-  const first = player.shuffle ? pool[Math.floor(Math.random() * pool.length)] : pool[0];
-  player.playInQueue(sourceTracks.value, first);
+  // Smart playback always starts at the first analysed track; shuffle only
+  // applies to normal queues.
+  const first = !smartLocked.value && player.shuffle ? pool[Math.floor(Math.random() * pool.length)] : pool[0];
+  await player.playInQueue(queueTracks.value, first, smartLocked.value);
+  await armTransition();
 }
+/** Make sure the analysed order is loaded before building a smart queue. */
+async function ensureSmartSummary(): Promise<void> {
+  const playlist = activePlaylist.value;
+  if (!playlist || !smartLocked.value) return;
+  if (!smart.summaryFor(playlist.id)) await smart.load(playlist.id);
+}
+/** Whether the live queue is exactly this playlist. */
+function isCurrentQueue(playlist: Playlist): boolean {
+  const playlistKeys = new Set(
+    tracksForPaths(playlist.tracks, player.tracks).map(trackKey).filter((key): key is string => !!key),
+  );
+  if (playlistKeys.size === 0) return false;
+  const current = trackKey(player.currentTrack);
+  if (!current || !playlistKeys.has(current)) return false;
+  const queueKeys = player.queue.map(trackKey).filter((key): key is string => !!key);
+  return queueKeys.length > 0 && queueKeys.every((key) => playlistKeys.has(key));
+}
+/** Turn smart transitions on/off from the playlist header. */
+async function toggleSmart() {
+  const playlist = activePlaylist.value;
+  if (!playlist) return;
+  if (smartEnabled.value) {
+    smart.disable(playlist.id);
+    // Only drop the installed plans when they belong to this queue; another
+    // playlist may be the one currently playing.
+    if (isCurrentQueue(playlist)) await smart.clearPlans();
+    pushToast("info", t("library.playlists.smart.disabled"));
+    return;
+  }
+  let summary = smart.summaryFor(playlist.id);
+  if (!summary) summary = await smart.load(playlist.id);
+  if (!summary || summary.incomplete || playlist.smartTransition?.status === "stale") {
+    // Nothing trustworthy to enable yet: open the dialog to analyse or refresh.
+    smartOpen.value = true;
+    return;
+  }
+  if (!smart.applyOrder(playlist.id)) {
+    smartOpen.value = true;
+    return;
+  }
+  useTrackSort("playlist").key.value = "default";
+  pushToast("success", t("library.playlists.smart.applied"));
+}
+// Applying the analysed order (from the header switch or the dialog) pins the
+// live queue too, without restarting the current track.
+watch(smartLocked, async (locked) => {
+  if (!locked) return;
+  const playlist = activePlaylist.value;
+  if (!playlist || !isCurrentQueue(playlist)) return;
+  let summary = smart.summaryFor(playlist.id);
+  if (!summary) summary = await smart.load(playlist.id);
+  if (!summary || summary.incomplete) return;
+  await player.reorderQueue(summary.order);
+  await armTransition();
+});
+function openSmart() { smartOpen.value = true; }
 function openContextMenu(event: MouseEvent, track: Track) { contextTrack.value = track; contextPosition.value = { x: event.clientX, y: event.clientY }; }
 function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
 </script>
@@ -141,13 +263,32 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
                 <template v-if="activePlaylist || smartPlays">
                   <button type="button" class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 bg-accent px-4 text-[13px] font-bold text-accent-fg transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50" :disabled="!tracks.length" @click="playFirst"><Play :size="15" :stroke-width="2.2" />{{ t("library.play") }}</button>
                   <button v-if="activePlaylist" type="button" class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 border border-line px-4 text-[13px] font-semibold transition-colors hover:border-accent hover:text-accent" @click="emit('edit', activePlaylist.id)"><Pencil :size="15" />{{ t("library.edit") }}</button>
+                  <button v-if="activePlaylist" type="button" class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 border px-4 text-[13px] font-semibold transition-colors" :class="activePlaylist.smartTransition?.enabled ? 'border-accent/60 text-accent' : 'border-line hover:border-accent hover:text-accent'" :title="t('library.playlists.smart.buttonHint')" @click="openSmart">
+                    <Sparkles :size="15" />
+                    {{ activePlaylist.smartTransition?.status === 'ready' ? t('library.playlists.smart.badgeReady') : t('library.playlists.smart.button') }}
+                    <span v-if="activePlaylist.smartTransition?.status === 'stale'" class="border border-amber-500/50 px-1.5 text-[10px] font-mono uppercase text-amber-400">{{ t('library.playlists.smart.badgeStale') }}</span>
+                  </button>
+                  <button
+                    v-if="activePlaylist"
+                    type="button"
+                    role="switch"
+                    :aria-checked="smartEnabled"
+                    :title="t('library.playlists.smart.toggleHint')"
+                    class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 border px-3 text-[13px] font-semibold transition-colors"
+                    :class="smartEnabled ? 'border-accent/60 text-accent' : 'border-line text-muted hover:border-accent hover:text-accent'"
+                    @click="toggleSmart"
+                  >
+                    <span class="relative inline-flex h-4 w-8 shrink-0 rounded-full transition-colors" :class="smartEnabled ? 'bg-accent/70' : 'bg-line'">
+                      <span class="absolute top-0.5 h-3 w-3 rounded-full bg-bg transition-transform" :class="smartEnabled ? 'translate-x-[18px]' : 'translate-x-0.5'" />
+                    </span>
+                    {{ smartEnabled ? t('library.playlists.smart.toggleOn') : t('library.playlists.smart.toggleOff') }}
+                  </button>
                 </template>
                 <button v-else type="button" class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 bg-accent px-4 text-[13px] font-bold text-accent-fg transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50" :disabled="!tracks.length" @click="playFirst"><Play :size="15" :stroke-width="2.2" />{{ t("library.collections.playAll") }}</button>
               </div>
               <div class="order-3 flex items-center gap-3">
                 <TrackSortMenu v-if="!smartPlays" :context="sortContext" />
                 <ViewModeToggle />
-                <button v-if="selectMode" type="button" class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 border border-accent px-4 text-[13px] font-semibold text-accent transition-colors hover:bg-accent/10 disabled:opacity-50" :disabled="selectedCount === 0" @click="cacheSelected"><HardDriveDownload :size="15" />{{ selectedCount ? t("downloads.cacheSelectedCount", { count: selectedCount }) : t("downloads.cacheSelected") }}</button>
                 <button type="button" class="grid h-10 w-10 shrink-0 place-items-center border transition-colors" :class="selectMode ? 'border-accent bg-accent text-accent-fg' : 'border-line text-dim hover:border-accent hover:text-accent'" :title="t('library.selectMode')" @click="toggleSelectMode"><ListChecks :size="16" :stroke-width="2" /></button>
               </div>
             </div>
@@ -162,6 +303,7 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
       <div v-else class="min-h-0 flex-1"><TrackList v-model:selected="selected" :tracks="tracks" :scroller="scrollEl" :letter-index="letterIndex" empty-key="library.playlists.noTracks" :selectable="selectMode" @play="play" @menu="openContextMenu" @open-artist="emit('openArtist', $event)" @open-album="emit('openAlbum', $event)" /></div>
 
       <TrackContextMenu v-if="contextTrack" :track="contextTrack" :x="contextPosition.x" :y="contextPosition.y" :selected-paths="[...selected]" :playlist-id="activePlaylist?.id ?? null" :downloading="downloadingTrackId === contextTrack.id" @close="contextTrack = null" @download-metadata="downloadMetadata" @edit-lyrics="emit('editLyrics', $event)" @edit-info="emit('editInfo', $event)" @show-info="emit('showInfo', $event)" />
+      <SmartTransitionDialog v-if="activePlaylist" :playlist-id="activePlaylist.id" :open="smartOpen" @close="smartOpen = false" />
     </div>
   </div>
 </template>

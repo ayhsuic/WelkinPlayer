@@ -28,7 +28,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::core::error::AppError;
-use crate::playback::source::{open_track, ReadSeek};
+use crate::playback::source::{open_track, open_track_inactive, ReadSeek};
 use crate::streaming::manual_cache::ManualCache;
 use crate::streaming::stream_cache::StreamCache;
 
@@ -40,6 +40,10 @@ const DECODE_CHUNK: usize = 8192;
 /// Keeping it short makes a tempo change audible promptly while still
 /// covering normal scheduling jitter.
 const BUFFER_MILLIS: usize = 400;
+/// Ring buffer for the crossfade's incoming deck. It is filled off the worker
+/// thread and kept full, so a slow read mid-fade cannot silently starve the
+/// incoming track while the outgoing one is already fading down.
+const CROSSFADE_BUFFER_MILLIS: usize = 2_000;
 /// Pre-stretch this much output before starting a new source after load/seek.
 const PREFILL_MILLIS: usize = 150;
 /// Forward-decoding fallback is intentionally bounded. A remote stream that
@@ -62,6 +66,32 @@ const SPECTRUM_SIZE: usize = 2048;
 pub struct ErrorInfo {
     pub code: String,
     pub message: String,
+}
+
+/// State of an overlapping crossfade. The context polls this to know when the
+/// incoming deck has been prepared, is fading, or has taken over.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum CrossfadeState {
+    None = 0,
+    Preparing = 1,
+    Ready = 2,
+    Fading = 3,
+    Failed = 4,
+    Done = 5,
+}
+
+impl CrossfadeState {
+    fn from_u8(value: u8) -> Self {
+        match value {
+            1 => Self::Preparing,
+            2 => Self::Ready,
+            3 => Self::Fading,
+            4 => Self::Failed,
+            5 => Self::Done,
+            _ => Self::None,
+        }
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -490,6 +520,39 @@ pub struct Shared {
     muted: AtomicBool,
     /// Volume as `f32` bits, `0.0..=1.0`.
     volume: AtomicU32,
+    /// Extra gain for the smart-transition envelope, as `f32` bits. It is
+    /// multiplied with the user volume so a fade never mutates the saved volume.
+    transition_gain: AtomicU32,
+    /// Output frames consumed by the active deck since the stream opened. Used
+    /// as the shared clock for an overlapping crossfade so both decks follow the
+    /// exact same envelope, regardless of their own sample rates.
+    fade_clock: AtomicU64,
+    /// Clock value where the current crossfade started, and its length in output
+    /// frames at the active work rate.
+    fade_start_frame: AtomicU64,
+    fade_frames: AtomicU64,
+    /// True while two decks are mixed by the crossfade envelope.
+    fade_active: AtomicBool,
+    /// Linear loudness compensation for the incoming deck during a fade, as
+    /// `f32` bits. It is eased back to 1.0 as the fade completes so the new
+    /// track keeps its own master level after handover.
+    fade_gain_in: AtomicU32,
+    /// Set by the outgoing deck once the envelope reaches the end (or it hits
+    /// EOF); the worker then promotes the incoming deck.
+    fade_done: AtomicBool,
+    /// True while the incoming deck is underrunning during a fade. The envelope
+    /// clock pauses so the outgoing deck is not faded into silence while the
+    /// incoming one has no audio to replace it.
+    fade_starved: AtomicBool,
+    /// Which deck is audible: 0 = the regular deck, 1 = the crossfade incoming
+    /// deck. After promotion this stays 1 and the old deck leaves the mixer.
+    active_deck: AtomicU8,
+    /// Deck that is fading out during a crossfade. Kept separate from
+    /// `active_deck` so the handover can flip `active_deck` before clearing
+    /// `fade_active` without the two decks briefly swapping gains.
+    fade_from_deck: AtomicU8,
+    /// Crossfade preparation/handover state (see [`CrossfadeState`]).
+    crossfade_state: AtomicU8,
     /// Playback-rate multiplier as `f32` bits (`1.0` = unchanged).
     tempo: AtomicU32,
     failure: Mutex<Option<ErrorInfo>>,
@@ -555,6 +618,17 @@ impl Shared {
             worker_started: AtomicBool::new(false),
             muted: AtomicBool::new(false),
             volume: AtomicU32::new(1.0f32.to_bits()),
+            transition_gain: AtomicU32::new(1.0f32.to_bits()),
+            fade_clock: AtomicU64::new(0),
+            fade_start_frame: AtomicU64::new(0),
+            fade_frames: AtomicU64::new(1),
+            fade_active: AtomicBool::new(false),
+            fade_gain_in: AtomicU32::new(1.0f32.to_bits()),
+            fade_done: AtomicBool::new(false),
+            fade_starved: AtomicBool::new(false),
+            active_deck: AtomicU8::new(0),
+            fade_from_deck: AtomicU8::new(0),
+            crossfade_state: AtomicU8::new(CrossfadeState::None as u8),
             tempo: AtomicU32::new(1.0f32.to_bits()),
             failure: Mutex::new(None),
             location: Mutex::new(None),
@@ -681,6 +755,84 @@ impl Shared {
 
     fn volume(&self) -> f32 {
         f32::from_bits(self.volume.load(Ordering::Relaxed))
+    }
+
+    /// Set the smart-transition gain envelope (0.0–1.0).
+    ///
+    /// This is kept separate from the user volume so fading never changes the
+    /// saved volume or the value shown by the UI.
+    pub fn set_transition_gain(&self, gain: f32) {
+        let value = if gain.is_finite() {
+            gain.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        self.transition_gain
+            .store(value.to_bits(), Ordering::Relaxed);
+    }
+
+    /// Current smart-transition gain.
+    pub fn transition_gain(&self) -> f32 {
+        f32::from_bits(self.transition_gain.load(Ordering::Relaxed))
+    }
+
+    /// Current overlapping-crossfade state.
+    pub fn crossfade_state(&self) -> CrossfadeState {
+        CrossfadeState::from_u8(self.crossfade_state.load(Ordering::Acquire))
+    }
+
+    fn set_crossfade_state(&self, state: CrossfadeState) {
+        self.crossfade_state.store(state as u8, Ordering::Release);
+    }
+
+    /// Consume a terminal crossfade state (`Done`/`Failed`) exactly once.
+    /// Returns true when this caller observed and cleared it.
+    pub fn take_crossfade_state(&self, expected: CrossfadeState) -> bool {
+        self.crossfade_state
+            .compare_exchange(
+                expected as u8,
+                CrossfadeState::None as u8,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+    }
+
+    /// Gain for one deck during an overlapping crossfade (equal-power).
+    ///
+    /// The clock is advanced by the currently active deck only, so pausing the
+    /// transport freezes the envelope instead of skipping it.
+    fn deck_gain(&self, deck: u8) -> f32 {
+        if !self.fade_active.load(Ordering::Relaxed) {
+            return if deck == self.active_deck.load(Ordering::Relaxed) {
+                1.0
+            } else {
+                0.0
+            };
+        }
+        let from = self.fade_from_deck.load(Ordering::Relaxed);
+        let clock = self.fade_clock.load(Ordering::Relaxed);
+        let start = self.fade_start_frame.load(Ordering::Relaxed);
+        let frames = self.fade_frames.load(Ordering::Relaxed).max(1);
+        let t = clock.saturating_sub(start) as f32 / frames as f32;
+        let t = t.clamp(0.0, 1.0);
+        let angle = t * std::f32::consts::FRAC_PI_2;
+        if deck == from {
+            angle.cos()
+        } else {
+            // Ease the loudness compensation out as the fade completes: the
+            // incoming deck is matched to the outgoing one during the overlap
+            // and settles back to its own level at handover, so there is no
+            // step when the old deck leaves.
+            let target = f32::from_bits(self.fade_gain_in.load(Ordering::Relaxed));
+            let comp = 1.0 + (target - 1.0) * (1.0 - t);
+            (angle.sin() * comp).clamp(0.0, 2.0)
+        }
+    }
+
+    /// Whether an overlapping crossfade is currently being mixed.
+    fn crossfade_active(&self) -> bool {
+        self.fade_active.load(Ordering::Relaxed)
     }
 
     /// Set the playback-rate multiplier, clamped to the range the WSOLA
@@ -937,6 +1089,8 @@ struct RingSource {
     generation: u64,
     channels: u16,
     rate: u32,
+    /// Deck identity: 0 is the regular deck, 1 the crossfade incoming deck.
+    deck: u8,
     state_left: usize,
     paused: bool,
     gain: f32,
@@ -956,12 +1110,29 @@ impl Iterator for RingSource {
         if self.shared.generation.load(Ordering::Relaxed) != self.generation {
             return None;
         }
+        // A deck that is neither the active one nor part of an active crossfade
+        // has finished its job and must leave the mixer.
+        let fading = self.shared.crossfade_active();
+        let is_active = self.deck == self.shared.active_deck.load(Ordering::Relaxed);
+        if !is_active && !fading {
+            return None;
+        }
+        // During a fade the outgoing deck (not necessarily `active_deck`) owns
+        // the envelope clock, so promotion can flip `active_deck` first without
+        // the two decks briefly swapping gains.
+        let is_clock = if fading {
+            self.deck == self.shared.fade_from_deck.load(Ordering::Relaxed)
+        } else {
+            is_active
+        };
         if self.state_left == 0 {
             self.paused = self.shared.is_paused();
             let target = if self.shared.muted.load(Ordering::Relaxed) {
                 0.0
             } else {
                 self.shared.volume()
+                    * self.shared.transition_gain()
+                    * self.shared.deck_gain(self.deck)
             };
             if target != self.target_gain {
                 self.target_gain = target;
@@ -972,7 +1143,8 @@ impl Iterator for RingSource {
                 SOURCE_STATE_BLOCK.div_ceil(self.channels as usize) * self.channels as usize;
         }
         self.state_left -= 1;
-        // Paused: emit silence without consuming, so the playhead freezes.
+        // Paused: emit silence without consuming, so the playhead and the
+        // crossfade clock both freeze.
         if self.paused {
             return Some(0.0);
         }
@@ -986,6 +1158,19 @@ impl Iterator for RingSource {
         }
         match popped {
             Some(value) => {
+                // The outgoing deck is the single clock master for the envelope;
+                // both decks are consumed at the same frame rate during a fade.
+                // If the incoming deck is starved, freeze the clock so the
+                // outgoing track is not faded into silence.
+                if is_clock
+                    && self.channel_cursor == 0
+                    && !self.shared.fade_starved.load(Ordering::Relaxed)
+                {
+                    self.shared.fade_clock.fetch_add(1, Ordering::Relaxed);
+                }
+                if fading && !is_clock {
+                    self.shared.fade_starved.store(false, Ordering::Relaxed);
+                }
                 self.progress.frames.fetch_add(1, Ordering::Relaxed);
                 self.waveform_peak = self.waveform_peak.max(value.abs());
                 self.spectrum_sum += value;
@@ -1009,14 +1194,40 @@ impl Iterator for RingSource {
                     }
                 }
                 self.channel_cursor = (self.channel_cursor + 1) % self.channels;
+                if is_clock
+                    && fading
+                    && self.channel_cursor == 0
+                    && self.shared.deck_gain(self.deck) <= 0.0001
+                {
+                    self.shared.fade_done.store(true, Ordering::Release);
+                }
                 Some(value * self.gain)
             }
             None => {
                 if done {
-                    self.progress.ended.store(true, Ordering::Relaxed);
+                    if is_clock {
+                        if fading {
+                            // The outgoing deck hit EOF before the envelope
+                            // finished: hand over immediately instead of
+                            // silencing the incoming track.
+                            self.shared.fade_done.store(true, Ordering::Release);
+                        } else {
+                            self.progress.ended.store(true, Ordering::Relaxed);
+                        }
+                    } else if fading {
+                        // The incoming deck ended before it took over. Remember
+                        // it so the handover advances the queue instead of
+                        // stalling on a finished second deck.
+                        self.progress.ended.store(true, Ordering::Relaxed);
+                    }
                     None
                 } else {
-                    // Underrun: the decode worker has not caught up yet.
+                    // Underrun: the decode worker has not caught up yet. During
+                    // a fade this pauses the envelope so the outgoing deck is
+                    // not faded into silence before the incoming one is ready.
+                    if fading && !is_clock {
+                        self.shared.fade_starved.store(true, Ordering::Relaxed);
+                    }
                     self.shared.underruns.fetch_add(1, Ordering::Relaxed);
                     Some(0.0)
                 }
@@ -1073,6 +1284,26 @@ pub enum Command {
         position_secs: f64,
     },
     Stop,
+    /// Open and prefill the next track on a second deck, positioned at `in_at`.
+    /// The active track keeps playing while this happens on a helper thread.
+    PrepareCrossfade {
+        token: u64,
+        source_id: String,
+        path: String,
+        in_at: f64,
+        /// Beat-match multiplier for the incoming deck.
+        tempo_ratio: f32,
+    },
+    /// Start the prepared crossfade envelope. Ignored (and reported as failed)
+    /// when the prepared deck is not ready.
+    StartCrossfade {
+        token: u64,
+        blend_secs: f64,
+        /// Loudness compensation for the incoming deck (linear gain).
+        in_gain: f32,
+    },
+    /// Abort a prepared/active crossfade and keep the active deck.
+    CancelCrossfade,
 }
 
 /// Handle held in Tauri managed state. `Clone` is cheap: the sender is
@@ -1159,6 +1390,11 @@ mod events {
             }
 
             let state = shared.snapshot();
+            // Drive the smart-transition gain envelope at the fast tick rate
+            // (50 ms) so fades stay smooth without an extra timer thread.
+            if let Some(context) = app.try_state::<crate::playback::context::PlaybackContext>() {
+                context.on_tick(&state);
+            }
             // State remains intentionally low frequency; waveform samples use
             // the faster loop below without making transport events noisy.
             state_ticks += 1;
@@ -1321,7 +1557,14 @@ mod worker {
             let (mut ring, mut consumer) = Ring::new(800);
             ring.done.store(false, Ordering::Release);
             for _ in 0..30 {
-                Worker::pump(&shared, &mut ring, &mut current);
+                Worker::pump(
+                    &shared,
+                    &mut ring,
+                    &mut current,
+                    channels as usize,
+                    0.25,
+                    true,
+                );
                 while consumer.pop().is_ok() {}
             }
             assert!(
@@ -1355,6 +1598,148 @@ mod worker {
         builder
             .build()
             .map_err(|error| AppError::other(error.to_string()))
+    }
+
+    /// Open a decoder for the incoming crossfade deck and position it at the
+    /// musical Mix In point. Runs on a helper thread.
+    fn prepare_decoder(
+        app: &AppHandle,
+        cache: &Arc<StreamCache>,
+        manual: &Arc<ManualCache>,
+        source_id: &str,
+        path: &str,
+        in_at: f64,
+    ) -> Result<PreparedIncoming, String> {
+        let target = if in_at.is_finite() {
+            in_at.max(0.0).min(1.0e12)
+        } else {
+            0.0
+        };
+        let (reader, byte_len) = open_track_inactive(app, cache, manual, source_id, path)
+            .map_err(|e| e.to_string())?;
+        let mut decoder = build_decoder(reader, byte_len).map_err(|e| e.to_string())?;
+        let channels = decoder.channels().max(1);
+        let native_rate = decoder.sample_rate().max(1);
+        let duration_ms = decoder
+            .total_duration()
+            .map(|value| value.as_millis() as u64)
+            .unwrap_or(0);
+        if target > 0.05 {
+            if decoder
+                .try_seek(Duration::from_secs_f64(target))
+                .is_err()
+            {
+                if target > MAX_FORWARD_SEEK_SECONDS {
+                    return Err(format!(
+                        "incoming stream cannot seek to {target:.3}s"
+                    ));
+                }
+                // Rebuild and skip forward: bounded so a non-seekable remote
+                // stream cannot make preparation run for minutes.
+                let (reader, byte_len) = open_track_inactive(app, cache, manual, source_id, path)
+                    .map_err(|e| e.to_string())?;
+                let mut fresh = build_decoder(reader, byte_len).map_err(|e| e.to_string())?;
+                let samples = (target * native_rate as f64 * channels as f64) as u64;
+                for _ in 0..samples {
+                    if fresh.next().is_none() {
+                        break;
+                    }
+                }
+                decoder = fresh;
+            }
+        }
+        Ok(PreparedIncoming {
+            decoder,
+            channels,
+            native_rate,
+            duration_ms,
+            source_id: source_id.to_string(),
+            path: path.to_string(),
+            in_at: target,
+        })
+    }
+
+    /// Build the second deck from a decoder that was opened and positioned on
+    /// the preparation thread. This runs there too, so the blocking first reads
+    /// never touch the worker that is still feeding the audible deck.
+    fn build_incoming(
+        shared: &Arc<Shared>,
+        prepared: PreparedIncoming,
+        tempo_ratio: f32,
+    ) -> Result<IncomingDeck, String> {
+        // Match the active deck's work rate so both rings are consumed at the
+        // same frame rate and the shared fade clock stays aligned.
+        let work_rate = shared.sample_rate.load(Ordering::Relaxed).max(1);
+        let channels = prepared.channels.max(1);
+        // Beat-match the incoming deck to the outgoing one, on top of the
+        // user's playback rate. The ratio is clamped to the stretcher's range.
+        let tempo_ratio = if tempo_ratio.is_finite() && tempo_ratio > 0.0 {
+            tempo_ratio.clamp(0.25, 4.0)
+        } else {
+            1.0
+        };
+        let tempo = (shared.tempo() * tempo_ratio).clamp(wsola::MIN_TEMPO, wsola::MAX_TEMPO);
+        let stretch = build_stretch(work_rate, channels, tempo).map_err(|e| e.to_string())?;
+        let capacity = output_samples(work_rate, channels, CROSSFADE_BUFFER_MILLIS);
+        let (mut ring, consumer) = Ring::new(capacity);
+        ring.done.store(false, Ordering::Release);
+        let mut current = Current {
+            decoder: prepared.decoder,
+            pending: Vec::with_capacity(DECODE_CHUNK),
+            native: Vec::new(),
+            resampler: (work_rate != prepared.native_rate).then(|| {
+                Resampler::new(prepared.native_rate, work_rate, channels as usize)
+            }),
+            source_done: false,
+            stretch,
+            applied_tempo: tempo,
+            direct: tempo == 1.0,
+            draining: false,
+            drain_flushed: false,
+            drain_tail: Vec::new(),
+            drain_pos: 0,
+            out_made: 0,
+            scratch: Vec::with_capacity(STRETCH_REFILL),
+            tail: Vec::new(),
+            tail_pos: 0,
+            flushed: false,
+            source_id: prepared.source_id.clone(),
+            path: prepared.path.clone(),
+            last_trace: std::time::Instant::now(),
+        };
+        // Fill the whole ring so the fade starts without an underrun.
+        while !ring.is_full() && !ring.is_done() {
+            let before = ring.len();
+            Worker::pump(
+                shared,
+                &mut ring,
+                &mut current,
+                channels as usize,
+                tempo,
+                false,
+            );
+            if ring.len() == before {
+                break;
+            }
+        }
+        if ring.len() == 0 {
+            return Err("incoming deck produced no audio".to_string());
+        }
+        Ok(IncomingDeck {
+            current,
+            ring,
+            consumer: Some(consumer),
+            deck: 0,
+            channels,
+            work_rate,
+            native_rate: prepared.native_rate,
+            duration_ms: prepared.duration_ms,
+            source_id: prepared.source_id,
+            path: prepared.path,
+            progress: Arc::new(Progress::default()),
+            in_at: prepared.in_at,
+            tempo_ratio,
+        })
     }
 
     /// Linear-interpolating sample-rate converter, run on the worker thread.
@@ -1525,6 +1910,40 @@ mod worker {
         }
     }
 
+    /// A fully opened, seeked and prefilled second deck waiting for the fade.
+    struct IncomingDeck {
+        current: Current,
+        ring: Ring,
+        /// Handed to the mixer when the fade starts.
+        consumer: Option<Consumer<f32>>,
+        /// Deck id assigned when the fade starts (the opposite of the active one).
+        deck: u8,
+        channels: u16,
+        work_rate: u32,
+        native_rate: u32,
+        duration_ms: u64,
+        source_id: String,
+        path: String,
+        progress: Arc<Progress>,
+        /// Absolute source position where this deck starts.
+        in_at: f64,
+        /// Beat-match multiplier applied on top of the user's playback rate.
+        tempo_ratio: f32,
+    }
+
+    /// Decoder produced by the preparation thread.
+    struct PreparedIncoming {
+        decoder: Decoder<Box<dyn ReadSeek>>,
+        channels: u16,
+        native_rate: u32,
+        duration_ms: u64,
+        source_id: String,
+        path: String,
+        in_at: f64,
+    }
+
+    type PrepareResult = (u64, Result<IncomingDeck, String>);
+
     struct Worker {
         app: AppHandle,
         cache: Arc<StreamCache>,
@@ -1549,6 +1968,13 @@ mod worker {
         /// actual stream opening ignores it (cpal follows the system default).
         selected_device: Option<String>,
         current: Option<Current>,
+        /// Second deck used by an overlapping crossfade.
+        incoming: Option<IncomingDeck>,
+        /// Result channel for decoders opened on the preparation thread.
+        prepare_tx: Sender<PrepareResult>,
+        prepare_rx: Receiver<PrepareResult>,
+        /// Token of the crossfade currently being prepared.
+        prepare_token: u64,
         pending_tempo: Option<f32>,
         /// Throttles the worker-loop heartbeat.
         last_trace: std::time::Instant,
@@ -1596,6 +2022,7 @@ mod worker {
         let device_rate = config.sample_rate();
         log::info!("playback: device output {device_rate} Hz (work rate caps at this)");
 
+        let (prepare_tx, prepare_rx) = mpsc::channel();
         let mut worker = Worker {
             app,
             cache,
@@ -1608,6 +2035,10 @@ mod worker {
             selected_rate: initial_rate,
             selected_device: None,
             current: None,
+            incoming: None,
+            prepare_tx,
+            prepare_rx,
+            prepare_token: 0,
             pending_tempo: None,
             last_trace: std::time::Instant::now(),
             bound_device_signature: device_signature(),
@@ -1630,6 +2061,7 @@ mod worker {
         /// track on a 96 kHz selection plays natively at 48 kHz instead of
         /// being upsampled.
         fn set_quality(&mut self, rate: u32) {
+            self.cancel_crossfade();
             self.selected_rate = rate;
             let file_rate = self.shared.native_rate.load(Ordering::Relaxed);
             let target = if file_rate > 0 {
@@ -1698,6 +2130,7 @@ mod worker {
         ///
         /// Returns `true` when the stream was actually (re)opened.
         fn rebuild_stream(&mut self) -> bool {
+            self.cancel_crossfade();
             let file_rate = self.shared.native_rate.load(Ordering::Relaxed);
             let target = if file_rate > 0 {
                 self.selected_rate.min(file_rate)
@@ -1867,14 +2300,61 @@ mod worker {
                 // list / default roughly once per second. This recovers playback
                 // after the OS invalidates the stream.
                 self.check_device();
+                self.poll_prepared();
+                self.promote_crossfade();
 
-                let idle = match self.current.as_mut() {
-                    Some(current) if !self.shared.is_paused() && !self.ring.is_done() => {
-                        Worker::pump(&self.shared, &mut self.ring, current);
-                        self.ring.is_full()
+                let paused = self.shared.is_paused();
+                let mut idle = true;
+                if !paused {
+                    // Feed the audible deck first: the incoming deck's reads can
+                    // block on the network, and the track the listener hears
+                    // must never be starved by crossfade preparation.
+                    let mut audible_satisfied = true;
+                    if let Some(current) = self.current.as_mut() {
+                        if !self.ring.is_done() {
+                            Worker::pump(
+                                &self.shared,
+                                &mut self.ring,
+                                current,
+                                self.shared.channels.load(Ordering::Relaxed) as usize,
+                                self.shared.tempo(),
+                                true,
+                            );
+                            if !self.ring.is_full() {
+                                idle = false;
+                                audible_satisfied = false;
+                            }
+                        }
                     }
-                    _ => true,
-                };
+                    // Top the prepared incoming deck up only when the audible
+                    // deck has all the audio it can hold (or has ended).
+                    if audible_satisfied {
+                        let incoming_tempo = self
+                            .incoming
+                            .as_ref()
+                            .map(|incoming| {
+                                (self.shared.tempo() * incoming.tempo_ratio)
+                                    .clamp(wsola::MIN_TEMPO, wsola::MAX_TEMPO)
+                            })
+                            .unwrap_or(1.0);
+                        if let Some(incoming) = self.incoming.as_mut() {
+                            if !incoming.ring.is_full() && !incoming.ring.is_done() {
+                                let before = incoming.ring.len();
+                                Worker::pump(
+                                    &self.shared,
+                                    &mut incoming.ring,
+                                    &mut incoming.current,
+                                    incoming.channels as usize,
+                                    incoming_tempo,
+                                    false,
+                                );
+                                if incoming.ring.len() != before {
+                                    idle = false;
+                                }
+                            }
+                        }
+                    }
+                }
 
                 if self.last_trace.elapsed() >= Duration::from_secs(1) {
                     self.last_trace = std::time::Instant::now();
@@ -1940,6 +2420,30 @@ mod worker {
                     log::debug!("playback: cmd Stop");
                     self.stop()
                 }
+                Command::PrepareCrossfade {
+                    token,
+                    source_id,
+                    path,
+                    in_at,
+                    tempo_ratio,
+                } => {
+                    log::debug!("playback: cmd PrepareCrossfade {source_id}::{path} in_at={in_at:.3} tempo={tempo_ratio:.3}");
+                    self.prepare_crossfade(token, source_id, path, in_at, tempo_ratio)
+                }
+                Command::StartCrossfade {
+                    token,
+                    blend_secs,
+                    in_gain,
+                } => {
+                    log::debug!(
+                        "playback: cmd StartCrossfade blend={blend_secs:.3} gain={in_gain:.3}"
+                    );
+                    self.start_crossfade(token, blend_secs, in_gain)
+                }
+                Command::CancelCrossfade => {
+                    log::debug!("playback: cmd CancelCrossfade");
+                    self.cancel_crossfade()
+                }
             }
         }
 
@@ -1949,12 +2453,233 @@ mod worker {
             self.shared.set_tempo(rate);
         }
 
+        /// Abort any prepared/active crossfade. The audible deck is left alone
+        /// and its gain returns to unity through the normal ramp.
+        fn cancel_crossfade(&mut self) {
+            self.prepare_token = 0;
+            self.incoming = None;
+            let shared = &self.shared;
+            shared.fade_active.store(false, Ordering::Release);
+            shared.fade_done.store(false, Ordering::Release);
+            shared.fade_starved.store(false, Ordering::Release);
+            shared
+                .fade_gain_in
+                .store(1.0f32.to_bits(), Ordering::Release);
+            shared.set_transition_gain(1.0);
+            shared.set_crossfade_state(CrossfadeState::None);
+        }
+
+        /// Open the incoming track on a helper thread so a slow network read
+        /// never stalls the worker that is still feeding the audible deck.
+        fn prepare_crossfade(
+            &mut self,
+            token: u64,
+            source_id: String,
+            path: String,
+            in_at: f64,
+            tempo_ratio: f32,
+        ) {
+            self.cancel_crossfade();
+            self.prepare_token = token;
+            self.shared.set_crossfade_state(CrossfadeState::Preparing);
+            let app = self.app.clone();
+            let cache = self.cache.clone();
+            let manual = self.manual.clone();
+            let shared = self.shared.clone();
+            let tx = self.prepare_tx.clone();
+            let spawned = std::thread::Builder::new()
+                .name("welkin-crossfade-prepare".to_string())
+                .spawn(move || {
+                    // Open, seek *and* prefill on this thread: the decoder's
+                    // first reads may block on the network, and that must never
+                    // stall the worker still feeding the audible deck.
+                    let result = prepare_decoder(&app, &cache, &manual, &source_id, &path, in_at)
+                        .and_then(|prepared| build_incoming(&shared, prepared, tempo_ratio));
+                    let _ = tx.send((token, result));
+                });
+            if let Err(error) = spawned {
+                log::warn!("playback: could not start crossfade preparation thread: {error}");
+                self.shared.set_crossfade_state(CrossfadeState::Failed);
+            }
+        }
+
+        /// Collect a decoder produced by the preparation thread and turn it into
+        /// a prefilled second deck.
+        fn poll_prepared(&mut self) {
+            loop {
+                let (token, result) = match self.prepare_rx.try_recv() {
+                    Ok(value) => value,
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => break,
+                };
+                if token != self.prepare_token
+                    || self.shared.crossfade_state() != CrossfadeState::Preparing
+                {
+                    continue;
+                }
+                match result {
+                    Ok(deck) => {
+                        log::debug!(
+                            "playback: crossfade incoming deck ready ({}::{})",
+                            deck.source_id,
+                            deck.path,
+                        );
+                        self.incoming = Some(deck);
+                        self.shared.set_crossfade_state(CrossfadeState::Ready);
+                    }
+                    Err(error) => {
+                        log::warn!("playback: crossfade preparation failed: {error}");
+                        self.shared.set_crossfade_state(CrossfadeState::Failed);
+                    }
+                }
+            }
+        }
+
+        /// Begin mixing the prepared deck. The envelope clock starts now; the
+        /// outgoing deck fades out and the incoming one fades in.
+        fn start_crossfade(&mut self, token: u64, blend_secs: f64, in_gain: f32) {
+            let state = self.shared.crossfade_state();
+            // A duplicate StartCrossfade must not tear down a fade that is
+            // already running.
+            if state == CrossfadeState::Fading || state == CrossfadeState::Done {
+                return;
+            }
+            if token != self.prepare_token || state != CrossfadeState::Ready {
+                self.shared.set_crossfade_state(CrossfadeState::Failed);
+                return;
+            }
+            let (deck, consumer, done, progress, channels, rate) = {
+                let active = self.shared.active_deck.load(Ordering::Relaxed).min(1);
+                let deck = 1 - active;
+                let Some(incoming) = self.incoming.as_mut() else {
+                    self.shared.set_crossfade_state(CrossfadeState::Failed);
+                    return;
+                };
+                let min = output_samples(incoming.work_rate, incoming.channels, 30);
+                if incoming.ring.len() < min {
+                    self.shared.set_crossfade_state(CrossfadeState::Failed);
+                    return;
+                }
+                let Some(consumer) = incoming.consumer.take() else {
+                    self.shared.set_crossfade_state(CrossfadeState::Failed);
+                    return;
+                };
+                incoming.deck = deck;
+                (
+                    deck,
+                    consumer,
+                    incoming.ring.done.clone(),
+                    incoming.progress.clone(),
+                    incoming.channels,
+                    incoming.work_rate,
+                )
+            };
+            let generation = self.shared.generation.load(Ordering::Relaxed);
+            let frames = (blend_secs.clamp(0.2, 30.0) * rate as f64).round() as u64;
+            let shared = &self.shared;
+            // Arm the envelope *before* handing the source to the mixer: the
+            // audio callback may pick it up immediately, and an incoming deck
+            // observed outside a fade would return `None` and be dropped.
+            shared.set_transition_gain(1.0);
+            let loudness_gain = if in_gain.is_finite() {
+                in_gain.clamp(0.25, 4.0)
+            } else {
+                1.0
+            };
+            shared
+                .fade_gain_in
+                .store(loudness_gain.to_bits(), Ordering::Release);
+            shared.fade_start_frame.store(
+                shared.fade_clock.load(Ordering::Relaxed),
+                Ordering::Release,
+            );
+            shared.fade_frames.store(frames.max(1), Ordering::Release);
+            shared.fade_done.store(false, Ordering::Release);
+            shared.fade_starved.store(false, Ordering::Release);
+            shared.fade_from_deck.store(1 - deck, Ordering::Release);
+            shared.fade_active.store(true, Ordering::Release);
+            shared.set_crossfade_state(CrossfadeState::Fading);
+            self.append_source(
+                generation, channels, rate, consumer, done, progress, deck,
+            );
+            log::debug!("playback: crossfade started deck={deck} frames={frames}");
+        }
+
+        /// Promote the incoming deck once the envelope reaches the end.
+        fn promote_crossfade(&mut self) {
+            if self.shared.crossfade_state() != CrossfadeState::Fading {
+                return;
+            }
+            if !self.shared.fade_done.swap(false, Ordering::AcqRel) {
+                return;
+            }
+            let Some(incoming) = self.incoming.take() else {
+                self.shared.set_crossfade_state(CrossfadeState::Failed);
+                return;
+            };
+            let IncomingDeck {
+                current,
+                ring,
+                deck,
+                channels,
+                work_rate,
+                native_rate,
+                duration_ms,
+                source_id,
+                path,
+                progress,
+                in_at,
+                tempo_ratio,
+                ..
+            } = incoming;
+            let shared = &self.shared;
+            shared.active_deck.store(deck, Ordering::Release);
+            shared.fade_active.store(false, Ordering::Release);
+            shared.fade_starved.store(false, Ordering::Release);
+            shared
+                .fade_gain_in
+                .store(1.0f32.to_bits(), Ordering::Release);
+            shared.set_transition_gain(1.0);
+            let incoming_ended = progress.ended.load(Ordering::Relaxed);
+            *shared.progress.lock().unwrap_or_else(|e| e.into_inner()) = progress;
+            {
+                let mut segments = shared.segments.lock().unwrap_or_else(|e| e.into_inner());
+                segments.clear();
+                segments.push_back(Segment {
+                    out: 0,
+                    pos_secs: in_at,
+                    // The deck played through the fade at the beat-matched rate;
+                    // keep that mapping so the reported playhead is correct.
+                    tempo: (shared.tempo() * tempo_ratio).clamp(wsola::MIN_TEMPO, wsola::MAX_TEMPO),
+                });
+            }
+            shared.channels.store(channels as u32, Ordering::Relaxed);
+            shared.sample_rate.store(work_rate, Ordering::Relaxed);
+            shared.native_rate.store(native_rate, Ordering::Relaxed);
+            shared.duration_ms.store(duration_ms, Ordering::Relaxed);
+            // The incoming track is now the one playing: move the stream cache's
+            // eviction protection to it before the UI reports the new playhead.
+            self.cache.set_active(&crate::commands::media::asset_hash(
+                &source_id, &path,
+            ));
+            *shared
+                .location
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some((source_id, path));
+            shared.set_ended(incoming_ended);
+            shared.set_crossfade_state(CrossfadeState::Done);
+            self.current = Some(current);
+            self.ring = ring;
+            log::debug!("playback: crossfade handed over to deck {deck}");
+        }
+
         fn load(&mut self, source_id: &str, path: &str, autoplay: bool) {
             // Do not let the old source continue while the new source is being
             // opened. Apply autoplay only after the initial prefill.
             // Invalidate it before doing the potentially blocking open.  If
             // opening or decoding fails, Play must not resurrect the previous
             // track through `current`.
+            self.cancel_crossfade();
             self.bump_generation();
             self.shared.set_paused(true);
             self.shared
@@ -2074,7 +2799,15 @@ mod worker {
                     return;
                 }
             };
-            self.append_source(generation, channels, work_rate, consumer);
+            self.append_source(
+                generation,
+                channels,
+                work_rate,
+                consumer,
+                self.ring.done.clone(),
+                self.shared.progress(),
+                self.shared.active_deck.load(Ordering::Relaxed),
+            );
             self.current = Some(Current {
                 decoder,
                 pending: Vec::with_capacity(DECODE_CHUNK),
@@ -2108,6 +2841,9 @@ mod worker {
         }
 
         fn seek(&mut self, position_secs: f64) {
+            // A seek targets the audible track; drop any overlapping deck so
+            // the transport never leaves two positions live.
+            self.cancel_crossfade();
             let tempo = self.shared.tempo();
             let Some(current) = self.current.as_mut() else {
                 log::warn!("playback: seek to {position_secs:.3}s ignored, no track loaded");
@@ -2246,7 +2982,15 @@ mod worker {
             self.shared.reset_position(target, tempo);
             self.shared.set_ended(false);
             self.shared.clear_seek_preview();
-            self.append_source(generation, channels as u16, rate as u32, consumer);
+            self.append_source(
+                generation,
+                channels as u16,
+                rate as u32,
+                consumer,
+                self.ring.done.clone(),
+                self.shared.progress(),
+                self.shared.active_deck.load(Ordering::Relaxed),
+            );
             log::debug!(
                 "playback: seek appended source gen={generation} channels={channels} rate={rate}",
             );
@@ -2273,7 +3017,14 @@ mod worker {
                     break;
                 };
                 let before = self.ring.len();
-                Self::pump(&self.shared, &mut self.ring, current);
+                Self::pump(
+                    &self.shared,
+                    &mut self.ring,
+                    current,
+                    self.shared.channels.load(Ordering::Relaxed) as usize,
+                    self.shared.tempo(),
+                    true,
+                );
                 if self.ring.len() == before {
                     // Input is starved or the stream already ended; the main
                     // loop will keep filling as more becomes available.
@@ -2289,6 +3040,7 @@ mod worker {
         }
 
         fn stop(&mut self) {
+            self.cancel_crossfade();
             self.bump_generation();
             self.ring = Ring::new(1).0;
             self.ring.done.store(true, Ordering::Release);
@@ -2311,8 +3063,15 @@ mod worker {
 
         /// Decode, time-stretch and push to the ring. Works incrementally so the
         /// command loop stays responsive while the ring is full or input slow.
-        fn pump(shared: &Shared, ring: &mut Ring, current: &mut Current) {
-            let channels = shared.channels.load(Ordering::Relaxed).max(1) as usize;
+        fn pump(
+            shared: &Shared,
+            ring: &mut Ring,
+            current: &mut Current,
+            channels: usize,
+            tempo: f32,
+            active: bool,
+        ) {
+            let channels = channels.max(1);
 
             if current.last_trace.elapsed() >= Duration::from_secs(1) {
                 current.last_trace = std::time::Instant::now();
@@ -2340,15 +3099,16 @@ mod worker {
                 return;
             }
 
-            let tempo = shared.tempo();
             let want_direct = tempo == 1.0;
 
             // Leaving the direct 1.0x feed: hand the decoded-but-unqueued audio
             // to WSOLA so nothing is dropped, and anchor the new tempo segment.
             if !want_direct && current.direct && !current.draining {
-                let boundary = current.out_made + current.stretch.available() as u64;
-                let position = shared.position_at(boundary);
-                shared.push_segment(boundary, position, tempo);
+                if active {
+                    let boundary = current.out_made + current.stretch.available() as u64;
+                    let position = shared.position_at(boundary);
+                    shared.push_segment(boundary, position, tempo);
+                }
                 // The stretcher was drained when the direct feed began; reset it
                 // so the new tempo run primes from a clean state.
                 current.stretch.reset();
@@ -2378,17 +3138,21 @@ mod worker {
                     return;
                 }
                 current.draining = false;
-                let now = shared.tempo();
+                let now = tempo;
                 if now == 1.0 {
                     current.direct = true;
                     current.applied_tempo = 1.0;
-                    let position = shared.position_at(current.out_made);
-                    shared.push_segment(current.out_made, position, 1.0);
+                    if active {
+                        let position = shared.position_at(current.out_made);
+                        shared.push_segment(current.out_made, position, 1.0);
+                    }
                 } else {
                     // The tempo changed again while draining: resume stretching.
-                    let boundary = current.out_made + current.stretch.available() as u64;
-                    let position = shared.position_at(boundary);
-                    shared.push_segment(boundary, position, now);
+                    if active {
+                        let boundary = current.out_made + current.stretch.available() as u64;
+                        let position = shared.position_at(boundary);
+                        shared.push_segment(boundary, position, now);
+                    }
                     current.stretch.reset();
                     let aligned = current.pending.len() / channels * channels;
                     if aligned > 0 {
@@ -2412,9 +3176,11 @@ mod worker {
             // source position of the current output index, then retune.
             if (tempo - current.applied_tempo).abs() > 1e-4 {
                 // Output already inside WSOLA still belongs to the old tempo.
-                let boundary = current.out_made + current.stretch.available() as u64;
-                let position = shared.position_at(boundary);
-                shared.push_segment(boundary, position, tempo);
+                if active {
+                    let boundary = current.out_made + current.stretch.available() as u64;
+                    let position = shared.position_at(boundary);
+                    shared.push_segment(boundary, position, tempo);
+                }
                 current.stretch.set_tempo(tempo);
                 current.applied_tempo = tempo;
             }
@@ -2616,15 +3382,19 @@ mod worker {
             channels: u16,
             rate: u32,
             consumer: Consumer<f32>,
+            done: Arc<AtomicBool>,
+            progress: Arc<Progress>,
+            deck: u8,
         ) {
             self.stream.mixer().add(RingSource {
-                done: self.ring.done.clone(),
+                done,
                 consumer,
                 shared: self.shared.clone(),
-                progress: self.shared.progress(),
+                progress,
                 generation,
                 channels,
                 rate,
+                deck,
                 state_left: 0,
                 paused: true,
                 gain: 0.0,
@@ -2640,6 +3410,7 @@ mod worker {
 
         /// Record a fatal transport/decode error for the event thread.
         fn fail(&mut self, code: &str, message: &str) {
+            self.cancel_crossfade();
             self.bump_generation();
             *self
                 .shared
@@ -2682,6 +3453,7 @@ mod tests {
             shared,
             channels: 2,
             rate: 1000,
+            deck: 0,
             state_left: 0,
             paused: false,
             gain: 0.0,
@@ -2820,6 +3592,92 @@ mod tests {
         shared.progress().frames.store(4000, Ordering::Relaxed);
         assert_eq!(shared.position_secs(), 11.5);
         assert_eq!(shared.segments.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn equal_power_crossfade_keeps_constant_power() {
+        let shared = Shared::new();
+        shared.active_deck.store(0, Ordering::Relaxed);
+        shared.fade_from_deck.store(0, Ordering::Relaxed);
+        shared.fade_start_frame.store(0, Ordering::Relaxed);
+        shared.fade_frames.store(1000, Ordering::Relaxed);
+        shared.fade_active.store(true, Ordering::Relaxed);
+        for clock in [0u64, 100, 250, 500, 750, 900, 1000] {
+            shared.fade_clock.store(clock, Ordering::Relaxed);
+            let out = shared.deck_gain(0);
+            let inc = shared.deck_gain(1);
+            assert!((out * out + inc * inc - 1.0).abs() < 0.001, "clock={clock}");
+        }
+        assert!((shared.deck_gain(0) - 0.0).abs() < 0.001);
+        assert!((shared.deck_gain(1) - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn handover_does_not_invert_deck_gains() {
+        let shared = Shared::new();
+        shared.fade_start_frame.store(0, Ordering::Relaxed);
+        shared.fade_frames.store(1000, Ordering::Relaxed);
+        shared.fade_from_deck.store(0, Ordering::Relaxed);
+        shared.active_deck.store(0, Ordering::Relaxed);
+        shared.fade_active.store(true, Ordering::Relaxed);
+        shared.fade_clock.store(1000, Ordering::Relaxed);
+        // Flip the audible deck first, exactly like `promote_crossfade`, while
+        // the fade flag is still set. The outgoing deck must stay silent.
+        shared.active_deck.store(1, Ordering::Relaxed);
+        assert!(shared.deck_gain(0) <= 0.001);
+        assert!((shared.deck_gain(1) - 1.0).abs() < 0.001);
+        // Clearing the fade then keeps the incoming deck at unity.
+        shared.fade_active.store(false, Ordering::Relaxed);
+        assert_eq!(shared.deck_gain(0), 0.0);
+        assert_eq!(shared.deck_gain(1), 1.0);
+    }
+
+    #[test]
+    fn starved_incoming_freezes_the_fade_clock() {
+        let shared = Arc::new(Shared::new());
+        shared
+            .transport
+            .store(Transport::Paused as u8, Ordering::Relaxed);
+        shared.set_paused(false);
+        shared.fade_active.store(true, Ordering::Relaxed);
+        shared.fade_from_deck.store(0, Ordering::Relaxed);
+        shared.active_deck.store(0, Ordering::Relaxed);
+        shared.fade_frames.store(1000, Ordering::Relaxed);
+
+        // The incoming deck has no audio: it underruns and marks the fade
+        // starved instead of letting the outgoing fade into silence.
+        let (ring, consumer) = Ring::new(4);
+        ring.done.store(false, Ordering::Release);
+        let mut incoming = source(shared.clone(), &ring, consumer);
+        incoming.deck = 1;
+        assert_eq!(incoming.next(), Some(0.0));
+        assert!(shared.fade_starved.load(Ordering::Relaxed));
+
+        // The clock deck keeps producing audio, but the envelope clock must not
+        // advance while the incoming deck is starved.
+        let (mut ring, consumer) = Ring::new(8);
+        ring.done.store(false, Ordering::Release);
+        ring.push_slice(&[1.0; 8]);
+        let mut clock = source(shared.clone(), &ring, consumer);
+        clock.deck = 0;
+        let before = shared.fade_clock.load(Ordering::Relaxed);
+        assert!(clock.next().is_some());
+        assert_eq!(shared.fade_clock.load(Ordering::Relaxed), before);
+    }
+
+    #[test]
+    fn inactive_deck_leaves_the_mixer_outside_a_crossfade() {
+        let shared = Arc::new(Shared::new());
+        shared
+            .transport
+            .store(Transport::Paused as u8, Ordering::Relaxed);
+        shared.set_paused(false);
+        let (mut ring, consumer) = Ring::new(4);
+        ring.push_slice(&[1.0; 4]);
+        let mut source = source(shared.clone(), &ring, consumer);
+        source.deck = 1;
+        assert!(source.next().is_none());
+        assert_eq!(ring.len(), 4, "inactive deck must not consume audio");
     }
 
     #[test]
