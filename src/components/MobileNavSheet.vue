@@ -99,6 +99,7 @@ function onTouchStart(event: TouchEvent) {
   pullOffset.value = 0;
   pullAnimated.value = false;
   pullActive.value = false;
+  window.clearTimeout(closeTimer);
   window.clearTimeout(reboundTimer);
   velocity = 0;
   lastY = touch.clientY;
@@ -196,6 +197,17 @@ watch(
   () => props.open,
   async (open) => {
     if (open) {
+      // Reset any transient drag state left over from the previous close:
+      // otherwise a stale `closing`/`pullActive` inline transform pins the
+      // sheet to its exit position and only an empty transparent layer shows.
+      window.clearTimeout(closeTimer);
+      window.clearTimeout(reboundTimer);
+      closing.value = false;
+      pullActive.value = false;
+      pullAnimated.value = false;
+      pullOffset.value = 0;
+      dragging = false;
+      velocity = 0;
       await nextTick();
       bindGesture();
     } else {

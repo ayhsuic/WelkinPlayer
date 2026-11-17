@@ -59,6 +59,7 @@ function onSelect(tab: MainTab) {
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   border: 1px solid var(--line);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
 }
 
 .tab-bar-item {
