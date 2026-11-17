@@ -392,6 +392,10 @@ function onPlaylistDeleted(id: string) {
 function openSheet() {
   sheetOpen.value = true;
   sheetTab.value = "home";
+  clearCollectionFilters();
+  // Clear any retained drill-down page so the opened drawer shows the home main
+  // page rather than a stale sub-page underneath the wall.
+  baseView.value = "library";
 }
 /** Collapse the drawer back onto the playing wall; the wall underneath keeps its state. */
 function closeSheet() {
@@ -402,11 +406,14 @@ function onTabSelect(tab: MainTab) {
   if (!item) return;
   sheetTab.value = tab;
   clearCollectionFilters();
-  // Drop any drill-down state and return to this tab's main page. The library
-  // tab's main page is the list view, so its placeholder must not land on a
-  // drill-down view (playlists) that the drawer would render as a sub-page.
-  view.value = item.view;
-  baseView.value = tab === "library" ? "library" : item.view;
+  // Drop any drill-down state and return to this tab's main page. Both `view`
+  // and `baseView` land on a non drill-down view: the `watch(view)` syncs
+  // `baseView` from `view`, so using the library tab's sub-page placeholder
+  // (playlists) there would be written back and render the old category page
+  // on the first tap.
+  const homeView: View = tab === "library" ? "library" : item.view;
+  view.value = homeView;
+  baseView.value = homeView;
 }
 
 /** Background update probe at boot; a failure is intentionally silent. */

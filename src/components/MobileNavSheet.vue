@@ -35,43 +35,52 @@ function onSelect(tab: MainTab) {
 
 const bodyEl = ref<HTMLElement | null>(null);
 let startY = 0;
-let startScrollTop = 0;
-let scroller: HTMLElement | null = null;
+let scrollChain: HTMLElement[] = [];
 
-/** Walk up from the touched node to the nearest vertically scrollable ancestor. */
-function nearestScroller(node: EventTarget | null): HTMLElement | null {
+/**
+ * Collect every vertically scrollable ancestor from the touched node up to the
+ * sheet. Some pages scroll their own root, others rely on the wrapper, so the
+ * gesture must check the whole chain rather than a single nearest scroller.
+ */
+function collectScrollChain(node: EventTarget | null): HTMLElement[] {
+  const chain: HTMLElement[] = [];
   let current = node as HTMLElement | null;
   while (current && current !== bodyEl.value) {
     const style = getComputedStyle(current);
-    if (/auto|scroll/.test(style.overflowY) && current.scrollHeight > current.clientHeight) return current;
+    if (/auto|scroll/.test(style.overflowY) && current.scrollHeight > current.clientHeight) {
+      chain.push(current);
+    }
     current = current.parentElement;
   }
-  return bodyEl.value;
+  return chain;
 }
 
 function onTouchStart(event: TouchEvent) {
   const touch = event.touches[0];
   if (!touch) return;
   startY = touch.clientY;
-  scroller = nearestScroller(event.target);
-  startScrollTop = scroller?.scrollTop ?? 0;
+  scrollChain = collectScrollChain(event.target);
 }
 
 function onTouchMove(event: TouchEvent) {
-  if (!scroller) return;
+  if (!scrollChain.length) return;
   const touch = event.touches[0];
   if (!touch) return;
   const deltaY = touch.clientY - startY;
-  // Only collapse once the scroller is already at its top; otherwise the page
-  // keeps its own vertical scroll and the drag must not steal the gesture.
-  if (startScrollTop <= 0 && deltaY > 12) {
+  // A downward drag only collapses the sheet once every scrollable ancestor in
+  // the chain is already pinned to its top; this mirrors lmusic's nested-scroll
+  // hand-off: the list keeps scrolling first, and reaching the top passes the
+  // further pull to the sheet. Any ancestor still scrolled down keeps its own
+  // native scroll and the gesture is left alone.
+  const allAtTop = scrollChain.every((scroller) => scroller.scrollTop <= 0);
+  if (deltaY > 8 && allAtTop) {
     event.preventDefault();
     close();
   }
 }
 
 function onTouchEnd() {
-  scroller = null;
+  scrollChain = [];
 }
 
 let unbind: (() => void) | null = null;
