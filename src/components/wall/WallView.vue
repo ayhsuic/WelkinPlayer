@@ -142,6 +142,9 @@ const isCardCurrent = computed(() => Boolean(cardTrack.value && current.value &&
  */
 const lyricsVisible = ref(true);
 
+/** Lyrics are on only when the card holds the playing song and it is actually playing. */
+const lyricsActive = computed(() => isCardCurrent.value && lyricsVisible.value && player.isPlaying);
+
 /** One parsed line flattened to plain text; "" outside the lyric range. */
 function lineText(index: number): string {
   const line = lyrics.lines[index];
@@ -508,16 +511,27 @@ function playCard() {
   if (!track) return;
   if (isCardCurrent.value) {
     player.togglePlayback();
+    lyricsVisible.value = true;
     return;
   }
   lyricsVisible.value = true;
   void player.playInQueue(sourceList.value, track);
 }
 
-/** The centre button is the only play/pause entry on the card. */
+/** The centre button is the only play entry on the card. */
 function onCenterButton() {
-  if (isCardCurrent.value) player.togglePlayback();
-  else playCard();
+  if (isCardCurrent.value) {
+    player.togglePlayback();
+    lyricsVisible.value = true;
+  } else {
+    playCard();
+  }
+}
+
+/** Tapping the playing lyrics pauses the song, hides the lyrics and brings the Play button back. */
+function onLyricsTap() {
+  player.togglePlayback();
+  lyricsVisible.value = false;
 }
 
 function openCardLyrics() {
@@ -663,10 +677,10 @@ defineExpose({ focusCurrent, focusFirst });
         <template v-if="tile.expanded && cardTrack">
           <span class="wall-card-shade" aria-hidden="true" />
 
-          <!-- Centre button: a square Play. After collapsing lyrics the card looks
-               exactly like the idle cover; only the progress keeps running. -->
+          <!-- Centre Play button: hidden while the playing lyrics are on; returns
+               after pausing or on a non-current card. -->
           <button
-            v-if="!isCardCurrent || !lyricsVisible"
+            v-if="!lyricsActive"
             type="button"
             class="wall-card-center"
             aria-label="Play"
@@ -689,11 +703,11 @@ defineExpose({ focusCurrent, focusFirst });
             <h2 class="wall-card-title">{{ cardTrack.title }}</h2>
           </div>
 
-          <!-- Playing lyrics state: three lines take the centre; tap to collapse. -->
+          <!-- Playing lyrics state: three lines take the centre; tap to pause and return to the Play button. -->
           <div
-            v-if="isCardCurrent && lyricsVisible"
+            v-if="lyricsActive"
             class="wall-card-lyrics"
-            @click.stop="lyricsVisible = false"
+            @click.stop="onLyricsTap()"
           >
             <p class="wall-card-lyric is-prev">{{ lyricLines[0] }}</p>
             <p class="wall-card-lyric is-current">{{ lyricLines[1] }}</p>
@@ -909,21 +923,20 @@ button.wall-card-meta {
 .wall-card-action {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  border-radius: 0;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  background: transparent;
   color: #fff;
-  backdrop-filter: blur(10px);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
   cursor: pointer;
 }
 
 .wall-card-action--lyrics {
   position: absolute;
+  top: 16px;
   right: 16px;
-  bottom: 16px;
   z-index: 3;
   pointer-events: auto;
 }
