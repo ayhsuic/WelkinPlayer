@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-only
  */
 
-package com.atemukesu.welkinplayer
+package com.atemukesu.welkin.alt
 
 import android.content.Context
 import android.content.Intent
@@ -13,7 +13,7 @@ import android.os.Build
  * Static entry point for the Rust backend to the system media notification.
  *
  * Rust peers into this object over JNI
- * (`com/atemukesu/welkinplayer/MediaControlBridge`): it starts / stops the
+ * (`com/atemukesu/welkin/alt/MediaControlBridge`): it starts / stops the
  * foreground [MediaPlaybackService] and forwards metadata / playback snapshots.
  * Transport actions requested by the notification, lock screen or headset
  * buttons are parked here and drained by the main window.

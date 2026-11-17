@@ -25,10 +25,10 @@ val releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
 
 android {
     compileSdk = 36
-    namespace = "com.atemukesu.welkinplayer"
+    namespace = "com.atemukesu.welkin.alt"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "com.atemukesu.welkinplayer"
+        applicationId = "com.atemukesu.welkin.alt"
         minSdk = 26
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()

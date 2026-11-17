@@ -23,14 +23,14 @@
 # Desktop lyric bridge: reached only from Rust over JNI (by class and method
 # name), so R8 cannot see any references and would strip the whole class in a
 # minified release build, producing a ClassNotFoundException at runtime.
--keep class com.atemukesu.welkinplayer.DesktopLyricBridge { *; }
+-keep class com.atemukesu.welkin.alt.DesktopLyricBridge { *; }
 
 # Media control bridge + service: the bridge is reached only from Rust over JNI
 # (by class and method name), so R8 cannot see any references and would strip it
 # in a minified release build.
--keep class com.atemukesu.welkinplayer.MediaControlBridge { *; }
--keep class com.atemukesu.welkinplayer.MediaPlaybackService { *; }
+-keep class com.atemukesu.welkin.alt.MediaControlBridge { *; }
+-keep class com.atemukesu.welkin.alt.MediaPlaybackService { *; }
 
 # Folder picker bridge: `pick` / `takeResult` are called only from Rust over
 # JNI, so R8 would strip or rename them in a minified release build.
--keep class com.atemukesu.welkinplayer.FolderPickerBridge { *; }
+-keep class com.atemukesu.welkin.alt.FolderPickerBridge { *; }

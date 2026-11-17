@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-only
  */
 
-package com.atemukesu.welkinplayer
+package com.atemukesu.welkin.alt
 
 import android.Manifest
 import android.app.Activity

@@ -19,7 +19,7 @@ use crate::core::error::AppError;
 
 /// Keychain service name; together with the account it forms the lookup key.
 /// Prefixed with the app bundle identifier so entries are namespaced per app.
-const SERVICE: &str = "com.atemukesu.welkinplayer.webdav";
+const SERVICE: &str = "com.atemukesu.welkin.alt.webdav";
 
 /// Account prefix for source-scoped credentials (`source:<id>`).
 const ACCOUNT_PREFIX: &str = "source:";

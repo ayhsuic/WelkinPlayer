@@ -21,9 +21,9 @@ use crate::commands::webdav::keychain_init_error;
 use crate::core::error::AppError;
 
 /// Keychain service for the install identifier. Kept separate from the WebDAV
-/// service (`com.atemukesu.welkinplayer.webdav`) so the install identifier and
+/// service (`com.atemukesu.welkin.alt.webdav`) so the install identifier and
 /// the server password never share an entry.
-const SERVICE: &str = "com.atemukesu.welkinplayer.instid";
+const SERVICE: &str = "com.atemukesu.welkin.alt.instid";
 /// Account name that holds the install identifier in the entry's password field.
 const INSTALL_ID_ACCOUNT: &str = "install-id";
 

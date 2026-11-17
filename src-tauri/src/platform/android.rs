@@ -21,13 +21,13 @@ use jni::objects::{GlobalRef, JObject, JValue};
 use jni::JavaVM;
 
 /// Kotlin bridge that owns the floating overlay service (binary name).
-const BRIDGE_CLASS_NAME: &str = "com.atemukesu.welkinplayer.DesktopLyricBridge";
+const BRIDGE_CLASS_NAME: &str = "com.atemukesu.welkin.alt.DesktopLyricBridge";
 
 /// Kotlin bridge that owns the system media-notification service (binary name).
-const MEDIA_BRIDGE_CLASS_NAME: &str = "com.atemukesu.welkinplayer.MediaControlBridge";
+const MEDIA_BRIDGE_CLASS_NAME: &str = "com.atemukesu.welkin.alt.MediaControlBridge";
 
 /// Kotlin bridge that owns the Storage Access Framework folder picker.
-const FOLDER_PICKER_CLASS_NAME: &str = "com.atemukesu.welkinplayer.FolderPickerBridge";
+const FOLDER_PICKER_CLASS_NAME: &str = "com.atemukesu.welkin.alt.FolderPickerBridge";
 
 /// Cached global reference to the bridge class. A plain `FindClass` only reaches
 /// the system class loader from an attached worker thread, so the app class is

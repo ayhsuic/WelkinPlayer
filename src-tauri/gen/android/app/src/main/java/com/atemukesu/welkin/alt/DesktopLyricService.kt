@@ -1,4 +1,4 @@
-package com.atemukesu.welkinplayer
+package com.atemukesu.welkin.alt
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -368,7 +368,7 @@ class DesktopLyricService : Service() {
         private const val PREFS = "desktop-lyrics"
         private const val POSITION_X = "position-x"
         private const val POSITION_Y = "position-y"
-        const val ACTION_TOGGLE_LOCK = "com.atemukesu.welkinplayer.DESKTOP_LYRIC_TOGGLE_LOCK"
-        const val ACTION_CLOSE = "com.atemukesu.welkinplayer.DESKTOP_LYRIC_CLOSE"
+        const val ACTION_TOGGLE_LOCK = "com.atemukesu.welkin.alt.DESKTOP_LYRIC_TOGGLE_LOCK"
+        const val ACTION_CLOSE = "com.atemukesu.welkin.alt.DESKTOP_LYRIC_CLOSE"
     }
 }

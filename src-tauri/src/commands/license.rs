@@ -32,7 +32,7 @@ use crate::core::error::AppError;
 
 /// Keychain service/account holding the activation code. Kept separate from the
 /// install-id (`...instid`) and WebDAV (`...webdav`) entries.
-const SERVICE: &str = "com.atemukesu.welkinplayer.license";
+const SERVICE: &str = "com.atemukesu.welkin.alt.license";
 const LICENSE_ACCOUNT: &str = "activation-code";
 
 /// Developer's Ed25519 public key, base64-encoded (32 bytes).

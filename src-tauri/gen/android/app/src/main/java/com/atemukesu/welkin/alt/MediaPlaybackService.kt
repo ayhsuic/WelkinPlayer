@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-only
  */
 
-package com.atemukesu.welkinplayer
+package com.atemukesu.welkin.alt
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -278,8 +278,8 @@ class MediaPlaybackService : Service() {
     companion object {
         private const val CHANNEL_ID = "media-playback"
         private const val NOTIFICATION_ID = 0x4D45
-        const val ACTION_TOGGLE = "com.atemukesu.welkinplayer.MEDIA_TOGGLE"
-        const val ACTION_NEXT = "com.atemukesu.welkinplayer.MEDIA_NEXT"
-        const val ACTION_PREVIOUS = "com.atemukesu.welkinplayer.MEDIA_PREVIOUS"
+        const val ACTION_TOGGLE = "com.atemukesu.welkin.alt.MEDIA_TOGGLE"
+        const val ACTION_NEXT = "com.atemukesu.welkin.alt.MEDIA_NEXT"
+        const val ACTION_PREVIOUS = "com.atemukesu.welkin.alt.MEDIA_PREVIOUS"
     }
 }

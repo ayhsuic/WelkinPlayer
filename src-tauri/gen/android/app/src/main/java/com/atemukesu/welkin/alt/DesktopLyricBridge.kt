@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-only
  */
 
-package com.atemukesu.welkinplayer
+package com.atemukesu.welkin.alt
 
 import android.content.Context
 import android.content.Intent
@@ -15,7 +15,7 @@ import android.provider.Settings
 /**
  * Static entry point for the Rust backend.
  *
- * Rust peers into this object over JNI (`com/atemukesu/welkinplayer/DesktopLyricBridge`):
+ * Rust peers into this object over JNI (`com/atemukesu/welkin/alt/DesktopLyricBridge`):
  * it queries the overlay permission, opens the system settings screen, starts /
  * stops the foreground service and forwards the lyric documents. The HTML
  * renderer is handed over once and kept here so the service can load it.
