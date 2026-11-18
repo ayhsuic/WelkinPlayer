@@ -9,8 +9,6 @@
 //! write probes and per-source library listing.
 
 use tauri::AppHandle;
-#[cfg(desktop)]
-use tauri_plugin_dialog::DialogExt;
 
 use crate::core::error::AppError;
 use crate::data::backend::{backend_for, build_backend};
@@ -22,29 +20,8 @@ const WRITE_TEST_PATH: &str = "welkin-write-test.tmp";
 /// Show the native folder picker and return the chosen directory.
 #[tauri::command]
 pub async fn pick_local_folder(app: AppHandle) -> Result<Option<String>, AppError> {
-    #[cfg(desktop)]
-    {
-        let folder = app.dialog().file().blocking_pick_folder();
-        match folder {
-            Some(path) => {
-                let path = path
-                    .into_path()
-                    .map_err(|error| AppError::Other(format!("无法读取所选目录：{error}")))?;
-                Ok(Some(path.to_string_lossy().to_string()))
-            }
-            None => Ok(None),
-        }
-    }
-    #[cfg(target_os = "android")]
-    {
-        let _ = app;
-        return pick_local_folder_android().await;
-    }
-    #[cfg(not(any(desktop, target_os = "android")))]
-    {
-        let _ = app;
-        Ok(None)
-    }
+    let _ = app;
+    pick_local_folder_android().await
 }
 
 /// Drive the Android Storage Access Framework picker and wait for its result.
@@ -52,7 +29,6 @@ pub async fn pick_local_folder(app: AppHandle) -> Result<Option<String>, AppErro
 /// The picker is asynchronous (it hands control to a system Activity), so the
 /// result parked in `FolderPickerBridge` is polled from a blocking worker while
 /// the command awaits it.
-#[cfg(target_os = "android")]
 async fn pick_local_folder_android() -> Result<Option<String>, AppError> {
     let result = tauri::async_runtime::spawn_blocking(|| -> Result<Option<String>, AppError> {
         match crate::platform::android::pick_folder().map_err(AppError::other)? {
@@ -86,30 +62,20 @@ async fn pick_local_folder_android() -> Result<Option<String>, AppError> {
     }
 }
 
-/// Whether local music folders can be read on this platform right now.
+/// Whether local music folders can be read right now.
 ///
-/// Desktop always can; Android 11+ needs the "all files access" permission
-/// (scoped storage otherwise hides directory contents from `std::fs`).
+/// Android 11+ needs the "all files access" permission (scoped storage
+/// otherwise hides directory contents from `std::fs`).
 #[tauri::command]
 pub fn local_file_access_granted() -> bool {
-    #[cfg(target_os = "android")]
-    {
-        crate::platform::android::folder_access_granted()
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        true
-    }
+    crate::platform::android::folder_access_granted()
 }
 
 /// Open the system screen where local file access is granted.
 #[tauri::command]
 pub fn request_local_file_access() {
-    #[cfg(target_os = "android")]
-    {
-        if let Err(error) = crate::platform::android::request_folder_access() {
-            log::warn!("failed to open file-access settings: {error}");
-        }
+    if let Err(error) = crate::platform::android::request_folder_access() {
+        log::warn!("failed to open file-access settings: {error}");
     }
 }
 

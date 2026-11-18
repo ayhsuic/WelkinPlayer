@@ -223,82 +223,11 @@ pub fn device_info() -> DeviceInfo {
     }
 }
 
-/// Enumerate the output devices cpal can see (desktop), with the rates each one
-/// supports after the software-endpoint guard. Safe to call from any thread.
-/// On Android this defers to [`enumerate_android_devices`], which talks to
-/// `AudioManager` directly because cpal's Android backend does no enumeration.
+/// Enumerate the output devices visible to the `AudioManager`. cpal's Android
+/// backend does no enumeration, so this talks to `AudioManager` directly through
+/// JNI. Safe to call from any thread.
 pub fn enumerate_devices() -> Vec<DeviceEntry> {
-    #[cfg(target_os = "android")]
-    {
-        enumerate_android_devices()
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        enumerate_cpal_devices()
-    }
-}
-
-#[cfg(not(target_os = "android"))]
-fn enumerate_cpal_devices() -> Vec<DeviceEntry> {
-    let host = rodio::cpal::default_host();
-    let mut devices: Vec<DeviceEntry> = Vec::new();
-    if let Ok(list) = host.output_devices() {
-        for device in list {
-            let name = match device.name() {
-                Ok(name) => name,
-                Err(_) => continue,
-            };
-            // Skip cpal's hard-coded ALSA pseudo-devices. cpal probes `jack`
-            // and `oss` to detect them, and on a host without a running jackd
-            // (no socket) or without `/dev/dsp`, the ALSA JACK/OSS plugins dump
-            // their own connection errors straight to stderr. Those messages
-            // come from the C libraries, so no Rust log filter can silence
-            // them; not probing at all is the only clean fix. Real output still
-            // happens through `default` (PipeWire/Pulse), and genuine hardware
-            // is enumerated separately from the card list below.
-            if matches!(name.as_str(), "jack" | "oss") {
-                continue;
-            }
-            let ranges = device
-                .supported_output_configs()
-                .map(|configs| {
-                    configs
-                        .map(|config| (config.min_sample_rate().0, config.max_sample_rate().0))
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            let ceiling = if is_software_endpoint(&ranges) {
-                device
-                    .default_output_config()
-                    .map(|config| config.sample_rate().0)
-                    .unwrap_or(48_000)
-                    .max(48_000)
-            } else {
-                u32::MAX
-            };
-            let supported_rates: Vec<u32> = STANDARD_RATES
-                .into_iter()
-                .filter(|rate| *rate <= ceiling)
-                .filter(|rate| ranges.iter().any(|(low, high)| low <= rate && rate <= high))
-                .collect();
-            devices.push(DeviceEntry {
-                id: name.clone(),
-                name,
-                supported_rates,
-                device_type: 0,
-            });
-        }
-        if let Some(default_name) = host
-            .default_output_device()
-            .and_then(|device| device.name().ok())
-        {
-            if let Some(index) = devices.iter().position(|device| device.id == default_name) {
-                let default = devices.remove(index);
-                devices.insert(0, default);
-            }
-        }
-    }
-    devices
+    enumerate_android_devices()
 }
 
 /// `AudioManager.getDevices()` on Android, read through JNI. cpal's Android
@@ -310,7 +239,6 @@ fn enumerate_cpal_devices() -> Vec<DeviceEntry> {
 /// though we still open the stream through cpal's default device: the list is
 /// what the UI shows, and its signature is what `check_device` compares each poll
 /// to learn that headphones were plugged in or out.
-#[cfg(target_os = "android")]
 pub fn enumerate_android_devices() -> Vec<DeviceEntry> {
     use jni::objects::{JObject, JString, JValue};
 
@@ -455,33 +383,17 @@ pub fn enumerate_android_devices() -> Vec<DeviceEntry> {
 /// used by [`Worker::check_device`] to detect plug/unplug without a native
 /// event. On Android it is the `AudioManager` list; on desktop it is the single
 /// cpal default device name. Empty when enumeration is unavailable.
-///
-/// On desktop this deliberately reads only the default device instead of
-/// running the full [`enumerate_devices`] walk: that walk opens every
-/// pseudo-device, which is both wasteful and noisy (see `enumerate_cpal_devices`),
-/// and it runs on every `check_device` poll. The default device name is the
-/// signal that actually changes when the OS reroutes output, so it is enough
-/// to detect a plug/unplug.
-#[cfg(target_os = "android")]
+/// A stable signature of the currently available output devices, compared each
+/// poll to detect a headphone / USB / Bluetooth plug or unplug.
 fn device_signature() -> String {
     let mut ids: Vec<String> = enumerate_devices().into_iter().map(|device| format!("{}:{}", device.device_type, device.id)).collect();
     ids.sort();
     ids.join("|")
 }
 
-#[cfg(not(target_os = "android"))]
-fn device_signature() -> String {
-    rodio::cpal::default_host()
-        .default_output_device()
-        .and_then(|device| device.name().ok())
-        .unwrap_or_default()
-}
-
-/// The rate to open the output stream at before a track is loaded. cpal's ALSA
-/// default is hard-coded to prefer 44.1 kHz whenever the range allows it, so
-/// we don't hand the stream to cpal unmodified: prefer 48 kHz — the modern
-/// hardware standard — then 44.1 kHz, then the highest on offer, then cpal's
-/// own default as a last resort.
+/// The rate to open the output stream at before a track is loaded. Prefer
+/// 48 kHz — the modern hardware standard — then 44.1 kHz, then the highest on
+/// offer, then the cpal default as a last resort.
 fn default_output_rate() -> u32 {
     let supported = device_info().supported_rates;
     if supported.contains(&48_000) {
@@ -1859,34 +1771,14 @@ mod worker {
         Ok(stretch)
     }
 
-    /// Open an output stream pinned to the requested sample rate. `device_id`
-    /// selects a specific cpal device on desktop; on Android cpal does not
-    /// enumerate and its device names do not match `AudioManager` product names,
-    /// so it is ignored and the system default is used (the OS routes to the
-    /// active output device anyway). If the device is gone or refuses the rate we
-    /// fall back to the default device so a bad preference never kills output.
+    /// Open an output stream pinned to the requested sample rate. cpal's Android
+    /// backend does not enumerate devices and its names do not match
+    /// `AudioManager` product names, so `device_id` is ignored and the system
+    /// default is used (the OS routes to the active output device anyway). If the
+    /// device refuses the rate we fall back to the default device so a bad
+    /// preference never kills output.
     fn open_stream(rate: u32, device_id: Option<&str>) -> Result<OutputStream, String> {
-        #[cfg(target_os = "android")]
         let _ = device_id; // cpal follows the system default on Android.
-        #[cfg(not(target_os = "android"))]
-        let device = match device_id {
-            Some(id) => rodio::cpal::default_host()
-                .output_devices()
-                .ok()
-                .and_then(|devices| {
-                    devices
-                        .into_iter()
-                        .find(|device| device.name().map(|name| name == id).unwrap_or(false))
-                })
-                .or_else(|| rodio::cpal::default_host().default_output_device())
-                .ok_or_else(|| "no output device".to_string())?,
-            None => rodio::cpal::default_host()
-                .default_output_device()
-                .ok_or_else(|| "no output device".to_string())?,
-        };
-        #[cfg(not(target_os = "android"))]
-        let device = device;
-        #[cfg(target_os = "android")]
         let device = rodio::cpal::default_host()
             .default_output_device()
             .ok_or_else(|| "no output device".to_string())?;
@@ -2200,8 +2092,7 @@ mod worker {
             let _ = self.app.emit("audio:deviceChanged", info);
         }
 
-        /// Choose a specific output device (`None` = follow system default). On
-        /// desktop the stream is reopened against that cpal device; on Android we
+        /// Choose a specific output device (`None` = follow system default). We
         /// call `AudioManager.routeToDevices` directly (cpal cannot address an
         /// Android device by name, so reopening the stream would not change the
         /// route). `open_stream` always falls back to the default device if the
@@ -2212,7 +2103,6 @@ mod worker {
             if self.selected_device == previous {
                 return;
             }
-            #[cfg(target_os = "android")]
             {
                 if let Some(id) = &self.selected_device {
                     // Resolve the type from the enumerated list, then route to

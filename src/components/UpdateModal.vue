@@ -8,28 +8,14 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { Clock, Download, SkipForward, X } from "@lucide/vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { formatBytes, formatSpeed } from "../lib/format";
 import { renderReleaseNotes } from "../lib/markdown";
 import { pushToast } from "../lib/toast";
-import { isAndroid, isLinux } from "../lib/desktopLyric";
 import { useUpdateStore } from "../stores/update";
 
 const emit = defineEmits<{ friendlyError: [error: unknown] }>();
 const { t } = useI18n();
 const update = useUpdateStore();
-/** Android downloads the APK and Linux opens the release page through the
- * browser instead of installing in-app; other desktop platforms auto-install. */
-const android = isAndroid();
-const linux = isLinux();
 
-/** Rounded download progress percentage, 0 while the size is unknown. */
-const percent = computed(() => Math.round((update.progress ?? 0) * 100));
-/** Bytes received so far, with the total when the backend reported one. */
-const sizeText = computed(() =>
-  update.total && update.total > 0 ? `${formatBytes(update.downloaded)} / ${formatBytes(update.total)}` : formatBytes(update.downloaded),
-);
-/** Current transfer rate, or null before the first sample / once finished. */
-const speedText = computed(() => (update.speed && update.speed > 0 ? formatSpeed(update.speed) : null));
 /** Human-readable release date, or null when the backend omitted it. */
 const releaseDate = computed(() => {
   const raw = update.info?.date;
@@ -40,26 +26,16 @@ const releaseDate = computed(() => {
 /** Release notes (Markdown) rendered for the dialog. */
 const notesHtml = computed(() => renderReleaseNotes(update.info?.notes ?? ""));
 
-/** "Update now": install in-app on macOS/Windows, or open the download link on
- * Android (APK) and Linux (release page). */
+/** "Update now": open the APK download link in the browser on Android. */
 async function updateNow() {
-  if (android || linux) {
-    const url = update.info?.downloadUrl;
-    if (!url) {
-      pushToast("error", t("settings.update.noDownload"));
-      return;
-    }
-    try {
-      await openUrl(url);
-      update.hide();
-    } catch (error) {
-      emit("friendlyError", error);
-    }
+  const url = update.info?.downloadUrl;
+  if (!url) {
+    pushToast("error", t("settings.update.noDownload"));
     return;
   }
-  update.clearSkip();
   try {
-    await update.install();
+    await openUrl(url);
+    update.hide();
   } catch (error) {
     emit("friendlyError", error);
   }
@@ -171,17 +147,7 @@ button {
             <div class="release-notes min-h-0 flex-auto overflow-y-auto border border-line bg-bg p-3 text-xs leading-relaxed text-muted" v-html="notesHtml"></div>
           </div>
 
-          <div v-if="update.installing" class="mt-5 grid shrink-0 gap-2.5">
-            <span class="block h-2 w-full overflow-hidden bg-fg/10"><span class="block h-full bg-accent transition-[width]" :style="{ width: `${percent}%` }"></span></span>
-            <div class="grid grid-cols-[1fr_5.5rem_2.5rem] items-baseline gap-x-3 text-[11px] tabular-nums text-dim">
-              <span class="truncate">{{ sizeText }}</span>
-              <span class="truncate text-right">{{ speedText ?? "" }}</span>
-              <span class="text-right font-semibold text-fg">{{ percent }}%</span>
-            </div>
-            <button type="button" class="ak-clip-tr flex h-10 items-center justify-center border border-line px-5 text-[13px] font-semibold uppercase tracking-[0.25em] text-fg hover:border-accent hover:text-accent" @click="update.hide()">{{ t("settings.update.background") }}</button>
-          </div>
-
-          <div v-else class="mt-5 grid shrink-0 gap-2">
+          <div class="mt-5 grid shrink-0 gap-2">
             <button type="button" class="ak-clip-tr flex h-11 items-center justify-center gap-2 bg-accent px-6 text-[13px] font-bold uppercase tracking-[0.25em] text-accent-fg hover:scale-[1.01] active:scale-95" @click="updateNow"><Download :size="15" :stroke-width="2.2" />{{ t("settings.update.updateNow") }}</button>
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button type="button" class="ak-clip-tr flex h-10 items-center justify-center gap-2 border border-line px-3 text-[12px] font-semibold uppercase tracking-[0.15em] text-muted hover:border-accent hover:text-accent" @click="update.remindLater"><Clock :size="14" :stroke-width="2.2" />{{ t("settings.update.remindLater") }}</button>

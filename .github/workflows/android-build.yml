@@ -69,6 +69,23 @@ jobs:
       - name: Sync version from package.json
         run: pnpm version:sync
 
+      # automix 2.0.1 links the system librubberband FFI; the NDK does not ship
+      # it. Compile the empty stub archive and add it to the native link path.
+      # See src-tauri/android-stub/rubberband-stub.c.
+      - name: Stub librubberband for Android NDK
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          stub_dir="$RUNNER_TEMP/rubberband-stub"
+          mkdir -p "$stub_dir"
+          prebuilt="$(ls -d "$NDK_HOME"/toolchains/llvm/prebuilt/* | head -n1)"
+          "$prebuilt/bin/aarch64-linux-android26-clang" \
+            -c src-tauri/android-stub/rubberband-stub.c \
+            -o "$stub_dir/stub.o"
+          "$prebuilt/bin/llvm-ar" cru "$stub_dir/librubberband.a" "$stub_dir/stub.o"
+          echo "RUSTFLAGS=${RUSTFLAGS:-} -L native=$stub_dir" >> "$GITHUB_ENV"
+
       - name: Build debug APKs (per ABI)
         env:
           NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}

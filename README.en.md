@@ -4,10 +4,10 @@
 
 # Welkin
 
-A cross-platform music player built with [Tauri 3](https://v3.tauri.app/). It reads your music collection over WebDAV or from local folders, syncs your profile, playlists and playback progress across devices, and provides AMLL word-by-word lyrics, a desktop lyrics overlay, and system media controls. Audio is decoded and played entirely in the Rust backend; the frontend only handles the UI and the play queue. Linux uses CEF (Chromium) as its webview runtime; Windows, macOS and Android use the system webview.
+An Android music player built with [Tauri 3](https://v3.tauri.app/). It reads your music collection over WebDAV or from local folders, syncs your profile, playlists and playback progress across devices, and provides AMLL word-by-word lyrics, a system lyrics overlay, and media controls. Audio is decoded and played entirely in the Rust backend; the frontend only handles the UI and the play queue.
 
 - Repository: <https://github.com/atemukesu/WelkinPlayer>
-- Platforms: Windows / macOS / Linux / Android
+- Platforms: Android
 - Languages: 简体中文, English
 
 ## Screenshots
@@ -21,9 +21,9 @@ A cross-platform music player built with [Tauri 3](https://v3.tauri.app/). It re
 
 - **Music sources**: Configure multiple WebDAV and local-folder sources at once; pick one as the cloud sync location.
 - **Lyrics**: AMLL word-by-word rendering; online lyrics fetched in order from QQ Music, NetEase Cloud Music and the AMLL lyrics library; same-named local lyrics win.
-- **Desktop lyrics overlay**: A separate transparent lyrics window (a system overlay on Android).
-- **System media controls**: Windows SMTC, macOS Now Playing, Linux MPRIS, Android MediaSession.
-- **Rust playback engine**: Symphonia decoding and cpal output (WASAPI / CoreAudio / ALSA on desktop, Oboe / AAudio on Android); WebDAV streams play as they download with accurate seeking, prefetching based on network state, with manual caching.
+- **Lyrics overlay**: A system overlay with word-by-word lyrics.
+- **System media controls**: Android MediaSession.
+- **Rust playback engine**: Symphonia decoding and cpal output via Oboe / AAudio; WebDAV streams play as they download with accurate seeking, prefetching based on network state, with manual caching.
 - **Cross-device sync**: Nickname, playlists, favorites and playback progress sync to the chosen source.
 - **Library management**: Read and edit metadata/cover art; playback statistics and rankings.
 - **Themes**: Light/dark and multiple accent colors.
@@ -38,16 +38,12 @@ A cross-platform music player built with [Tauri 3](https://v3.tauri.app/). It re
 | State / i18n | Pinia, vue-i18n |
 | Styling | Tailwind CSS 4 |
 | Lyrics rendering | [@applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics) |
-| Updates | tauri-plugin-updater (desktop) |
+| Updates | Check the GitHub Release and download the APK in the browser |
 
 ## Requirements
 
 - Node.js 20+ and [pnpm](https://pnpm.io/) 9
 - Rust stable (rustup)
-- Platform dependencies:
-  - Windows: WebView2 (bundled with Windows 11)
-  - macOS: Xcode Command Line Tools
-  - Linux: `libgtk-4-dev`, `libx11-dev`, `libxkbcommon-dev`, `libnss3-dev`, `libasound2-dev`, `libgbm-dev`, `patchelf` (the first build downloads the CEF runtime)
 - For Android builds: JDK 17, Android SDK, Android NDK (r26b), and the Android Rust targets
 
 ## Development
@@ -55,7 +51,6 @@ A cross-platform music player built with [Tauri 3](https://v3.tauri.app/). It re
 ```bash
 pnpm install        # install dependencies
 
-pnpm tauri dev      # run the full desktop app (Rust + frontend HMR)
 pnpm dev            # frontend only (Vite, port 1420)
 ```
 
@@ -63,8 +58,6 @@ pnpm dev            # frontend only (Vite, port 1420)
 
 ```bash
 pnpm build                     # frontend only (includes vue-tsc type check)
-pnpm tauri build               # desktop installers
-
 pnpm tauri android build --apk # Android APK
 ```
 
@@ -83,7 +76,7 @@ pnpm tauri android build --apk # Android APK
 │  ├─ src/streaming/    # Stream and manual caches
 │  ├─ src/commands/     # Tauri commands (media, WebDAV, updates, ...)
 │  ├─ gen/android/      # Android project
-│  └─ tauri.conf.json   # App config (version, updater, ...)
+│  └─ tauri.conf.json   # App config (version, Android packaging, ...)
 ├─ scripts/             # Build helper scripts
 └─ .github/workflows/   # CI (release pipeline)
 ```

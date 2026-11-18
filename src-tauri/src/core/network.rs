@@ -28,14 +28,7 @@ impl NetworkStatus {
     };
 }
 
-/// Classify the active network.
+/// Classify the active network through the Android bridge.
 pub fn status() -> NetworkStatus {
-    #[cfg(target_os = "android")]
-    {
-        crate::platform::android::network_status()
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        NetworkStatus::UNMETERED
-    }
+    crate::platform::android::network_status()
 }

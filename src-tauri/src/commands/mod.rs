@@ -22,7 +22,6 @@ pub mod profile;
 pub mod sort;
 pub mod sources;
 pub mod sponsor;
-#[cfg(any(desktop, target_os = "android"))]
 pub mod smart_transition;
 pub mod update;
 pub mod webdav;

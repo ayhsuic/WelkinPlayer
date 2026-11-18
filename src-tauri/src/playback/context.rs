@@ -15,8 +15,6 @@
 //! a mirror: it sends intent commands and renders the `playback:changed` event.
 
 use std::sync::Mutex;
-// `Duration` is only needed by the Android media-control poller below.
-#[cfg(target_os = "android")]
 use std::time::Duration;
 use std::time::Instant;
 
@@ -1533,10 +1531,9 @@ impl PlaybackContext {
 
 /// Poll the native Android MediaSession action queue and drive the context.
 ///
-/// On Android the webview cannot be relied upon to poll (it is throttled or
-/// killed in the background), so the Rust event thread does it instead. It is a
-/// no-op on non-Android targets (the native bridge is not compiled in).
-#[cfg(target_os = "android")]
+/// Drain the native MediaSession action queue. The webview cannot be relied
+/// upon to poll (it is throttled or killed in the background), so the Rust
+/// event thread does it instead.
 pub fn drain_media_control(app: &AppHandle) {
     let raw = match crate::platform::android::media_control_take_control() {
         Ok(Some(raw)) => raw,
@@ -1561,10 +1558,9 @@ pub fn drain_media_control(app: &AppHandle) {
     context.apply_control(&action, value);
 }
 
-/// Begin a lightweight timer that drains the Android MediaSession queue.
+/// Begin a lightweight timer that drains the native MediaSession queue.
 ///
-/// Spawned once at startup; only does work on Android. Lives for the process.
-#[cfg(target_os = "android")]
+/// Spawned once at startup; lives for the process.
 pub fn start_media_control_poller(app: AppHandle) {
     if let Err(error) = std::thread::Builder::new()
         .name("welkin-media-control".to_string())
@@ -1576,9 +1572,3 @@ pub fn start_media_control_poller(app: AppHandle) {
         log::error!("failed to start media-control poller: {error}");
     }
 }
-
-/// On non-Android targets there is nothing to poll; the OS media controls feed
-/// the webview (desktop) through souvlaki events, which the webview forwards to
-/// the Rust context commands. Provide a no-op so callers need no cfg.
-#[cfg(not(target_os = "android"))]
-pub fn start_media_control_poller(_app: AppHandle) {}

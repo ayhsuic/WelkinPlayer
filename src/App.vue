@@ -48,7 +48,6 @@ import { useMetadataStore } from "./stores/metadata";
 import { useNetworkStore } from "./stores/network";
 import { useCacheStore } from "./stores/cache";
 import { useLicenseStore } from "./stores/license";
-import { useWindowBehaviorStore } from "./stores/windowBehavior";
 import { useUpdateStore } from "./stores/update";
 import PlayerBar from "./components/PlayerBar.vue";
 import PlayerNavBar from "./components/PlayerNavBar.vue";
@@ -94,7 +93,6 @@ const metadata = useMetadataStore();
 const network = useNetworkStore();
 const cache = useCacheStore();
 const license = useLicenseStore();
-const windowBehavior = useWindowBehaviorStore();
 const update = useUpdateStore();
 const { loadingLibrary, refreshing, friendlyError, loadCachedLibrary, loadRemoteLibrary, refreshLibrary, downloadTrackMetadata } = useLibrary();
 const view = ref<View>(getViewFromHash());
@@ -511,7 +509,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
   player.togglePlayback();
 }
 
-onMounted(() => { windowBehavior.sync(); window.addEventListener("hashchange", syncViewFromHash); window.addEventListener("keydown", onGlobalKeydown); window.addEventListener("beforeunload", savePlaybackPositionOnLeave); window.addEventListener("pagehide", savePlaybackPositionOnLeave); window.addEventListener("focus", recheckLicense); document.addEventListener("visibilitychange", onVisibilityChange); document.addEventListener("scroll", onScrollCapture, true); void initAudio(); void network.start(); void cache.start(); bootDesktopLyrics(); bootMediaControl(); void invoke<string>("ping").catch((error) => console.warn("[welkin] ping failed", describeError(error))); void bootstrap(); });
+onMounted(() => { window.addEventListener("hashchange", syncViewFromHash); window.addEventListener("keydown", onGlobalKeydown); window.addEventListener("beforeunload", savePlaybackPositionOnLeave); window.addEventListener("pagehide", savePlaybackPositionOnLeave); window.addEventListener("focus", recheckLicense); document.addEventListener("visibilitychange", onVisibilityChange); document.addEventListener("scroll", onScrollCapture, true); void initAudio(); void network.start(); void cache.start(); bootDesktopLyrics(); bootMediaControl(); void invoke<string>("ping").catch((error) => console.warn("[welkin] ping failed", describeError(error))); void bootstrap(); });
 onUnmounted(() => { savePlaybackPosition(true); stopDesktopLyrics(); stopMediaControl(); window.removeEventListener("hashchange", syncViewFromHash); window.removeEventListener("keydown", onGlobalKeydown); window.removeEventListener("beforeunload", savePlaybackPositionOnLeave); window.removeEventListener("pagehide", savePlaybackPositionOnLeave); window.removeEventListener("focus", recheckLicense); document.removeEventListener("visibilitychange", onVisibilityChange); document.removeEventListener("scroll", onScrollCapture, true); unlistenPlayback?.(); unlistenPlayback = null; void profile.flush(); });
 
 // Mirror the Rust playback context into the store. The queue / play intent / next

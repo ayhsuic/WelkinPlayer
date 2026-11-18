@@ -9,7 +9,7 @@ import { Bug, CircleCheck, Copy, ExternalLink, GitFork, HardDrive, HardDriveDown
 import { useI18n } from "vue-i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { invoke } from "../api";
-import { formatBytes, formatSpeed } from "../lib/format";
+import { formatBytes } from "../lib/format";
 import { pushToast } from "../lib/toast";
 import { accents } from "../lib/app";
 import type { Accent, Theme } from "../lib/app";
@@ -18,10 +18,8 @@ import { localeOptions } from "../i18n";
 import { useProfileStore } from "../stores/profile";
 import { useSourcesStore } from "../stores/sources";
 import { useLicenseStore } from "../stores/license";
-import { useWindowBehaviorStore } from "../stores/windowBehavior";
 import { useUpdateStore } from "../stores/update";
 import { useCacheStore } from "../stores/cache";
-import { isDesktop } from "../lib/desktopLyric";
 import LyricsSettings from "../components/LyricsSettings.vue";
 import DesktopLyricSettings from "../components/DesktopLyricSettings.vue";
 import pkg from "../../package.json";
@@ -78,19 +76,10 @@ const qqGroup = "1109689488";
 const profile = useProfileStore();
 const sources = useSourcesStore();
 const license = useLicenseStore();
-const windowBehavior = useWindowBehaviorStore();
 const update = useUpdateStore();
 const cache = useCacheStore();
-/** The close-to-tray preference is desktop-only; Android never shows it. */
-const desktop = isDesktop();
 /** Edition label shown in the About card's edition dial. */
 const editionLabel = computed(() => (license.isPro ? t("sponsor.compare.badgePro") : t("settings.about.edition")));
-/** Download progress readout: bytes received, with the total when known. */
-const updateSizeText = computed(() =>
-  update.total && update.total > 0 ? `${formatBytes(update.downloaded)} / ${formatBytes(update.total)}` : formatBytes(update.downloaded),
-);
-/** Current update transfer rate, or null while unknown. */
-const updateSpeedText = computed(() => (update.speed && update.speed > 0 ? formatSpeed(update.speed) : null));
 const cacheDir = ref("");
 const streamEnabled = ref(true);
 const prefetchSeconds = ref(120);
@@ -355,17 +344,6 @@ button.text-dim:hover:not(:disabled) {
           </div>
         </section>
 
-        <section v-if="desktop" class="ak-frame grid gap-6 border border-line bg-surface p-6 lg:grid-cols-[1fr_1.3fr]">
-          <div><h2 class="text-sm font-bold uppercase tracking-[0.2em]">{{ t("settings.window.title") }}</h2><p class="mt-2 text-sm text-muted">{{ t("settings.window.desc") }}</p></div>
-          <div class="grid gap-4">
-            <div class="flex items-center justify-between gap-4">
-              <span class="text-[13px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.window.action") }}</span>
-              <div class="inline-flex border border-line"><button type="button" class="h-9 px-4 text-[13px] font-semibold uppercase tracking-[0.2em]" :class="!windowBehavior.closeToTray ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'" @click="windowBehavior.closeToTray = false">{{ t("settings.window.close") }}</button><button type="button" class="h-9 border-l border-line px-4 text-[13px] font-semibold uppercase tracking-[0.2em]" :class="windowBehavior.closeToTray ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'" @click="windowBehavior.closeToTray = true">{{ t("settings.window.tray") }}</button></div>
-            </div>
-            <p class="text-[11px] leading-relaxed text-dim">{{ t("settings.window.hint") }}</p>
-          </div>
-        </section>
-
         <section class="ak-frame grid gap-6 border border-line bg-surface p-6 lg:grid-cols-[1fr_1.3fr]">
           <div><h2 class="text-sm font-bold uppercase tracking-[0.2em]">{{ t("settings.sources.title") }}</h2><p class="mt-2 text-sm text-muted">{{ t("settings.sources.desc") }}</p></div>
           <div class="grid gap-4">
@@ -473,14 +451,6 @@ button.text-dim:hover:not(:disabled) {
             <p class="flex flex-wrap items-baseline gap-1.5 text-[13px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.update.current") }}<span class="font-semibold tabular-nums text-fg">v{{ appVersion }}</span></p>
             <div v-if="update.available" class="grid gap-3 border border-line bg-bg p-4">
               <p class="text-sm font-semibold text-accent">{{ t("settings.update.available", { version: update.info?.version }) }}</p>
-              <div v-if="update.installing" class="grid gap-2.5">
-                <span class="block h-2 w-full overflow-hidden bg-fg/10"><span class="block h-full bg-accent transition-[width]" :style="{ width: `${Math.round((update.progress ?? 0) * 100)}%` }"></span></span>
-                <div class="grid grid-cols-[1fr_5.5rem_2.5rem] items-baseline gap-x-3 text-[11px] tabular-nums text-dim">
-                  <span class="truncate">{{ updateSizeText }}</span>
-                  <span class="truncate text-right">{{ updateSpeedText ?? "" }}</span>
-                  <span class="text-right font-semibold text-fg">{{ Math.round((update.progress ?? 0) * 100) }}%</span>
-                </div>
-              </div>
               <button type="button" class="ak-clip-tr flex h-10 items-center justify-center border border-line px-5 text-[13px] font-semibold uppercase tracking-[0.25em] text-fg hover:border-accent hover:text-accent" @click="update.show()">{{ t("settings.update.view") }}</button>
             </div>
             <template v-else>
@@ -488,7 +458,7 @@ button.text-dim:hover:not(:disabled) {
               <p v-else-if="update.checked" class="text-sm text-muted">{{ t("settings.update.latest") }}</p>
             </template>
             <div class="flex justify-end">
-              <button type="button" class="ak-clip-tr h-10 border border-line px-5 text-[13px] font-semibold uppercase tracking-[0.25em] disabled:opacity-60" :disabled="update.checking || update.installing" @click="checkUpdate">{{ t(update.checking ? "settings.update.checking" : "settings.update.check") }}</button>
+              <button type="button" class="ak-clip-tr h-10 border border-line px-5 text-[13px] font-semibold uppercase tracking-[0.25em] disabled:opacity-60" :disabled="update.checking" @click="checkUpdate">{{ t(update.checking ? "settings.update.checking" : "settings.update.check") }}</button>
             </div>
           </div>
         </section>

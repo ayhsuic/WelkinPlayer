@@ -20,12 +20,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "3.0.0-alpha.4", features = [] }
 
 [dependencies]
-# The webview runtime is no longer a feature of `tauri`: since Tauri 3 the app
-# depends on a runtime crate directly and picks it at startup. Linux uses CEF
-# (see the target-specific dependencies below), every other target uses wry.
-tauri = { version = "3.0.0-alpha.5", features = ["protocol-asset", "tray-icon", "image-png"] }
+# The webview runtime: Tauri 3 depends on a runtime crate directly and picks it
+# at startup. The Android build uses wry's mobile backend.
+tauri = { version = "3.0.0-alpha.5", features = ["protocol-asset", "image-png"] }
 tauri-plugin-opener = "3.0.0-alpha.3"
 tauri-plugin-store = "3.0.0-alpha.3"
+tauri-runtime-wry = { version = "3.0.0-alpha.5" }
+tauri-plugin-dialog = "3.0.0-alpha.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -63,64 +64,15 @@ automix = "2.0.1"
 # transitions. Exact up to 20 nodes, which covers ordinary playlists.
 held-karp-core = "0.1.1"
 
-# Password storage uses the platform-native keychain. Each backend is enabled
-# only for its own target so we never compile another OS's dependencies.
-[target.'cfg(target_os = "windows")'.dependencies]
-keyring = { version = "3", features = ["windows-native"] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-keyring = { version = "3", features = ["apple-native"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
-# Linux MPRIS system media controls. souvlaki's default `dbus-crossroads`
-# backend blocks in `Connection::process(Duration::from_millis(1000))` after
-# every event, so a `set_playback`/`set_metadata` queued from the engine tick can
-# sit for up to a second before it reaches the bus — the 1-2 s play/pause lag.
-# The pure-Rust `zbus` backend polls its channel every 10 ms with no blocking
-# `process`, so updates land in ~1 ms (measured).
-souvlaki = { version = "0.8", default-features = false, features = ["use_zbus"] }
-# Linux runs on the Chromium Embedded Framework instead of the system
-# WebKitGTK webview, so the app no longer links webkit2gtk at all. The CEF
-# binary distribution is downloaded by the `cef` crate on the first build and
-# bundled next to the app by the Tauri CLI.
-tauri-runtime-cef = { version = "3.0.0-alpha.6" }
-# rfd's GTK backend pumps the default GLib main context on its own thread, which
-# aborts the CEF browser process after the dialog closes. The XDG portal backend
-# runs out of process over D-Bus instead.
-tauri-plugin-dialog = { version = "3.0.0-alpha.4", default-features = false, features = ["xdg-portal"] }
-# The desktop-lyric overlay is a CEF off-screen browser: the runtime hands over
-# the painted BGRA frame and we composite it into the GTK4 window ourselves (see
-# `src/platform/linux/desktop_lyric.rs`). `Cef::on_window_event` speaks in this
-# crate's winit types, and the compositing uses GTK4's texture/snapshot API.
-winit = { version = "0.31.0-beta.3", package = "tauri-winit", default-features = false }
-gtk = { version = "0.11.5", package = "gtk4" }
-
-[target.'cfg(not(target_os = "linux"))'.dependencies]
-tauri-runtime-wry = { version = "3.0.0-alpha.5" }
-tauri-plugin-dialog = "3.0.0-alpha.4"
-
-[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
-# System media controls on desktop: Windows SMTC and macOS Now Playing. Android
-# implements its own native MediaSession, so the crate is only pulled in for the
-# desktop targets; Linux enables it (with a different backend) below.
-souvlaki = "0.8"
-# Signed, per-platform updates published as GitHub release assets. Desktop only:
-# Android queries the GitHub Releases API and downloads the APK manually instead.
-tauri-plugin-updater = "3.0.0-alpha.3"
-
-# Audio decoding/rendering is shared by the desktop and Android targets: `cpal`
-# drives WASAPI / CoreAudio / ALSA on desktop and Oboe (AAudio / OpenSL ES) on
-# Android, so there is no hand-written JNI. `symphonia-all` covers
-# mp3/flac/vorbis/wav/aac/mp4; `symphonia-alac` adds ALAC. `cpal-shared-stdcxx`
-# links the NDK's shared libc++ that the Tauri Android app already ships.
-[target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux", target_os = "android"))'.dependencies]
+# Audio decoding/rendering: `cpal` drives Oboe (AAudio / OpenSL ES) on Android,
+# so there is no hand-written JNI. `symphonia-all` covers mp3/flac/vorbis/wav/
+# aac/mp4; `symphonia-alac` adds ALAC. `cpal-shared-stdcxx` links the NDK's
+# shared libc++ that the Tauri Android app already ships.
 # rodio 0.21 owns the decode path again: `Decoder::builder().with_byte_len(len)`
 # reports the real stream length to Symphonia, which is what its demuxers need to
-# seek (rodio 0.20 hardcoded `byte_len() == None`, so every FLAC seek fell back to
-# re-decoding from sample 0). The `flac`/`mp3`/`mp4`/`vorbis`/`wav` meta-features
-# pull the matching Symphonia demuxer+codec pairs; `symphonia-alac` adds ALAC.
-# `playback` enables the cpal output stream.
+# seek. The `flac`/`mp3`/`mp4`/`vorbis`/`wav` meta-features pull the matching
+# Symphonia demuxer+codec pairs; `symphonia-alac` adds ALAC. `playback` enables
+# the cpal output stream.
 rodio = { version = "0.21", default-features = false, features = ["playback", "flac", "mp3", "mp4", "vorbis", "wav", "symphonia-alac", "symphonia-adpcm", "cpal-shared-stdcxx"] }
 # Pitch-preserving playback-speed changes (WSOLA time-stretch). Pure Rust, so
 # it cross-compiles to Android with no extra C/C++ toolchain.

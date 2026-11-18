@@ -1,19 +1,12 @@
 // Copyright 2026 Atemukesu
 // SPDX-License-Identifier: GPL-3.0-only
 
-//! In-app updates.
+//! In-app updates for Android.
 //!
-//! macOS and Windows use Tauri's official updater: the release workflow signs
-//! every installer with the developer key and publishes a `latest.json` manifest
-//! as a GitHub release asset, so the backend verifies each download against the
-//! embedded public key before installing it.
-//!
-//! Android and Linux are deliberately different. Installing from inside the app
-//! needs a platform package installer (an APK on Android, a system package
-//! manager on Linux), so instead the newest GitHub release is queried directly
-//! and the webview offers the release page as a normal browser link the user
-//! installs themselves. Both paths return the same [`UpdateInfo`] so the
-//! settings screen can render the release notes identically.
+//! Installing from inside the app needs the platform package installer, so the
+//! newest GitHub release is queried directly and the webview offers the release
+//! page (or matching APK asset) as a normal browser link the user installs
+//! themselves. [`UpdateInfo`] keeps the same shape the settings screen renders.
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -23,7 +16,7 @@ use crate::core::error::AppError;
 /// GitHub repository whose releases carry the update artifacts.
 pub const REPO: &str = "atemukesu/WelkinPlayer";
 
-/// A discovered update, normalized across the desktop and Android paths.
+/// A discovered update, normalized for the release page.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
@@ -35,15 +28,14 @@ pub struct UpdateInfo {
     pub version: Option<String>,
     /// Release notes / changelog body, when the release carries one.
     pub notes: Option<String>,
-    /// Publish date (RFC 3339 on Android, the updater's format on desktop).
+    /// Publish date (RFC 3339).
     pub date: Option<String>,
-    /// Direct URL to install from outside the app: the `.apk` asset on Android,
-    /// the release page on Linux. `None` on macOS/Windows (they auto-install).
+    /// Direct URL to install from outside the app: the matching `.apk` asset.
     pub download_url: Option<String>,
 }
 
 impl UpdateInfo {
-    /// The "nothing to do" result, shared by both platforms.
+    /// The "nothing to do" result.
     fn up_to_date(current_version: String) -> Self {
         Self {
             available: false,
@@ -138,122 +130,7 @@ fn fetch_release_notes(current: &str, latest: &str) -> Result<Option<String>, Ap
     Ok(Some(combined))
 }
 
-/// Progress streamed to the webview while a desktop update downloads.
-///
-/// The shape mirrors the official updater example so the frontend can key off
-/// `event.event` (`Started` / `Progress` / `Finished`).
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "event", content = "data")]
-pub enum DownloadEvent {
-    #[serde(rename_all = "camelCase")]
-    Started {
-        content_length: Option<u64>,
-    },
-    #[serde(rename_all = "camelCase")]
-    Progress {
-        chunk_length: usize,
-    },
-    Finished,
-}
-
-/// macOS/Windows update backend, backed by `tauri-plugin-updater`.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-pub mod desktop {
-    use std::sync::Mutex;
-
-    use tauri::{ipc::Channel, AppHandle};
-    use tauri_plugin_updater::{Update, UpdaterExt};
-
-    use super::{cumulative_notes, DownloadEvent, UpdateInfo};
-    use crate::core::error::AppError;
-
-    /// The update found by [`check`], held between the check and install calls.
-    ///
-    /// The plugin's `Update` value owns the verified download metadata, so it
-    /// cannot be re-derived frontend-side; the backend keeps it until the user
-    /// confirms the install.
-    #[derive(Default)]
-    pub struct PendingUpdate(pub Mutex<Option<Update>>);
-
-    /// Ask the configured endpoint for an update, remembering it for install.
-    pub async fn check(app: &AppHandle, pending: &PendingUpdate) -> Result<UpdateInfo, AppError> {
-        let update = app
-            .updater()
-            .map_err(|error| AppError::Other(format!("更新器初始化失败：{error}")))?
-            .check()
-            .await
-            .map_err(|error| AppError::Other(format!("检查更新失败：{error}")))?;
-
-        match update {
-            Some(update) => {
-                // The manifest only carries the newest release's notes; merge the
-                // skipped versions' notes so a user upgrading across releases
-                // sees everything they missed. Runs off the async runtime.
-                let current_version = update.current_version.clone();
-                let latest_version = update.version.clone();
-                let fallback = update.body.clone().filter(|text| !text.trim().is_empty());
-                let notes = tauri::async_runtime::spawn_blocking(move || {
-                    cumulative_notes(&current_version, &latest_version, fallback)
-                })
-                .await
-                .ok()
-                .flatten();
-
-                let info = UpdateInfo {
-                    available: true,
-                    current_version: update.current_version.clone(),
-                    version: Some(update.version.clone()),
-                    notes,
-                    date: update.date.map(|date| date.to_string()),
-                    download_url: Some(update.download_url.to_string()),
-                };
-                *pending.0.lock().unwrap() = Some(update);
-                Ok(info)
-            }
-            None => Ok(UpdateInfo::up_to_date(
-                app.package_info().version.to_string(),
-            )),
-        }
-    }
-
-    /// Download and install the remembered update, streaming progress.
-    ///
-    /// On Windows the installer exits the app on its own; elsewhere the app is
-    /// relaunched here so the freshly installed build takes over.
-    pub async fn install(
-        app: &AppHandle,
-        pending: &PendingUpdate,
-        on_event: Channel<DownloadEvent>,
-    ) -> Result<(), AppError> {
-        let update = { pending.0.lock().unwrap().take() };
-        let Some(update) = update else {
-            return Err(AppError::Other("没有可安装的更新".to_string()));
-        };
-
-        let mut started = false;
-        update
-            .download_and_install(
-                |chunk_length, content_length| {
-                    if !started {
-                        let _ = on_event.send(DownloadEvent::Started { content_length });
-                        started = true;
-                    }
-                    let _ = on_event.send(DownloadEvent::Progress { chunk_length });
-                },
-                || {},
-            )
-            .await
-            .map_err(|error| AppError::Other(format!("下载或安装更新失败：{error}")))?;
-
-        let _ = on_event.send(DownloadEvent::Finished);
-        app.restart()
-    }
-}
-
-/// GitHub Releases-backed update backend for platforms that open the release
-/// page instead of installing in-app (Android APKs, Linux packages).
-#[cfg(any(target_os = "android", target_os = "linux"))]
+/// GitHub Releases-backed update backend for Android.
 pub mod github_release {
     use serde::Deserialize;
     use tauri::AppHandle;
@@ -267,15 +144,11 @@ pub mod github_release {
         tag_name: String,
         body: Option<String>,
         published_at: Option<String>,
-        /// Only Android needs the asset list (to pick its ABI split APK); Linux
-        /// links the release page directly, so it is compiled out there.
-        #[cfg(target_os = "android")]
         #[serde(default)]
         assets: Vec<Asset>,
     }
 
     /// One downloadable file attached to a release.
-    #[cfg(target_os = "android")]
     #[derive(Debug, Deserialize)]
     struct Asset {
         name: String,
@@ -285,7 +158,6 @@ pub mod github_release {
     /// Canonical Play-Store ABI for the architecture this build runs on. The
     /// installed APK was built for the device, so its compile-time arch
     /// identifies the matching split APK.
-    #[cfg(target_os = "android")]
     fn device_abi() -> &'static str {
         match std::env::consts::ARCH {
             "aarch64" => "arm64-v8a",
@@ -299,7 +171,6 @@ pub mod github_release {
     /// Normalize a raw ABI token (which may be a short form such as `arm64` /
     /// `arm`, or a long form such as `arm64-v8a`) into one of the canonical
     /// Play-Store ABIs. Anything unrecognized is treated as `universal`.
-    #[cfg(target_os = "android")]
     fn canonical_abi(raw: &str) -> &'static str {
         match raw.to_ascii_lowercase().as_str() {
             "arm64-v8a" | "arm64" => "arm64-v8a",
@@ -313,7 +184,6 @@ pub mod github_release {
     /// Resolve the canonical ABI of an APK asset name. The ABI sits between the
     /// (possibly pre-release) versioned tag and `.apk`, e.g.
     /// `Welkin-v1.0.3-rc.2-arm64.apk` or `Welkin-v1.0.3-rc.2-arm64-v8a.apk`.
-    #[cfg(target_os = "android")]
     fn asset_abi(name: &str) -> &'static str {
         let lower = name.to_ascii_lowercase();
         // Try the two-part canonical ABIs first (they contain a dash, so a plain
@@ -355,30 +225,18 @@ pub mod github_release {
 
         // Android ships one split APK per ABI (`Welkin-<tag>-<abi>.apk`), so pick
         // the one for this device; fall back to the universal build, then to any
-        // other APK, when there is no exact ABI match. Linux has no in-app
-        // installer, so it links the release page and lets the user pick the
-        // deb/rpm themselves.
-        #[cfg(target_os = "android")]
-        let download_url = {
-            let target = device_abi();
-            release
-                .assets
-                .iter()
-                .filter(|asset| asset.name.to_ascii_lowercase().ends_with(".apk"))
-                .min_by_key(|asset| {
-                    match asset_abi(&asset.name) {
-                        abi if abi == target => 0,
-                        "universal" => 1,
-                        _ => 2,
-                    }
-                })
-                .map(|asset| asset.browser_download_url.clone())
-        };
-        #[cfg(target_os = "linux")]
-        let download_url = Some(format!(
-            "https://github.com/{REPO}/releases/tag/{}",
-            release.tag_name
-        ));
+        // other APK, when there is no exact ABI match.
+        let target = device_abi();
+        let download_url = release
+            .assets
+            .iter()
+            .filter(|asset| asset.name.to_ascii_lowercase().ends_with(".apk"))
+            .min_by_key(|asset| match asset_abi(&asset.name) {
+                abi if abi == target => 0,
+                "universal" => 1,
+                _ => 2,
+            })
+            .map(|asset| asset.browser_download_url.clone());
 
         // Merge every skipped version's notes, not just the newest one.
         let fallback = release.body.filter(|text| !text.trim().is_empty());
@@ -423,30 +281,8 @@ pub mod github_release {
     }
 }
 
-/// Check for an update on macOS/Windows (in-app auto-install).
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-#[tauri::command]
-pub async fn check_update(
-    app: AppHandle,
-    pending: tauri::State<'_, desktop::PendingUpdate>,
-) -> Result<UpdateInfo, AppError> {
-    desktop::check(&app, &pending).await
-}
-
-/// Download and install the pending desktop update, reporting progress.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-#[tauri::command]
-pub async fn install_update(
-    app: AppHandle,
-    pending: tauri::State<'_, desktop::PendingUpdate>,
-    on_event: tauri::ipc::Channel<DownloadEvent>,
-) -> Result<(), AppError> {
-    desktop::install(&app, &pending, on_event).await
-}
-
-/// Check for an update on Android and Linux: returns the latest GitHub release
-/// so the webview can open the release page and let the user install manually.
-#[cfg(any(target_os = "android", target_os = "linux"))]
+/// Check for an update on Android: returns the latest GitHub release so the
+/// webview can open the release page and let the user install manually.
 #[tauri::command]
 pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, AppError> {
     github_release::check(&app).await

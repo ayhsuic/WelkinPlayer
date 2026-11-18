@@ -7,20 +7,10 @@
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm build",
-    "beforeBundleCommand": "node scripts/patch-cef-angle-stubs.mjs",
     "frontendDist": "../dist"
   },
   "app": {
     "withGlobalTauri": true,
-    "windows": [
-      {
-        "title": "Welkin",
-        "width": 800,
-        "height": 600,
-        "dragDropEnabled": false,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HardwareMediaKeyHandling --autoplay-policy=no-user-gesture-required --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding"
-      }
-    ],
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob: http://127.0.0.1:* http://localhost:*; media-src 'self' asset: http://asset.localhost blob: data: http://127.0.0.1:* http://localhost:*; font-src 'self' data: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost data: http://127.0.0.1:* http://localhost:* ws://localhost:* ws://127.0.0.1:*; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
       "assetProtocol": {
@@ -31,32 +21,16 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
-    "createUpdaterArtifacts": true,
     "android": {
       "minSdkVersion": 26,
       "debugApplicationIdSuffix": ".debug"
     },
     "icon": [
       "icons/32x32.png",
+      "icons/64x64.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ],
-    "windows": {
-      "nsis": {
-        "installerIcon": "icons/icon.ico",
-        "uninstallerIcon": "icons/icon.ico"
-      }
-    }
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlGNEVBN0E1QUYzNjQzOUYKUldTZlF6YXZwYWRPbjJaem1la3d5eDFua3dhTlA5eEVIcW9RNFJwdHFnVGs1RzAyR29nblpGRE4K",
-      "endpoints": [
-        "https://github.com/atemukesu/WelkinPlayer/releases/latest/download/latest.json"
-      ]
-    }
+      "icons/icon.png"
+    ]
   }
 }

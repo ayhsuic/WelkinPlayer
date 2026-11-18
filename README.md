@@ -4,10 +4,10 @@
 
 # Welkin
 
-基于 [Tauri 3](https://v3.tauri.app/) 的跨平台音乐播放器。通过 WebDAV 或本地文件夹读取音乐收藏，把资料、歌单与播放进度跨设备同步，并提供 AMLL 逐字歌词、桌面悬浮歌词与系统媒体控制。音频解码与播放全部在 Rust 后端完成，前端只负责界面与队列调度。Linux 使用 CEF（Chromium）作为 WebView 后端，Windows / macOS / Android 使用系统 WebView。
+基于 [Tauri 3](https://v3.tauri.app/) 的 Android 音乐播放器。通过 WebDAV 或本地文件夹读取音乐收藏，把资料、歌单与播放进度跨设备同步，并提供 AMLL 逐字歌词、系统悬浮歌词与媒体控制。音频解码与播放全部在 Rust 后端完成，前端只负责界面与队列调度。
 
 - 仓库：<https://github.com/atemukesu/WelkinPlayer>
-- 支持平台：Windows / macOS / Linux / Android
+- 支持平台：Android
 - 界面语言：简体中文、English
 
 ## 截图
@@ -21,9 +21,9 @@
 
 - **音乐来源**：同时配置多个 WebDAV 与本地文件夹来源，可指定其中一个作为云端同步位置。
 - **歌词**：AMLL 逐字歌词渲染；在线歌词按顺序从 QQ 音乐、网易云音乐、AMLL 歌词库获取；本地同名字幕优先。
-- **桌面悬浮歌词**：独立的透明歌词窗口（Android 为系统悬浮窗）。
-- **系统媒体控制**：Windows SMTC、macOS Now Playing、Linux MPRIS、Android MediaSession。
-- **Rust 播放引擎**：Symphonia 解码、cpal 输出（桌面 WASAPI / CoreAudio / ALSA，Android Oboe / AAudio），WebDAV 流媒体边下边播并支持精准 seek；按网络状态预取，支持手动缓存。
+- **悬浮歌词**：系统悬浮窗逐字歌词。
+- **系统媒体控制**：Android MediaSession。
+- **Rust 播放引擎**：Symphonia 解码、cpal 经 Oboe / AAudio 输出，WebDAV 流媒体边下边播并支持精准 seek；按网络状态预取，支持手动缓存。
 - **跨设备同步**：昵称、歌单、收藏、播放进度等同步到指定来源。
 - **音乐管理**：元数据/封面读取与编辑、播放统计与排名。
 - **主题**：浅色/深色与多种主题色。
@@ -38,24 +38,19 @@
 | 状态/i18n | Pinia、vue-i18n |
 | 样式 | Tailwind CSS 4 |
 | 歌词渲染 | [@applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics) |
-| 更新 | tauri-plugin-updater（桌面） |
+| 更新 | 检查 GitHub Release，浏览器下载 APK |
 
 ## 环境要求
 
 - Node.js 20+ 与 [pnpm](https://pnpm.io/) 9
 - Rust stable（rustup）
-- 平台依赖：
-  - Windows：WebView2（Win11 自带）
-  - macOS：Xcode Command Line Tools
-  - Linux：`libgtk-4-dev`、`libx11-dev`、`libxkbcommon-dev`、`libnss3-dev`、`libasound2-dev`、`libgbm-dev`、`patchelf`（首次构建会自动下载 CEF 运行时）
-- 构建 Android 额外需要：JDK 17、Android SDK、Android NDK（r26b）、Android 目标 Rust 组件
+- 构建 Android 需要：JDK 17、Android SDK、Android NDK（r26b）、Android 目标 Rust 组件
 
 ## 开发
 
 ```bash
 pnpm install        # 安装依赖
 
-pnpm tauri dev      # 启动完整桌面应用（Rust + 前端热更新）
 pnpm dev            # 仅启动前端（Vite，端口 1420）
 ```
 
@@ -63,8 +58,6 @@ pnpm dev            # 仅启动前端（Vite，端口 1420）
 
 ```bash
 pnpm build                     # 仅构建前端（含 vue-tsc 类型检查）
-pnpm tauri build               # 构建桌面安装包
-
 pnpm tauri android build --apk # 构建 Android APK
 ```
 
@@ -72,7 +65,7 @@ pnpm tauri android build --apk # 构建 Android APK
 
 ### CI 出包（仅安卓）
 
-推送 `v*` 标签时，`.github/workflows/android-release.yml` 只构建 arm64-v8a 的 release APK（已 strip 瘦身，不出 debug 包），并上传到该标签的 GitHub Release；桌面全平台流程不再随标签自动触发。
+推送 `v*` 标签时，`.github/workflows/android-release.yml` 只构建 arm64-v8a 的 release APK（已 strip 瘦身，不出 debug 包），并上传到该标签的 GitHub Release。
 
 在仓库 Settings → Secrets and variables → Actions 配置以下密钥后才会用 release 证书签名，留空则回退 debug 签名：
 
@@ -104,7 +97,7 @@ keytool -genkeypair -v -keystore welkin-release.jks -alias welkin \
 │  ├─ src/streaming/    # 流缓存与手动缓存
 │  ├─ src/commands/     # Tauri 命令（媒体、WebDAV、更新等）
 │  ├─ gen/android/      # Android 工程
-│  └─ tauri.conf.json   # 应用配置（版本、更新器等）
+│  └─ tauri.conf.json   # 应用配置（版本、Android 打包等）
 ├─ scripts/             # 构建辅助脚本
 └─ .github/workflows/   # CI（发布流程）
 ```

@@ -64,29 +64,13 @@ export interface DesktopLyricTickPayload {
   visible: boolean;
 }
 
-/** True when running inside the Tauri shell. */
-export function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
 /** True on Android (Tauri mobile), where the floating layer is a WebView overlay. */
 export function isAndroid(): boolean {
   return typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
 }
 
-/** True on the Linux desktop build, which opens the release page instead of
- * auto-installing (no in-app package installer). */
-export function isLinux(): boolean {
-  return typeof navigator !== "undefined" && /linux/i.test(navigator.userAgent);
-}
-
-/** True on the desktop window managers (everything but Android/iOS). */
-export function isDesktop(): boolean {
-  return isTauri() && !isAndroid() && !/iphone|ipad|ipod/i.test(navigator.userAgent);
-}
-
-/** Label of the desktop floating window, shared by JS and Rust. */
+/** Label of the floating renderer, shared by JS and Rust. */
 export const DESKTOP_LYRIC_WINDOW_LABEL = "desktop-lyrics";
 
-/** LocalStorage key holding the last floating-window geometry. */
+/** LocalStorage key holding the last floating-layer geometry. */
 export const DESKTOP_LYRIC_GEOMETRY_KEY = "welkin-desktop-lyric-geometry";
