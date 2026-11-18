@@ -469,9 +469,14 @@ function expandedCenter(block: { column: number; row: number }, focusSlot: numbe
   const localRow = block.row - repeatY * geo.blockRows;
   const slot = focusSlotRect(focusSlot);
   const pitch = pitchOf(metrics.value);
+  const gap = metrics.value.gap;
+  // Centre on the actual poster rectangle (cover length minus the seam on each
+  // side), not the pitch-grid centre, otherwise the card reads shifted to the right.
+  const cardW = slot.cols * pitch - gap;
+  const cardH = slot.rows * pitch - gap;
   return {
-    x: repeatX * geo.cellWidth + localColumn * geo.blockWidth + (slot.x + slot.cols / 2) * pitch,
-    y: repeatY * geo.cellHeight + localRow * geo.blockHeight + (slot.y + slot.rows / 2) * pitch,
+    x: repeatX * geo.cellWidth + localColumn * geo.blockWidth + slot.x * pitch + cardW / 2,
+    y: repeatY * geo.cellHeight + localRow * geo.blockHeight + slot.y * pitch + cardH / 2,
   };
 }
 
@@ -700,7 +705,10 @@ defineExpose({ focusCurrent, focusFirst });
               {{ metaOf(cardTrack) }}
             </button>
             <span v-else class="wall-card-meta">{{ metaOf(cardTrack) }}</span>
-            <h2 class="wall-card-title">{{ cardTrack.title }}</h2>
+            <h2
+              class="wall-card-title"
+              :style="cardTrack?.color ? { color: cardTrack.color } : undefined"
+            >{{ cardTrack.title }}</h2>
           </div>
 
           <!-- Playing lyrics state: three lines take the centre; tap to pause and return to the Play button. -->
@@ -717,6 +725,7 @@ defineExpose({ focusCurrent, focusFirst });
           <button
             type="button"
             class="wall-card-action wall-card-action--lyrics"
+            :style="cardTrack?.color ? { color: cardTrack.color } : undefined"
             aria-label="Lyrics"
             @click.stop="openCardLyrics()"
           >
@@ -878,6 +887,7 @@ button.wall-card-meta {
   font-weight: 800;
   line-height: 1.14;
   letter-spacing: -0.01em;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -901,7 +911,7 @@ button.wall-card-meta {
 
 .wall-card-lyric {
   margin: 0;
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.5;
   text-align: center;
   white-space: nowrap;
@@ -916,7 +926,7 @@ button.wall-card-meta {
 
 .wall-card-lyric.is-current {
   opacity: 0.95;
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 700;
 }
 
@@ -948,15 +958,15 @@ button.wall-card-meta {
   transform: translate(-50%, -50%);
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
+  width: 60px;
+  height: 60px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: none;
   border-radius: 0;
-  background: rgba(0, 0, 0, 0.42);
-  color: #fff;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  /* Single-colour clipped-corner rectangle; no two-tone layered shell. */
+  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 calc(100% - var(--cut)), 0 var(--cut));
+  background: var(--accent);
+  color: var(--accent-fg);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.34);
   cursor: pointer;
   z-index: 3;

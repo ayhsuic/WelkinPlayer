@@ -336,11 +336,9 @@ onBeforeUnmount(() => {
 <style scoped>
 .transport {
   position: fixed;
-  left: 0;
-  right: 0;
-  width: 100%;
-  padding: 0 20px;
-  box-sizing: border-box;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(340px, calc(100vw - 40px));
   bottom: calc(env(safe-area-inset-bottom) + 76px);
   z-index: 60;
   touch-action: none;
@@ -351,9 +349,10 @@ onBeforeUnmount(() => {
 
 .seekbar {
   position: relative;
-  height: 52px;
+  height: 44px;
   overflow: hidden;
-  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+  /* Outer layer: clipped on the left corners, matching the reference layered shape. */
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% 100%, 0 100%, 0 calc(100% - var(--cut)));
   background: color-mix(in srgb, var(--line) 35%, transparent);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.26);
   cursor: pointer;
@@ -382,7 +381,8 @@ onBeforeUnmount(() => {
   bottom: 0;
   left: 0;
   z-index: 1;
-  clip-path: polygon(0 0, calc(100% - 3px) 0, 100% 3px, 100% 100%, 3px 100%, 0 calc(100% - 3px));
+  /* Inner progress block: clipped on the right corners. */
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, calc(100% - var(--cut)) 100%, 0 100%);
   background: var(--accent);
   pointer-events: none;
 }
@@ -425,7 +425,7 @@ onBeforeUnmount(() => {
   bottom: 4px;
   left: clamp(0%, calc(var(--ratio, 50%) - 16.666%), 66.666%);
   width: 33.333%;
-  clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, calc(100% - var(--cut)) 100%, 0 100%);
   background: var(--accent);
   pointer-events: none;
 }

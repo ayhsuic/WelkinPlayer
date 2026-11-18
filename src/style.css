@@ -37,6 +37,8 @@
   --accent: #f0a500;
   --accent-fg: #101216;
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  /* Unified clipped-corner size shared by the seekbar, switcher, tab bar and card button. */
+  --cut: 8px;
   color-scheme: light;
 }
 
