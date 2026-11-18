@@ -80,6 +80,7 @@ function onSelect(tab: MainTab) {
 .item-highlight {
   position: absolute;
   inset: 5px;
+  isolation: isolate;
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
   background: var(--accent);
   opacity: 0;
@@ -91,8 +92,8 @@ function onSelect(tab: MainTab) {
   content: "";
   position: absolute;
   inset: 0;
-  background: var(--accent);
-  opacity: 0.5;
+  z-index: -1;
+  background: color-mix(in srgb, var(--accent) 50%, #fff);
   transform: translate(-6px, -6px);
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }

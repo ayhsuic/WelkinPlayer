@@ -350,7 +350,6 @@ onBeforeUnmount(() => {
 .seekbar {
   position: relative;
   height: 44px;
-  overflow: hidden;
   /* Transparent track: only the top-right and bottom-left corners are clipped. */
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
   background: color-mix(in srgb, var(--line) 35%, transparent);
@@ -382,8 +381,9 @@ onBeforeUnmount(() => {
   bottom: 0;
   left: 0;
   z-index: 1;
-  /* Elapsed block: top-right/bottom-left clipped; a lighter back layer peeks along
-     the top and left edges for the raised look. */
+  isolation: isolate;
+  /* Elapsed block: top-right/bottom-left clipped; a lighter back layer sits under
+     the solid front layer and peeks along the top and left edges. */
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
   background: var(--accent);
   pointer-events: none;
@@ -393,8 +393,8 @@ onBeforeUnmount(() => {
   content: "";
   position: absolute;
   inset: 0;
-  background: var(--accent);
-  opacity: 0.5;
+  z-index: -1;
+  background: color-mix(in srgb, var(--accent) 50%, #fff);
   transform: translate(-6px, -6px);
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
@@ -437,6 +437,7 @@ onBeforeUnmount(() => {
   bottom: 4px;
   left: clamp(0%, calc(var(--ratio, 50%) - 16.666%), 66.666%);
   width: 33.333%;
+  isolation: isolate;
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
   background: var(--accent);
   pointer-events: none;
@@ -446,8 +447,8 @@ onBeforeUnmount(() => {
   content: "";
   position: absolute;
   inset: 0;
-  background: var(--accent);
-  opacity: 0.5;
+  z-index: -1;
+  background: color-mix(in srgb, var(--accent) 50%, #fff);
   transform: translate(-6px, -6px);
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
