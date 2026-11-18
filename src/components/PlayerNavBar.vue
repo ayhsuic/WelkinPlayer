@@ -351,7 +351,8 @@ onBeforeUnmount(() => {
   position: relative;
   height: 44px;
   overflow: hidden;
-  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 calc(100% - var(--cut)), 0 var(--cut));
+  /* Transparent track: only the top-right and bottom-left corners are clipped. */
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
   background: color-mix(in srgb, var(--line) 35%, transparent);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.26);
   cursor: pointer;
@@ -370,6 +371,7 @@ onBeforeUnmount(() => {
   top: 0;
   bottom: 0;
   left: 0;
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
   background: color-mix(in srgb, var(--fg) 16%, transparent);
   pointer-events: none;
 }
@@ -380,8 +382,9 @@ onBeforeUnmount(() => {
   bottom: 0;
   left: 0;
   z-index: 1;
-  /* Single clipped-corner block: a lighter offset back layer under a solid front layer. */
-  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 calc(100% - var(--cut)), 0 var(--cut));
+  /* Elapsed block: top-right/bottom-left clipped; a lighter back layer peeks along
+     the top and left edges for the raised look. */
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
   background: var(--accent);
   pointer-events: none;
 }
@@ -393,7 +396,7 @@ onBeforeUnmount(() => {
   background: var(--accent);
   opacity: 0.5;
   transform: translate(-6px, -6px);
-  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 calc(100% - var(--cut)), 0 var(--cut));
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
 
 .seekbar-time {
@@ -434,7 +437,7 @@ onBeforeUnmount(() => {
   bottom: 4px;
   left: clamp(0%, calc(var(--ratio, 50%) - 16.666%), 66.666%);
   width: 33.333%;
-  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 calc(100% - var(--cut)), 0 var(--cut));
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
   background: var(--accent);
   pointer-events: none;
 }
@@ -446,7 +449,7 @@ onBeforeUnmount(() => {
   background: var(--accent);
   opacity: 0.5;
   transform: translate(-6px, -6px);
-  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 calc(100% - var(--cut)), 0 var(--cut));
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
 
 .switcher-option {
