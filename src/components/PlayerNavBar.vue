@@ -79,8 +79,8 @@ const fillRatio = () => Math.min(100, Math.max(0, sliderValue()));
  */
 const elapsedStyle = () => {
   const ratio = fillRatio();
-  if (ratio < 14) return { left: "14px", transform: "none" };
-  return { left: `${ratio}%`, transform: "translateX(calc(-100% - 8px))" };
+  if (ratio < 14) return { left: "14px", transform: "translateY(-50%)" };
+  return { left: `${ratio}%`, transform: "translateY(-50%) translateX(calc(-100% - 8px))" };
 };
 
 /** Centre ratio of each mode's third, so the thumb starts over the active mode. */
@@ -336,10 +336,11 @@ onBeforeUnmount(() => {
 <style scoped>
 .transport {
   position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 280px;
-  max-width: calc(100vw - 40px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  padding: 0 20px;
+  box-sizing: border-box;
   bottom: calc(env(safe-area-inset-bottom) + 76px);
   z-index: 60;
   touch-action: none;
@@ -350,22 +351,20 @@ onBeforeUnmount(() => {
 
 .seekbar {
   position: relative;
-  height: 44px;
+  height: 52px;
   overflow: hidden;
   clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
-  background: color-mix(in srgb, var(--line) 55%, transparent);
+  background: color-mix(in srgb, var(--line) 35%, transparent);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.26);
   cursor: pointer;
   touch-action: none;
 }
 
+/* Outer track fills the whole bar; the inner progress block is a second
+   clipped-corner rectangle stacked on it, mirroring lmusic's two-layer seekbar. */
 .seekbar-track {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 8px;
-  height: 6px;
-  clip-path: polygon(0 0, calc(100% - 3px) 0, 100% 3px, 100% 100%, 3px 100%, 0 calc(100% - 3px));
+  inset: 0;
 }
 
 .seekbar-buffer {
@@ -383,13 +382,14 @@ onBeforeUnmount(() => {
   bottom: 0;
   left: 0;
   z-index: 1;
+  clip-path: polygon(0 0, calc(100% - 3px) 0, 100% 3px, 100% 100%, 3px 100%, 0 calc(100% - 3px));
   background: var(--accent);
   pointer-events: none;
 }
 
 .seekbar-time {
   position: absolute;
-  top: 7px;
+  top: 50%;
   z-index: 2;
   font-size: 12px;
   font-weight: 600;
@@ -405,6 +405,7 @@ onBeforeUnmount(() => {
 
 .seekbar-time--end {
   right: 14px;
+  transform: translateY(-50%);
 }
 
 .seekbar-switcher {
