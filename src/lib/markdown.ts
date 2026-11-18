@@ -4,14 +4,15 @@
  */
 
 /**
- * Render the Markdown subset used by the release notes (see
- * `scripts/prepare-release.mjs`) to HTML for the update dialog.
+ * Render the Markdown subset used by the release notes to HTML for the update
+ * dialog. Notes are GitHub Release bodies: aggregated in
+ * `src-tauri/src/commands/update.rs`, authored by the Publish step in
+ * `.github/workflows/android-release.yml`.
  *
- * The notes come from our own `latest.json`, but they still end up in `v-html`,
- * so the whole document is HTML-escaped before any formatting is applied. Only
- * headings, unordered/ordered lists, bold and inline code are recognised; the
- * output is a flat list of block elements (no nesting) which keeps the renderer
- * small and predictable.
+ * The notes still end up in `v-html`, so the whole document is HTML-escaped
+ * before any formatting is applied. Only headings, unordered/ordered lists,
+ * bold and inline code are recognised; the output is a flat list of block
+ * elements (no nesting) which keeps the renderer small and predictable.
  */
 function escapeHtml(text: string): string {
   return text
