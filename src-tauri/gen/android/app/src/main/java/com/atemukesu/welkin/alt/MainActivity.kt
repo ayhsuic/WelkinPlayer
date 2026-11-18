@@ -28,9 +28,8 @@ class MainActivity : TauriActivity() {
       FolderPickerBridge.onPermissionResult()
     }
 
-  // The floating-lyrics and media notifications are how the user unlocks the
-  // overlay, so Android 13+ needs POST_NOTIFICATIONS or there is no way back
-  // out of the locked state.
+  // Media notifications need POST_NOTIFICATIONS on Android 13+; without it the
+  // service notification cannot be shown.
   private val notificationLauncher =
     registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -50,9 +49,6 @@ class MainActivity : TauriActivity() {
 
   override fun onDestroy() {
     FolderPickerBridge.detach(this)
-    // Quitting the app must also tear the floating lyrics down; backgrounding
-    // it (home button) keeps them, which is the point of an overlay.
-    if (isFinishing) DesktopLyricBridge.stop(this)
     super.onDestroy()
   }
 }

@@ -2,8 +2,6 @@
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import {
-  Captions,
-  CaptionsOff,
   ChevronUp,
   LoaderCircle,
   Pause,
@@ -17,8 +15,6 @@ import {
   VolumeX,
 } from "@lucide/vue";
 import { usePlayerStore } from "../stores/player";
-import { useDesktopLyricsStore } from "../stores/desktopLyrics";
-import { requestDesktopLyricPermission } from "../composables/useDesktopLyrics";
 import { coverPending, initial, percent } from "../lib/format";
 import { seekPercent } from "../lib/audio";
 import * as audioQuality from "../lib/audioQuality";
@@ -30,7 +26,6 @@ const emit = defineEmits<{ open: []; openArtist: [artist: string]; openAlbum: [a
 
 const { t } = useI18n();
 const player = usePlayerStore();
-const desktopLyrics = useDesktopLyricsStore();
 /** Expanded mobile control tray holding the extra transport controls. */
 const expanded = ref(false);
 
@@ -49,7 +44,6 @@ const repeatTitle = computed(() => player.repeat === "one" ? t("controls.repeatO
 const shuffleTitle = computed(() =>
   player.orderLocked ? t("controls.shuffleLocked") : player.shuffle ? t("controls.shuffleOn") : t("controls.shuffleOff"),
 );
-const desktopLyricsTitle = computed(() => desktopLyrics.settings.enabled ? t("settings.desktopLyrics.close") : t("settings.desktopLyrics.open"));
 
 /** Playback-speed picker. The store owns the value; this maps it to strings. */
 const speedOptions = ["0.5", "0.75", "1", "1.25", "1.5", "1.75", "2"].map((value) => ({ value, label: `${value}×` }));
@@ -70,16 +64,6 @@ const rateTitle = computed(() => `${t("audioQuality.title")}: ${rateText.value}`
 function openQuality() {
   void audioQuality.refreshDeviceInfo();
   audioQuality.qualityModalOpen.value = true;
-}
-
-/** Toggle the floating lyrics; on Android ask for the overlay grant first. */
-function toggleDesktopLyrics() {
-  if (!desktopLyrics.supported) return;
-  if (desktopLyrics.platform === "android" && !desktopLyrics.permissionGranted && !desktopLyrics.settings.enabled) {
-    void requestDesktopLyricPermission();
-    return;
-  }
-  desktopLyrics.update({ enabled: !desktopLyrics.settings.enabled });
 }
 
 function onSeek(event: Event) {
@@ -196,19 +180,6 @@ function endSeek() {
         <span class="hidden font-mono text-[13px] tabular-nums text-muted lg:block">
           {{ player.elapsedTime }} / {{ player.totalTime }}
         </span>
-        <button
-          type="button"
-          class="hidden transition-colors md:block"
-          :class="desktopLyrics.settings.enabled ? 'text-accent' : 'text-muted hover:text-fg'"
-          :title="desktopLyricsTitle"
-          :aria-label="desktopLyricsTitle"
-          :aria-pressed="desktopLyrics.settings.enabled"
-          :disabled="!desktopLyrics.supported"
-          @click="toggleDesktopLyrics"
-        >
-          <Captions v-if="desktopLyrics.settings.enabled" :size="17" :stroke-width="1.8" />
-          <CaptionsOff v-else :size="17" :stroke-width="1.8" />
-        </button>
         <LayeredSelect
           v-model="speed"
           :options="speedOptions"
@@ -284,10 +255,6 @@ function endSeek() {
         <button class="grid h-10 w-10 place-items-center" :class="player.repeat !== 'off' ? 'text-accent' : 'text-muted'" :title="repeatTitle" :aria-label="repeatTitle" @click="player.cycleRepeat()">
           <Repeat1 v-if="player.repeat === 'one'" :size="17" :stroke-width="1.8" />
           <Repeat v-else :size="17" :stroke-width="1.8" />
-        </button>
-        <button class="grid h-10 w-10 place-items-center transition-colors" :class="desktopLyrics.settings.enabled ? 'text-accent' : 'text-muted hover:text-fg'" :title="desktopLyricsTitle" :aria-label="desktopLyricsTitle" :aria-pressed="desktopLyrics.settings.enabled" :disabled="!desktopLyrics.supported" @click="toggleDesktopLyrics">
-          <Captions v-if="desktopLyrics.settings.enabled" :size="18" :stroke-width="1.8" />
-          <CaptionsOff v-else :size="18" :stroke-width="1.8" />
         </button>
       </div>
       <div class="flex items-center gap-3">

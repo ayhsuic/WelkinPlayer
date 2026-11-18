@@ -11,7 +11,7 @@ import { describeError } from "../api";
 import { accents } from "../lib/app";
 import type { Accent, Theme } from "../lib/app";
 import { pushToast } from "../lib/toast";
-import { isAndroid } from "../lib/desktopLyric";
+import { isAndroid } from "../lib/platform";
 import { useProfileStore } from "../stores/profile";
 import { useSourcesStore } from "../stores/sources";
 import { SOURCE_KINDS } from "../lib/sources";

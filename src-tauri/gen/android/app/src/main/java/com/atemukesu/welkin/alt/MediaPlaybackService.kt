@@ -62,8 +62,7 @@ class MediaPlaybackService : Service() {
             startForegroundCompat(buildNotification("Welkin", "", false, null))
         } catch (error: Throwable) {
             // e.g. ForegroundServiceStartNotAllowedException / SecurityException.
-            // Never let this crash the process - that would also take the lyric
-            // overlay down. Abandon the service instead.
+            // Never let this crash the process. Abandon the service instead.
             session?.release()
             session = null
             MediaControlBridge.detach()

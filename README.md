@@ -1,6 +1,6 @@
 # Welkin
 
-基于 [Tauri 3](https://v3.tauri.app/) 的 Android 音乐播放器。通过 WebDAV 或本地文件夹读取音乐收藏，把资料、歌单与播放进度跨设备同步，并提供 AMLL 逐字歌词、系统悬浮歌词与媒体控制。音频解码与播放全部在 Rust 后端完成，前端只负责界面与队列调度。
+基于 [Tauri 3](https://v3.tauri.app/) 的 Android 音乐播放器。通过 WebDAV 或本地文件夹读取音乐收藏，把资料、歌单与播放进度跨设备同步，并提供 AMLL 逐字歌词与媒体控制。音频解码与播放全部在 Rust 后端完成，前端只负责界面与队列调度。
 
 - 仓库：<https://github.com/atemukesu/WelkinPlayer>
 - 支持平台：Android
@@ -10,7 +10,6 @@
 
 - **音乐来源**：同时配置多个 WebDAV 与本地文件夹来源，可指定其中一个作为云端同步位置。
 - **歌词**：AMLL 逐字歌词渲染；在线歌词按顺序从 QQ 音乐、网易云音乐、AMLL 歌词库获取；本地同名字幕优先。
-- **悬浮歌词**：系统悬浮窗逐字歌词。
 - **系统媒体控制**：Android MediaSession。
 - **Rust 播放引擎**：Symphonia 解码、cpal 经 Oboe / AAudio 输出，WebDAV 流媒体边下边播并支持精准 seek；按网络状态预取，支持手动缓存。
 - **跨设备同步**：昵称、歌单、收藏、播放进度等同步到指定来源。

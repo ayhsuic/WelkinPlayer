@@ -27,64 +27,6 @@ export interface LyricDisplaySettings {
   fontFamilies: string[];
 }
 
-/**
- * Typography, colours and behaviour of the floating desktop-lyrics layer.
- *
- * Kept client-local alongside the other lyric display settings: window size,
- * screen and personal taste differ per device, so syncing would fight the user.
- */
-export interface DesktopLyricSettings {
-  /** Master switch for the floating layer. */
-  enabled: boolean;
-  /** When locked the window is click-through and ignores the cursor. */
-  locked: boolean;
-  /** Render the translated sub-line under each primary line. */
-  translation: boolean;
-  /** Draw a word-by-word karaoke sweep instead of plain line highlighting. */
-  karaoke: boolean;
-  /** Legacy storage field; the desktop overlay only renders the active block. */
-  contextLines: number;
-  fontSize: number;
-  /** Sub-line (translation) size in px. */
-  translationSize: number;
-  /** CSS font weight (100–900). */
-  fontWeight: number;
-  /** Ordered `font-family` fallback list; empty uses the app font. */
-  fontFamilies: string[];
-  /** Idle (non-active) text colour. */
-  textColor: string;
-  /** Colour of a line while it is being sung. */
-  activeColor: string;
-  /** Translation sub-line colour. */
-  translationColor: string;
-  /** Whole-layer opacity, 0–100. */
-  opacity: number;
-  /** Draw a 1px outline around the text. */
-  stroke: boolean;
-  /** Outline colour used when `stroke` is enabled. */
-  strokeColor: string;
-}
-
-export const DEFAULT_DESKTOP_LYRIC: DesktopLyricSettings = {
-  enabled: false,
-  locked: false,
-  translation: true,
-  karaoke: true,
-  // Kept in the type and storage normalizer for backwards compatibility;
-  // the single-line overlay no longer renders surrounding context.
-  contextLines: 0,
-  fontSize: 28,
-  translationSize: 20,
-  fontWeight: 700,
-  fontFamilies: [],
-  textColor: "#f5f5f5",
-  activeColor: "#f0a500",
-  translationColor: "#b9bec8",
-  opacity: 100,
-  stroke: false,
-  strokeColor: "#000000",
-};
-
 /** Where a lyric provider may be selected on the settings page. */
 export type LyricProvider = "qq" | "local" | "netease" | "amll";
 

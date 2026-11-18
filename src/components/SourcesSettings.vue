@@ -9,7 +9,7 @@ import { Check, FolderOpen, HardDrive, LoaderCircle, Plus, Server, Trash2 } from
 import { useI18n } from "vue-i18n";
 import { describeError } from "../api";
 import { pushToast } from "../lib/toast";
-import { isAndroid } from "../lib/desktopLyric";
+import { isAndroid } from "../lib/platform";
 import { SOURCE_KINDS } from "../lib/sources";
 import { useSourcesStore } from "../stores/sources";
 import type { SongSource, SourceKind } from "../lib/sources";

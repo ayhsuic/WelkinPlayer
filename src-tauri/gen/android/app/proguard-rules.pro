@@ -20,11 +20,6 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# Desktop lyric bridge: reached only from Rust over JNI (by class and method
-# name), so R8 cannot see any references and would strip the whole class in a
-# minified release build, producing a ClassNotFoundException at runtime.
--keep class com.atemukesu.welkin.alt.DesktopLyricBridge { *; }
-
 # Media control bridge + service: the bridge is reached only from Rust over JNI
 # (by class and method name), so R8 cannot see any references and would strip it
 # in a minified release build.

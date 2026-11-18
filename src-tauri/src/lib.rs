@@ -33,7 +33,6 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .manage(commands::desktop_lyric::DesktopLyricCache::default())
         .manage(platform::media_control::MediaControlState::default())
         .setup(|app| {
             app.manage(commands::smart_transition::TransitionJobs::default());
@@ -69,11 +68,6 @@ pub fn run() {
                     // Drain the native Android MediaSession action queue from a
                     // Rust timer (the webview cannot be relied on to poll).
                     playback::context::start_media_control_poller(app.handle().clone());
-
-                    // The floating-lyric tick driver runs from Rust (not the
-                    // main webview) so the layer keeps advancing even after the
-                    // main webview is hidden, backgrounded, or dead.
-                    commands::desktop_lyric::start_ticker(app.handle().clone());
                 }
                 Err(error) => log::error!("failed to initialize streaming caches: {error}"),
             }
@@ -174,15 +168,6 @@ pub fn run() {
             playback::commands_context::playback_state,
             playback::commands_context::playback_set_transition_plans,
             playback::commands_context::playback_clear_transition_plans,
-            commands::desktop_lyric::desktop_lyric_open,
-            commands::desktop_lyric::desktop_lyric_close,
-            commands::desktop_lyric::desktop_lyric_load,
-            commands::desktop_lyric::desktop_lyric_tick,
-            commands::desktop_lyric::desktop_lyric_set_settings,
-            commands::desktop_lyric::desktop_lyric_status,
-            commands::desktop_lyric::desktop_lyric_take_control,
-            commands::desktop_lyric::desktop_lyric_request_permission,
-            commands::desktop_lyric::desktop_lyric_set_visible,
             platform::media_control::media_control_update,
             platform::media_control::media_control_position,
             platform::media_control::media_control_clear,

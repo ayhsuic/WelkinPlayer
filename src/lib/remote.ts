@@ -4,7 +4,7 @@
  */
 
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { isAndroid } from "./desktopLyric";
+import { isAndroid } from "./platform";
 import type { Track } from "../stores/player";
 import type { SourceKind } from "./sources";
 

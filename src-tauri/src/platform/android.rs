@@ -14,14 +14,10 @@
 //! for its own JNI calls and leaves `ndk-context` to tao.
 
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use jni::objects::{GlobalRef, JObject, JValue};
 use jni::JavaVM;
-
-/// Kotlin bridge that owns the floating overlay service (binary name).
-const BRIDGE_CLASS_NAME: &str = "com.atemukesu.welkin.alt.DesktopLyricBridge";
 
 /// Kotlin bridge that owns the system media-notification service (binary name).
 const MEDIA_BRIDGE_CLASS_NAME: &str = "com.atemukesu.welkin.alt.MediaControlBridge";
@@ -29,19 +25,11 @@ const MEDIA_BRIDGE_CLASS_NAME: &str = "com.atemukesu.welkin.alt.MediaControlBrid
 /// Kotlin bridge that owns the Storage Access Framework folder picker.
 const FOLDER_PICKER_CLASS_NAME: &str = "com.atemukesu.welkin.alt.FolderPickerBridge";
 
-/// Cached global reference to the bridge class. A plain `FindClass` only reaches
-/// the system class loader from an attached worker thread, so the app class is
-/// resolved once through the Application's class loader instead.
-static BRIDGE_CLASS: OnceLock<GlobalRef> = OnceLock::new();
-
 /// Cached global reference to the media-control bridge class.
 static MEDIA_BRIDGE_CLASS: OnceLock<GlobalRef> = OnceLock::new();
 
 /// Cached global reference to the folder-picker bridge class.
 static FOLDER_PICKER_CLASS: OnceLock<GlobalRef> = OnceLock::new();
-
-/// Whether the floating overlay service is currently running.
-static DESKTOP_LYRIC_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// The VM obtained in `JNI_OnLoad`; stays valid for the process lifetime.
 static JAVA_VM: OnceLock<JavaVM> = OnceLock::new();
@@ -249,30 +237,6 @@ pub fn route_audio(type_: i32, name: &str) -> Result<bool, String> {
     Ok(true)
 }
 
-/// The overlay exists on every supported Android version.
-pub fn desktop_lyric_supported() -> bool {
-    true
-}
-
-/// Whether the floating overlay service is currently running.
-pub fn desktop_lyric_is_running() -> bool {
-    DESKTOP_LYRIC_ACTIVE.load(Ordering::SeqCst)
-}
-
-/// Whether the "display over other apps" permission has been granted.
-///
-/// A failed query reports `true` so a broken JNI context cannot silently block
-/// the feature; the real failure surfaces when the service refuses to start.
-pub fn desktop_lyric_has_permission() -> bool {
-    match overlay_permission() {
-        Ok(value) => value,
-        Err(error) => {
-            log::warn!("overlay permission query failed: {error}");
-            true
-        }
-    }
-}
-
 /// Resolve a Kotlin bridge class through the application class loader.
 ///
 /// `FindClass` on an attached worker thread only reaches the system class
@@ -311,10 +275,6 @@ fn class_through_loader<'local>(
         .ok_or_else(|| "bridge class unavailable".to_string())
 }
 
-fn bridge_class<'local>(env: &mut jni::JNIEnv<'local>) -> Result<&'static GlobalRef, String> {
-    class_through_loader(env, BRIDGE_CLASS_NAME, &BRIDGE_CLASS)
-}
-
 fn media_bridge_class<'local>(env: &mut jni::JNIEnv<'local>) -> Result<&'static GlobalRef, String> {
     class_through_loader(env, MEDIA_BRIDGE_CLASS_NAME, &MEDIA_BRIDGE_CLASS)
 }
@@ -323,168 +283,6 @@ fn folder_picker_class<'local>(
     env: &mut jni::JNIEnv<'local>,
 ) -> Result<&'static GlobalRef, String> {
     class_through_loader(env, FOLDER_PICKER_CLASS_NAME, &FOLDER_PICKER_CLASS)
-}
-
-fn overlay_permission() -> Result<bool, String> {
-    let java_vm = JAVA_VM
-        .get()
-        .ok_or_else(|| "JNI_OnLoad has not run yet".to_string())?;
-    let mut env = java_vm
-        .attach_current_thread()
-        .map_err(|error| error.to_string())?;
-    // A failed JNI call leaves its Java exception pending. On an already-attached
-    // thread (the Android main thread) the attach guard does not detach, so the
-    // stale exception would poison every later call; clear it defensively.
-    let _ = env.exception_clear();
-    let context = application()?;
-
-    let class = bridge_class(&mut env)?;
-    env.call_static_method(
-        class,
-        "hasOverlayPermission",
-        "(Landroid/content/Context;)Z",
-        &[JValue::Object(&context)],
-    )
-    .map_err(|error| error.to_string())?
-    .z()
-    .map_err(|error| error.to_string())
-}
-
-/// Open the system screen where the user grants the overlay permission.
-pub fn desktop_lyric_open_settings() -> Result<(), String> {
-    let java_vm = JAVA_VM
-        .get()
-        .ok_or_else(|| "JNI_OnLoad has not run yet".to_string())?;
-    let mut env = java_vm
-        .attach_current_thread()
-        .map_err(|error| error.to_string())?;
-    // A failed JNI call leaves its Java exception pending. On an already-attached
-    // thread (the Android main thread) the attach guard does not detach, so the
-    // stale exception would poison every later call; clear it defensively.
-    let _ = env.exception_clear();
-    let context = application()?;
-
-    let class = bridge_class(&mut env)?;
-    env.call_static_method(
-        class,
-        "openOverlaySettings",
-        "(Landroid/content/Context;)V",
-        &[JValue::Object(&context)],
-    )
-    .map_err(|error| error.to_string())?;
-    Ok(())
-}
-
-/// Start the foreground overlay service with the bundled renderer markup/script.
-pub fn desktop_lyric_start(html: &str, js: &str) -> Result<(), String> {
-    let java_vm = JAVA_VM
-        .get()
-        .ok_or_else(|| "JNI_OnLoad has not run yet".to_string())?;
-    let mut env = java_vm
-        .attach_current_thread()
-        .map_err(|error| error.to_string())?;
-    // A failed JNI call leaves its Java exception pending. On an already-attached
-    // thread (the Android main thread) the attach guard does not detach, so the
-    // stale exception would poison every later call; clear it defensively.
-    let _ = env.exception_clear();
-    let context = application()?;
-    let html = JObject::from(env.new_string(html).map_err(|error| error.to_string())?);
-    let js = JObject::from(env.new_string(js).map_err(|error| error.to_string())?);
-
-    let class = bridge_class(&mut env)?;
-    env.call_static_method(
-        class,
-        "start",
-        "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
-        &[
-            JValue::Object(&context),
-            JValue::Object(&html),
-            JValue::Object(&js),
-        ],
-    )
-    .map_err(|error| error.to_string())?;
-    DESKTOP_LYRIC_ACTIVE.store(true, Ordering::SeqCst);
-    Ok(())
-}
-
-/// Stop the foreground overlay service.
-pub fn desktop_lyric_stop() -> Result<(), String> {
-    let java_vm = JAVA_VM
-        .get()
-        .ok_or_else(|| "JNI_OnLoad has not run yet".to_string())?;
-    let mut env = java_vm
-        .attach_current_thread()
-        .map_err(|error| error.to_string())?;
-    // A failed JNI call leaves its Java exception pending. On an already-attached
-    // thread (the Android main thread) the attach guard does not detach, so the
-    // stale exception would poison every later call; clear it defensively.
-    let _ = env.exception_clear();
-    let context = application()?;
-
-    let class = bridge_class(&mut env)?;
-    env.call_static_method(
-        class,
-        "stop",
-        "(Landroid/content/Context;)V",
-        &[JValue::Object(&context)],
-    )
-    .map_err(|error| error.to_string())?;
-    DESKTOP_LYRIC_ACTIVE.store(false, Ordering::SeqCst);
-    Ok(())
-}
-
-/// Drain a playback action queued by the overlay WebView, if any.
-pub fn desktop_lyric_take_control() -> Result<Option<String>, String> {
-    let java_vm = JAVA_VM
-        .get()
-        .ok_or_else(|| "JNI_OnLoad has not run yet".to_string())?;
-    let mut env = java_vm
-        .attach_current_thread()
-        .map_err(|error| error.to_string())?;
-    // A failed JNI call leaves its Java exception pending. On an already-attached
-    // thread (the Android main thread) the attach guard does not detach, so the
-    // stale exception would poison every later call; clear it defensively.
-    let _ = env.exception_clear();
-    let class = bridge_class(&mut env)?;
-    let value = env
-        .call_static_method(class, "takeControl", "()Ljava/lang/String;", &[])
-        .map_err(|error| error.to_string())?
-        .l()
-        .map_err(|error| error.to_string())?;
-    if value.is_null() {
-        return Ok(None);
-    }
-    let text: String = env
-        .get_string(&jni::objects::JString::from(value))
-        .map_err(|error| error.to_string())?
-        .into();
-    Ok(Some(text))
-}
-
-/// Forward one document (`load` / `tick` / `settings`) to the overlay WebView.
-pub fn desktop_lyric_update(method: &str, json: &str) -> Result<(), String> {
-    let java_vm = JAVA_VM
-        .get()
-        .ok_or_else(|| "JNI_OnLoad has not run yet".to_string())?;
-    let mut env = java_vm
-        .attach_current_thread()
-        .map_err(|error| error.to_string())?;
-    // A failed JNI call leaves its Java exception pending. On an already-attached
-    // thread (the Android main thread) the attach guard does not detach, so the
-    // stale exception would poison every later call; clear it defensively.
-    let _ = env.exception_clear();
-    let method = JObject::from(env.new_string(method).map_err(|error| error.to_string())?);
-    let json = JObject::from(env.new_string(json).map_err(|error| error.to_string())?);
-
-    let class = bridge_class(&mut env)?;
-    env.call_static_method(
-        class,
-        "update",
-        "(Ljava/lang/String;Ljava/lang/String;)V",
-        &[JValue::Object(&method), JValue::Object(&json)],
-    )
-    .map_err(|error| error.to_string())?;
-    Ok(())
 }
 
 /// Start (or refresh) the foreground media-notification service.

@@ -16,17 +16,7 @@ import { albumKey, primaryArtist } from "./lib/grouping";
 import { trackKey, type SourceKind } from "./lib/sources";
 import { flushReadings, loadReadings } from "./lib/readings";
 import { useLibrary } from "./composables/useLibrary";
-import { startDesktopLyrics, stopDesktopLyrics } from "./composables/useDesktopLyrics";
 import { startMediaControl, stopMediaControl } from "./lib/mediaControl";
-
-/** The floating lyrics layer must never be able to break app boot. */
-function bootDesktopLyrics() {
-  try {
-    startDesktopLyrics();
-  } catch (error) {
-    console.warn("[welkin] desktop lyrics failed to start", error);
-  }
-}
 
 /** OS media controls are best-effort; a failure must not break app boot. */
 function bootMediaControl() {
@@ -501,8 +491,8 @@ function onGlobalKeydown(event: KeyboardEvent) {
   player.togglePlayback();
 }
 
-onMounted(() => { window.addEventListener("hashchange", syncViewFromHash); window.addEventListener("keydown", onGlobalKeydown); window.addEventListener("beforeunload", savePlaybackPositionOnLeave); window.addEventListener("pagehide", savePlaybackPositionOnLeave); document.addEventListener("visibilitychange", onVisibilityChange); document.addEventListener("scroll", onScrollCapture, true); void initAudio(); void network.start(); void cache.start(); bootDesktopLyrics(); bootMediaControl(); void invoke<string>("ping").catch((error) => console.warn("[welkin] ping failed", describeError(error))); void bootstrap(); });
-onUnmounted(() => { savePlaybackPosition(true); stopDesktopLyrics(); stopMediaControl(); window.removeEventListener("hashchange", syncViewFromHash); window.removeEventListener("keydown", onGlobalKeydown); window.removeEventListener("beforeunload", savePlaybackPositionOnLeave); window.removeEventListener("pagehide", savePlaybackPositionOnLeave); document.removeEventListener("visibilitychange", onVisibilityChange); document.removeEventListener("scroll", onScrollCapture, true); unlistenPlayback?.(); unlistenPlayback = null; void profile.flush(); });
+onMounted(() => { window.addEventListener("hashchange", syncViewFromHash); window.addEventListener("keydown", onGlobalKeydown); window.addEventListener("beforeunload", savePlaybackPositionOnLeave); window.addEventListener("pagehide", savePlaybackPositionOnLeave); document.addEventListener("visibilitychange", onVisibilityChange); document.addEventListener("scroll", onScrollCapture, true); void initAudio(); void network.start(); void cache.start(); bootMediaControl(); void invoke<string>("ping").catch((error) => console.warn("[welkin] ping failed", describeError(error))); void bootstrap(); });
+onUnmounted(() => { savePlaybackPosition(true); stopMediaControl(); window.removeEventListener("hashchange", syncViewFromHash); window.removeEventListener("keydown", onGlobalKeydown); window.removeEventListener("beforeunload", savePlaybackPositionOnLeave); window.removeEventListener("pagehide", savePlaybackPositionOnLeave); document.removeEventListener("visibilitychange", onVisibilityChange); document.removeEventListener("scroll", onScrollCapture, true); unlistenPlayback?.(); unlistenPlayback = null; void profile.flush(); });
 
 // Mirror the Rust playback context into the store. The queue / play intent / next
 // / previous all live in Rust now; this is the single channel that keeps the UI

@@ -20,7 +20,6 @@ import { useSourcesStore } from "../stores/sources";
 import { useUpdateStore } from "../stores/update";
 import { useCacheStore } from "../stores/cache";
 import LyricsSettings from "../components/LyricsSettings.vue";
-import DesktopLyricSettings from "../components/DesktopLyricSettings.vue";
 import pkg from "../../package.json";
 
 const theme = defineModel<Theme>("theme", { required: true });
@@ -340,8 +339,6 @@ button.text-dim:hover:not(:disabled) {
 
       <div v-show="activeTab === 'lyrics'" id="settings-panel-lyrics" role="tabpanel" aria-labelledby="settings-tab-lyrics" class="space-y-6">
         <LyricsSettings />
-
-        <DesktopLyricSettings />
       </div>
 
       <div v-show="activeTab === 'about'" id="settings-panel-about" role="tabpanel" aria-labelledby="settings-tab-about" class="space-y-6">
