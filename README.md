@@ -88,7 +88,6 @@ keytool -genkeypair -v -keystore welkin-release.jks -alias welkin \
 │  ├─ gen/android/      # Tauri 生成的 Gradle 工程壳（Kotlin 桥接、Manifest、资源）
 │  ├─ android-stub/     # NDK 缺失符号的桩库
 │  └─ tauri.conf.json   # 应用配置（版本、Android 打包等）
-├─ scripts/             # 构建辅助脚本
 └─ .github/workflows/   # CI（安卓构建与发布）
 ```
 
