@@ -38,20 +38,6 @@ pub fn run() {
         .setup(|app| {
             app.manage(commands::smart_transition::TransitionJobs::default());
 
-            // Mint the per-install identifier on first launch so it is stable
-            // from the very first run; later launches just read it back.
-            match commands::sponsor::get_install_id() {
-                Ok(status) if status.available => {}
-                Ok(status) => log::warn!(
-                    "install identifier unavailable at startup: {}",
-                    status
-                        .warning
-                        .as_deref()
-                        .unwrap_or("unknown keychain error")
-                ),
-                Err(error) => log::warn!("failed to prepare install identifier: {error}"),
-            }
-
             // Let the webview load cached cover thumbnails as plain asset URLs.
             commands::media::allow_cache_dir(app.handle());
             match streaming::state::start(app.handle().clone()) {
@@ -110,11 +96,7 @@ pub fn run() {
             commands::sources::list_source_audio_under,
             commands::sources::test_source_connection,
             commands::sources::test_source_write,
-            commands::sponsor::get_install_id,
-            commands::sponsor::build_sponsor_claim,
             commands::update::check_update,
-            commands::license::activate_pro,
-            commands::license::get_pro_status,
             commands::profile::load_local_profile,
             commands::profile::load_remote_profile,
             commands::profile::save_profile,

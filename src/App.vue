@@ -47,7 +47,6 @@ import { useLyricsStore } from "./stores/lyrics";
 import { useMetadataStore } from "./stores/metadata";
 import { useNetworkStore } from "./stores/network";
 import { useCacheStore } from "./stores/cache";
-import { useLicenseStore } from "./stores/license";
 import { useUpdateStore } from "./stores/update";
 import PlayerBar from "./components/PlayerBar.vue";
 import PlayerNavBar from "./components/PlayerNavBar.vue";
@@ -61,7 +60,6 @@ import UpdateModal from "./components/UpdateModal.vue";
 import LibraryView from "./views/LibraryView.vue";
 import PlayerView from "./views/PlayerView.vue";
 import SettingsView from "./views/SettingsView.vue";
-import SponsorView from "./views/SponsorView.vue";
 import TracksView from "./views/TracksView.vue";
 import FavoritesView from "./views/FavoritesView.vue";
 import CategoriesView from "./views/CategoriesView.vue";
@@ -81,7 +79,7 @@ import SourceConfigView from "./views/SourceConfigView.vue";
 const AmllPlayerView = defineAsyncComponent(() => import("./views/AmllPlayerView.vue"));
 
 /** Hash routes the app can restore on boot; must be initialised before `view` calls `getViewFromHash`. */
-const VIEW_ROUTES: ReadonlySet<string> = new Set(["wall", "settings", "sponsor", "player", "tracks", "search", "favorites", "artists", "albums", "years", "genres", "sources", "folders", "webdav", "source-config", "source-browser", "playlists", "playlist-new", "lyrics-edit", "track-edit", "track-info", "downloading", "downloaded"]);
+const VIEW_ROUTES: ReadonlySet<string> = new Set(["wall", "settings", "player", "tracks", "search", "favorites", "artists", "albums", "years", "genres", "sources", "folders", "webdav", "source-config", "source-browser", "playlists", "playlist-new", "lyrics-edit", "track-edit", "track-info", "downloading", "downloaded"]);
 const { t, locale } = useI18n();
 const player = usePlayerStore();
 const sources = useSourcesStore();
@@ -92,12 +90,11 @@ const lyrics = useLyricsStore();
 const metadata = useMetadataStore();
 const network = useNetworkStore();
 const cache = useCacheStore();
-const license = useLicenseStore();
 const update = useUpdateStore();
 const { loadingLibrary, refreshing, friendlyError, loadCachedLibrary, loadRemoteLibrary, refreshLibrary, downloadTrackMetadata } = useLibrary();
 const view = ref<View>(getViewFromHash());
 /** Views that sit on top of the current page as overlays and must not replace `baseView`. */
-const OVERLAY_VIEWS: ReadonlySet<View> = new Set(["player", "track-info", "lyrics-edit", "track-edit", "sponsor"]);
+const OVERLAY_VIEWS: ReadonlySet<View> = new Set(["player", "track-info", "lyrics-edit", "track-edit"]);
 const baseView = ref<View>(OVERLAY_VIEWS.has(view.value) ? "library" : view.value);
 const theme = ref<Theme>(localStorage.getItem("welkin-theme") === "dark" ? "dark" : "light");
 const accent = ref<Accent>(readAccent());
@@ -140,7 +137,7 @@ const navTab = computed<MainTab>(() => sheetTab.value);
 const DRAWER_SUB_VIEWS: ReadonlySet<View> = new Set([
   "tracks", "favorites", "artists", "albums", "years", "genres",
   "folders", "webdav", "source-browser", "source-config", "playlists",
-  "playlist-new", "downloading", "downloaded", "sponsor",
+  "playlist-new", "downloading", "downloaded",
 ]);
 const drawerSubView = computed<View | null>(() => (DRAWER_SUB_VIEWS.has(baseView.value) ? baseView.value : null));
 /** Bumped to ask the cover wall to re-centre on the playing track. */
@@ -164,9 +161,9 @@ const POSITION_SAVE_INTERVAL_MS = 30_000;
 /** Listener for the Rust `playback:changed` snapshot that mirrors into the store. */
 let unlistenPlayback: UnlistenFn | null = null;
 
-// The full-screen player, track-info, the track editors and the sponsor view are
-// overlays that sit on top of whatever page was open, so they must not change
-// `baseView`; everything else (including the folder browser) becomes the
+// The full-screen player, track-info and the track editors are overlays that
+// sit on top of whatever page was open, so they must not change `baseView`;
+// everything else (including the folder browser) becomes the
 // underlying page when opened. Keeping the underlying page mounted preserves its
 // scroll position and the source browser's current folder across the overlay.
 watch(view, (next) => { if (!OVERLAY_VIEWS.has(next)) baseView.value = next; });
@@ -405,7 +402,7 @@ function editPlaylist(id: string) { clearCollectionFilters(); editingPlaylist.va
 function editLyrics(track: Track) { if (!track.path) return; editingLyricsTrack.value = track; setView("lyrics-edit"); }
 function editInfo(track: Track) { if (!track.path) return; editingTrack.value = track; setView("track-edit"); }
 function showTrackInfo(track: Track) { if (!track.path) return; viewingTrack.value = track; setView("track-info"); }
-/** Close an overlay (track info, editors, sponsor) back to the page underneath. */
+/** Close an overlay (track info, editors) back to the page underneath. */
 function closeOverlay() {
   setView(baseView.value);
   if (baseView.value === "wall") wallFocusToken.value += 1;
@@ -467,9 +464,6 @@ async function bootstrap() {
   const firstRun = await profile.hydrate();
   const seeded = await playback.hydrate({ path: profile.profile.lastTrack, position: profile.profile.lastPosition });
   if (seeded) profile.clearLegacyPlayback();
-  // Ask Rust for the re-verified edition before revealing the app so the splash
-  // shows the right one; never let a slow backend stall boot.
-  await Promise.race([license.refresh(), new Promise((resolve) => window.setTimeout(resolve, 1500))]);
   booted.value = true;
   void loadCachedLibrary();
   void checkUpdatesOnBoot();
@@ -495,8 +489,6 @@ async function downloadMetadata(track: Track) {
     pushToast("error", t("library.menu.metadataFailed", { value: friendlyError(error) }));
   } finally { downloadingTrackId.value = null; }
 }
-/** Re-verify the Pro license from scratch whenever the app regains focus. */
-function recheckLicense() { void license.refresh(); }
 function onGlobalKeydown(event: KeyboardEvent) {
   if (event.code !== "Space" && event.key !== " ") return;
   const target = event.target as HTMLElement | null;
@@ -509,8 +501,8 @@ function onGlobalKeydown(event: KeyboardEvent) {
   player.togglePlayback();
 }
 
-onMounted(() => { window.addEventListener("hashchange", syncViewFromHash); window.addEventListener("keydown", onGlobalKeydown); window.addEventListener("beforeunload", savePlaybackPositionOnLeave); window.addEventListener("pagehide", savePlaybackPositionOnLeave); window.addEventListener("focus", recheckLicense); document.addEventListener("visibilitychange", onVisibilityChange); document.addEventListener("scroll", onScrollCapture, true); void initAudio(); void network.start(); void cache.start(); bootDesktopLyrics(); bootMediaControl(); void invoke<string>("ping").catch((error) => console.warn("[welkin] ping failed", describeError(error))); void bootstrap(); });
-onUnmounted(() => { savePlaybackPosition(true); stopDesktopLyrics(); stopMediaControl(); window.removeEventListener("hashchange", syncViewFromHash); window.removeEventListener("keydown", onGlobalKeydown); window.removeEventListener("beforeunload", savePlaybackPositionOnLeave); window.removeEventListener("pagehide", savePlaybackPositionOnLeave); window.removeEventListener("focus", recheckLicense); document.removeEventListener("visibilitychange", onVisibilityChange); document.removeEventListener("scroll", onScrollCapture, true); unlistenPlayback?.(); unlistenPlayback = null; void profile.flush(); });
+onMounted(() => { window.addEventListener("hashchange", syncViewFromHash); window.addEventListener("keydown", onGlobalKeydown); window.addEventListener("beforeunload", savePlaybackPositionOnLeave); window.addEventListener("pagehide", savePlaybackPositionOnLeave); document.addEventListener("visibilitychange", onVisibilityChange); document.addEventListener("scroll", onScrollCapture, true); void initAudio(); void network.start(); void cache.start(); bootDesktopLyrics(); bootMediaControl(); void invoke<string>("ping").catch((error) => console.warn("[welkin] ping failed", describeError(error))); void bootstrap(); });
+onUnmounted(() => { savePlaybackPosition(true); stopDesktopLyrics(); stopMediaControl(); window.removeEventListener("hashchange", syncViewFromHash); window.removeEventListener("keydown", onGlobalKeydown); window.removeEventListener("beforeunload", savePlaybackPositionOnLeave); window.removeEventListener("pagehide", savePlaybackPositionOnLeave); document.removeEventListener("visibilitychange", onVisibilityChange); document.removeEventListener("scroll", onScrollCapture, true); unlistenPlayback?.(); unlistenPlayback = null; void profile.flush(); });
 
 // Mirror the Rust playback context into the store. The queue / play intent / next
 // / previous all live in Rust now; this is the single channel that keeps the UI
@@ -528,7 +520,6 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
   <Transition name="info"><TrackInfoView v-if="view === 'track-info' && viewingTrack" :path="viewingTrack.path ?? null" :source-id="viewingTrack.sourceId" @back="closeOverlay" /></Transition>
   <Transition name="info"><LyricsEditorView v-if="view === 'lyrics-edit' && editingLyricsTrack" :path="editingLyricsTrack.path ?? null" :source-id="editingLyricsTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
   <Transition name="info"><TrackEditorView v-if="view === 'track-edit' && editingTrack" :path="editingTrack.path ?? null" :source-id="editingTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
-  <Transition name="info"><SponsorView v-if="view === 'sponsor'" @back="closeOverlay" /></Transition>
   <SetupWizard v-if="booted && profile.firstRun" v-model:theme="theme" v-model:accent="accent" @finish="onWizardFinish" />
   <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg" :class="booted ? '' : 'opacity-0'">
     <!-- Mobile: the playing wall is the persistent underlying layer; the drawer covers it when open. -->
@@ -552,7 +543,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
           <DownloadingView v-else-if="baseView === 'downloading'" key="downloading" />
           <DownloadedView v-else-if="baseView === 'downloaded'" key="downloaded" @open-artist="openArtist" @open-album="openAlbum" />
           <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
-          <SettingsView v-else key="settings" v-model:theme="theme" v-model:accent="accent" @sponsor="navigate('sponsor')" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
+          <SettingsView v-else key="settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
         </Transition>
       </main>
     </div>
@@ -575,7 +566,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
       <!-- The four main tab pages. -->
       <LibraryView v-else-if="sheetTab === 'home'" key="sheet-home" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
       <LibraryListView v-else-if="sheetTab === 'library'" key="sheet-library" @navigate="navigate" @open-playlist="openUserPlaylist" @create-playlist="createPlaylist" />
-      <SettingsView v-else-if="sheetTab === 'settings'" key="sheet-settings" v-model:theme="theme" v-model:accent="accent" @sponsor="navigate('sponsor')" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
+      <SettingsView v-else-if="sheetTab === 'settings'" key="sheet-settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
       <SearchView v-else key="sheet-search" @open-artist="openArtist" @open-album="openAlbum" />
     </MobileNavSheet>
     <ToastStack />

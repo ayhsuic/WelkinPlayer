@@ -51,20 +51,6 @@ pub struct SaveProfileResult {
     pub warning: Option<String>,
 }
 
-/// Read the nickname from the cached local profile document, if any.
-///
-/// The authoritative copy may live on WebDAV; this only reads the local cache
-/// that [`load_remote_profile`] / [`save_profile`] keep in sync, so callers can
-/// stay synchronous and offline.
-pub(crate) fn local_nickname(app: &AppHandle) -> Option<String> {
-    let raw = local_get(app)?;
-    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    parsed
-        .get("nickname")
-        .and_then(|value| value.as_str())
-        .map(str::to_string)
-}
-
 fn local_get(app: &AppHandle) -> Option<String> {
     app.store(LOCAL_FILE)
         .ok()

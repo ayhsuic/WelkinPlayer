@@ -1,7 +1,3 @@
-![Welkin banner](docs/assets/banner.svg)
-
-**[中文](README.md) · [English](README.en.md)**
-
 # Welkin
 
 基于 [Tauri 3](https://v3.tauri.app/) 的 Android 音乐播放器。通过 WebDAV 或本地文件夹读取音乐收藏，把资料、歌单与播放进度跨设备同步，并提供 AMLL 逐字歌词、系统悬浮歌词与媒体控制。音频解码与播放全部在 Rust 后端完成，前端只负责界面与队列调度。
@@ -81,18 +77,19 @@ keytool -genkeypair -v -keystore welkin-release.jks -alias welkin \
 
 ```
 .
-├─ src/                 # Vue 前端
+├─ src/                 # Vue 3 前端（webview 界面与队列调度）
 │  ├─ views/            # 页面（设置、来源、歌词编辑等）
 │  ├─ stores/           # Pinia 状态
 │  └─ lib/              # 通用工具与前端契约
-├─ src-tauri/           # Rust 后端
-│  ├─ src/playback/     # 播放引擎（解码、音频输出、传输命令）
+├─ src-tauri/           # Rust 后端（播放引擎、命令、WebDAV）
+│  ├─ src/playback/     # 解码、音频输出与播放上下文
 │  ├─ src/streaming/    # 流缓存与手动缓存
 │  ├─ src/commands/     # Tauri 命令（媒体、WebDAV、更新等）
-│  ├─ gen/android/      # Android 工程
+│  ├─ gen/android/      # Tauri 生成的 Gradle 工程壳（Kotlin 桥接、Manifest、资源）
+│  ├─ android-stub/     # NDK 缺失符号的桩库
 │  └─ tauri.conf.json   # 应用配置（版本、Android 打包等）
 ├─ scripts/             # 构建辅助脚本
-└─ .github/workflows/   # CI（发布流程）
+└─ .github/workflows/   # CI（安卓构建与发布）
 ```
 
 ## 许可证
