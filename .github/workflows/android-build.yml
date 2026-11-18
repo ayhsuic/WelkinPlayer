@@ -1,11 +1,12 @@
 name: Android Build (fix verification)
 
-# Android compile smoke test for the ndk-context double-init fix.
+# Android compile smoke test.
 #
-# Manual-only compile smoke test. Builds debug APKs so NO signing secrets are
-# required; uploads the APKs as artifacts for inspection. This proves the Rust
-# fix compiles and bundles for Android. Tag-triggered release APKs live in
-# `android-release.yml`; this workflow no longer runs on every branch push.
+# Manual-only compile smoke test. Builds a debug arm64-v8a APK so NO signing
+# secrets are required; uploads the APK as an artifact for inspection. This
+# proves the Rust code compiles and bundles for the same ABI shipped by the
+# release workflow. Tag-triggered release APKs live in `android-release.yml`;
+# this workflow no longer runs on every branch push.
 on:
   workflow_dispatch:
 
@@ -29,7 +30,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android
+          # Multi-ABI split builds additionally need:
+          #   armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
@@ -70,8 +73,8 @@ jobs:
         run: pnpm version:sync
 
       # automix 2.0.1 links the system librubberband FFI; the NDK does not ship
-      # it. Compile the empty stub archive and add it to the native link path.
-      # See src-tauri/android-stub/rubberband-stub.c.
+      # it. Compile the empty stub archive (aarch64 only) and add it to the
+      # native link path. See src-tauri/android-stub/rubberband-stub.c.
       - name: Stub librubberband for Android NDK
         env:
           NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
@@ -86,11 +89,15 @@ jobs:
           "$prebuilt/bin/llvm-ar" cru "$stub_dir/librubberband.a" "$stub_dir/stub.o"
           echo "RUSTFLAGS=${RUSTFLAGS:-} -L native=$stub_dir" >> "$GITHUB_ENV"
 
-      - name: Build debug APKs (per ABI)
+      - name: Build debug arm64-v8a APK
         env:
           NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-        run: pnpm tauri android build --debug --apk --split-per-abi
+        run: pnpm tauri android build --debug --apk --target aarch64
+        # Multi-ABI split build (disabled): build one APK per ABI instead of a
+        # single arm64-v8a package. The rubberband stub below is compiled for
+        # aarch64 only, so the other splits fail at link time (#98).
+        #   pnpm tauri android build --debug --apk --split-per-abi
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
