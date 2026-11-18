@@ -80,9 +80,8 @@ function onSelect(tab: MainTab) {
 .item-highlight {
   position: absolute;
   inset: 5px;
-  isolation: isolate;
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
-  background: var(--accent);
+  background: color-mix(in srgb, var(--accent) 50%, #fff);
   opacity: 0;
   transition: opacity 200ms ease;
   pointer-events: none;
@@ -91,11 +90,9 @@ function onSelect(tab: MainTab) {
 .item-highlight::before {
   content: "";
   position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: color-mix(in srgb, var(--accent) 50%, #fff);
-  transform: translate(-6px, -6px);
+  inset: 6px 0 0 6px;
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+  background: var(--accent);
 }
 
 .tab-bar-item.is-active {

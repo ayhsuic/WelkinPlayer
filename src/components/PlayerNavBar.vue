@@ -381,22 +381,20 @@ onBeforeUnmount(() => {
   bottom: 0;
   left: 0;
   z-index: 1;
-  isolation: isolate;
-  /* Elapsed block: top-right/bottom-left clipped; a lighter back layer sits under
-     the solid front layer and peeks along the top and left edges. */
+  /* Back layer: lighter accent showing along the top and left edges. */
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
-  background: var(--accent);
+  background: color-mix(in srgb, var(--accent) 50%, #fff);
   pointer-events: none;
 }
 
 .seekbar-fill::before {
   content: "";
   position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: color-mix(in srgb, var(--accent) 50%, #fff);
-  transform: translate(-6px, -6px);
+  /* Solid front layer inset by 6px on the top and left, so the lighter back
+     layer peeks out as a top and left highlight edge. */
+  inset: 6px 0 0 6px;
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+  background: var(--accent);
 }
 
 .seekbar-time {
@@ -437,20 +435,17 @@ onBeforeUnmount(() => {
   bottom: 4px;
   left: clamp(0%, calc(var(--ratio, 50%) - 16.666%), 66.666%);
   width: 33.333%;
-  isolation: isolate;
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
-  background: var(--accent);
+  background: color-mix(in srgb, var(--accent) 50%, #fff);
   pointer-events: none;
 }
 
 .switcher-thumb::before {
   content: "";
   position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: color-mix(in srgb, var(--accent) 50%, #fff);
-  transform: translate(-6px, -6px);
+  inset: 6px 0 0 6px;
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+  background: var(--accent);
 }
 
 .switcher-option {
