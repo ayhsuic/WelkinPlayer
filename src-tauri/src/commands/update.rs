@@ -57,11 +57,11 @@ struct ReleaseSummary {
 
 /// Build the changelog for a user jumping from `current` to `latest`.
 ///
-/// A static `latest.json` only carries the newest release's notes, so a user who
-/// skipped several versions would miss the intervening changelogs. The GitHub
-/// Releases list is therefore queried and every release in `(current, latest]`
-/// is merged, oldest first. Falls back to the single `fallback` body when GitHub
-/// cannot be reached or the versions are not strict SemVer.
+/// The newest release alone only carries its own notes, so a user who skipped
+/// several versions would miss the intervening changelogs. The GitHub Releases
+/// list is therefore queried and every release in `(current, latest]` is merged,
+/// oldest first. Falls back to the single newest release body (`fallback`) when
+/// GitHub cannot be reached or the versions are not strict SemVer.
 fn cumulative_notes(current: &str, latest: &str, fallback: Option<String>) -> Option<String> {
     match fetch_release_notes(current, latest) {
         Ok(Some(notes)) => Some(notes),
