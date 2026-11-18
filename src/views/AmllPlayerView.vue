@@ -24,7 +24,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import "@applemusic-like-lyrics/core/style.css";
 import AmllBackground from "../components/AmllBackground.vue";
 import AmllLyrics from "../components/AmllLyrics.vue";
-import RealtimeWaveform from "../components/RealtimeWaveform.vue";
 import { usePlayerStore } from "../stores/player";
 import { useLyricsStore } from "../stores/lyrics";
 import { currentTime, seekPercent, seekTo } from "../lib/audio";
@@ -536,7 +535,6 @@ function onLyricSeek(timeMs: number) {
         <p v-else-if="!lyrics.suppressed" class="text-center text-white/70">{{ t("lyrics.empty") }}</p>
       </div>
     </div>
-    <RealtimeWaveform fit class="pointer-events-none relative z-30 hidden shrink-0 text-white md:absolute md:inset-x-0 md:bottom-0 md:block" />
   </div>
 </template>
 

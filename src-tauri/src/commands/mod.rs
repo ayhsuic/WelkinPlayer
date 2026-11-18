@@ -20,7 +20,6 @@ pub mod profile;
 pub mod sort;
 pub mod sources;
 pub mod smart_transition;
-pub mod update;
 pub mod webdav;
 
 use crate::core::error::AppError;

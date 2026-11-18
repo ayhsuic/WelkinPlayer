@@ -19,9 +19,7 @@ import { coverPending, initial, percent } from "../lib/format";
 import { seekPercent } from "../lib/audio";
 import * as audioQuality from "../lib/audioQuality";
 import LayeredSelect from "./LayeredSelect.vue";
-import RealtimeWaveform from "./RealtimeWaveform.vue";
 
-defineProps<{ waveform?: boolean }>();
 const emit = defineEmits<{ open: []; openArtist: [artist: string]; openAlbum: [album: string] }>();
 
 const { t } = useI18n();
@@ -123,9 +121,6 @@ function endSeek() {
       @pointercancel="endSeek"
       @lostpointercapture="endSeek"
     />
-    <div v-if="waveform" class="player-waveform pointer-events-none absolute bottom-full left-1/2 z-20 w-full -translate-x-1/2 md:w-[70%]">
-      <RealtimeWaveform fit class="text-accent" />
-    </div>
     <div class="flex h-[72px] items-center gap-4 px-4">
       <div class="grid min-w-0 flex-1 grid-cols-[44px_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 md:w-[220px] md:flex-none">
         <button

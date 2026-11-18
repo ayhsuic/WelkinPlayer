@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-only
  */
 
-import { effectScope, shallowRef, watch } from "vue";
+import { effectScope, watch } from "vue";
 import type { EffectScope } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
@@ -26,7 +26,7 @@ import { preferredRate, currentDevice, deviceInfo, type AudioDeviceInfo } from "
  * mirrors the result back via `playback:changed`. This module only (a) issues
  * the *engine-local* transport knobs (`audio_set_volume` / `audio_set_mute` /
  * `audio_set_speed` / `audio_set_quality` / `audio_seek`) and (b) mirrors the
- * engine's `audio:state` / `audio:ended` / `audio:error` / `audio:spectrum`
+ * engine's `audio:state` / `audio:ended` / `audio:error`
  * events into the player store for display. The webview media element is no
  * longer used.
  */
@@ -69,14 +69,6 @@ interface AudioErrorPayload {
   code: string;
   message: string;
 }
-
-export interface SpectrumData {
-  sampleRate: number;
-  magnitudes: number[];
-}
-
-/** FFT frequency magnitudes published by the native output callback. */
-export const spectrumData = shallowRef<SpectrumData | null>(null);
 
 let scope: EffectScope | null = null;
 let initPromise: Promise<void> | null = null;
@@ -166,14 +158,6 @@ function onState(payload: AudioStatePayload) {
   }
   reportStreamProgress(position, duration);
   maybePrefetchNext(position, duration);
-}
-
-function onSpectrum(payload: SpectrumData) {
-  if (!payload || !Array.isArray(payload.magnitudes)) return;
-  spectrumData.value = {
-    sampleRate: Number(payload.sampleRate) || 44100,
-    magnitudes: payload.magnitudes.map((sample) => Math.max(0, Math.min(1, Number(sample) || 0))),
-  };
 }
 
 function reportStreamProgress(position: number, duration: number, force = false) {
@@ -269,7 +253,6 @@ async function bootstrap(): Promise<void> {
   const player = usePlayerStore();
 
   unlisteners.push(await listen<AudioStatePayload>("audio:state", (event) => onState(event.payload)));
-  unlisteners.push(await listen<SpectrumData>("audio:spectrum", (event) => onSpectrum(event.payload)));
   unlisteners.push(await listen("audio:ended", onEnded));
   unlisteners.push(await listen<AudioErrorPayload>("audio:error", (event) => onError(event.payload)));
   // The engine reopens the output stream (device change, quality change, device

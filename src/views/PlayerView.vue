@@ -27,7 +27,6 @@ import { currentTime, seekPercent } from "../lib/audio";
 import { coverPending, initial, percent } from "../lib/format";
 import { cssFontFamily } from "../lib/fonts";
 import { useWakeLock } from "../composables/useWakeLock";
-import RealtimeWaveform from "../components/RealtimeWaveform.vue";
 import { Virtualizer } from "virtua/vue";
 import type { VirtualizerHandle } from "virtua/vue";
 import type { View } from "../lib/app";
@@ -874,9 +873,6 @@ watch(
           <p v-else-if="!lyrics.hasLyrics && !lyrics.suppressed" class="text-muted px-0 py-4">{{ t("lyrics.empty") }}</p>
         </div>
       </div>
-    </div>
-    <div class="player-waveform pointer-events-none relative z-30 hidden shrink-0 text-accent md:absolute md:inset-x-0 md:bottom-0 md:block">
-      <RealtimeWaveform fit class="text-accent" />
     </div>
   </div>
 </template>

@@ -90,7 +90,6 @@ pub fn run() {
             commands::sources::list_source_audio_under,
             commands::sources::test_source_connection,
             commands::sources::test_source_write,
-            commands::update::check_update,
             commands::profile::load_local_profile,
             commands::profile::load_remote_profile,
             commands::profile::save_profile,

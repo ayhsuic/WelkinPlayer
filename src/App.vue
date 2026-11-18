@@ -37,7 +37,6 @@ import { useLyricsStore } from "./stores/lyrics";
 import { useMetadataStore } from "./stores/metadata";
 import { useNetworkStore } from "./stores/network";
 import { useCacheStore } from "./stores/cache";
-import { useUpdateStore } from "./stores/update";
 import PlayerBar from "./components/PlayerBar.vue";
 import PlayerNavBar from "./components/PlayerNavBar.vue";
 import MobileNavSheet from "./components/MobileNavSheet.vue";
@@ -46,7 +45,6 @@ import AudioQualityModal from "./components/AudioQualityModal.vue";
 import MeteredPlaybackModal from "./components/MeteredPlaybackModal.vue";
 import SetupWizard from "./components/SetupWizard.vue";
 import ToastStack from "./components/ToastStack.vue";
-import UpdateModal from "./components/UpdateModal.vue";
 import LibraryView from "./views/LibraryView.vue";
 import PlayerView from "./views/PlayerView.vue";
 import SettingsView from "./views/SettingsView.vue";
@@ -80,7 +78,6 @@ const lyrics = useLyricsStore();
 const metadata = useMetadataStore();
 const network = useNetworkStore();
 const cache = useCacheStore();
-const update = useUpdateStore();
 const { loadingLibrary, refreshing, friendlyError, loadCachedLibrary, loadRemoteLibrary, refreshLibrary, downloadTrackMetadata } = useLibrary();
 const view = ref<View>(getViewFromHash());
 /** Views that sit on top of the current page as overlays and must not replace `baseView`. */
@@ -437,16 +434,6 @@ function onTabSelect(tab: MainTab) {
   baseView.value = homeView;
 }
 
-/** Background update probe at boot; a failure is intentionally silent. */
-async function checkUpdatesOnBoot() {
-  try {
-    await update.check();
-    if (update.shouldPrompt && !profile.firstRun) update.show();
-  } catch {
-    // A failed background check must never disturb the user.
-  }
-}
-
 async function bootstrap() {
   await sources.hydrate();
   // Title readings are cheap to read back and make the first title sort instant.
@@ -456,7 +443,6 @@ async function bootstrap() {
   if (seeded) profile.clearLegacyPlayback();
   booted.value = true;
   void loadCachedLibrary();
-  void checkUpdatesOnBoot();
   if (!firstRun) {
     // The wizard owns the first fetch; returning users refresh silently.
     void profile.syncRemote();
@@ -562,7 +548,6 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
     <ToastStack />
     <AudioQualityModal />
     <MeteredPlaybackModal />
-    <UpdateModal @friendly-error="showError" />
   </div>
 </template>
 

@@ -5,19 +5,16 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { Bug, CircleCheck, Copy, ExternalLink, GitFork, HardDrive, HardDriveDownload, Info, Mic2, Moon, Music2, Play, SlidersHorizontal, Sun, Users } from "@lucide/vue";
+import { CircleCheck, HardDrive, HardDriveDownload, Mic2, Moon, Music2, Play, SlidersHorizontal, Sun } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { invoke } from "../api";
 import { formatBytes } from "../lib/format";
 import { pushToast } from "../lib/toast";
 import { accents } from "../lib/app";
 import type { Accent, Theme } from "../lib/app";
-import { showWaveform, waveformScale } from "../lib/waveform";
 import { localeOptions } from "../i18n";
 import { useProfileStore } from "../stores/profile";
 import { useSourcesStore } from "../stores/sources";
-import { useUpdateStore } from "../stores/update";
 import { useCacheStore } from "../stores/cache";
 import LyricsSettings from "../components/LyricsSettings.vue";
 import pkg from "../../package.json";
@@ -26,7 +23,6 @@ const theme = defineModel<Theme>("theme", { required: true });
 const accent = defineModel<Accent>("accent", { required: true });
 const emit = defineEmits<{ sources: []; downloading: []; downloaded: []; friendlyError: [error: unknown] }>();
 const { t, locale } = useI18n();
-const appVersion = pkg.version;
 /** Public release codename (e.g. Lyra); shown in the About row instead of the numeric version. */
 const appCodename = pkg.codename ?? pkg.version;
 /** Settings categories. Only the active panel is shown, so the page stays
@@ -35,7 +31,6 @@ const tabItems = [
   { key: "general", labelKey: "settings.tabs.general", icon: SlidersHorizontal },
   { key: "playback", labelKey: "settings.tabs.playback", icon: Play },
   { key: "lyrics", labelKey: "settings.tabs.lyrics", icon: Mic2 },
-  { key: "about", labelKey: "settings.tabs.about", icon: Info },
 ] as const;
 type SettingsTab = (typeof tabItems)[number]["key"];
 const TAB_STORAGE_KEY = "welkin.settings.tab";
@@ -67,13 +62,8 @@ function onTabKeydown(event: KeyboardEvent, index: number) {
   activeTab.value = tab.key;
   requestAnimationFrame(() => document.getElementById(`settings-tab-${tab.key}`)?.focus());
 }
-/** Project links and the user group shown in the community card. */
-const repoUrl = "https://github.com/atemukesu/WelkinPlayer";
-const issuesUrl = "https://github.com/atemukesu/WelkinPlayer/issues";
-const qqGroup = "1109689488";
 const profile = useProfileStore();
 const sources = useSourcesStore();
-const update = useUpdateStore();
 const cache = useCacheStore();
 const cacheDir = ref("");
 const streamEnabled = ref(true);
@@ -124,49 +114,6 @@ async function clearCache() {
     clearingCache.value = false;
   }
 }
-/** Open an external link, falling back to a browser tab and finally a toast. */
-async function openLink(url: string) {
-  try {
-    await openUrl(url);
-  } catch {
-    try {
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch {
-      pushToast("error", t("settings.community.openFailed"));
-    }
-  }
-}
-/** Copy the QQ group number, with a legacy fallback for the clipboard API. */
-async function copyQq() {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(qqGroup);
-    } else {
-      throw new Error("clipboard unavailable");
-    }
-    pushToast("success", t("settings.community.qqCopied"));
-  } catch {
-    const field = document.createElement("textarea");
-    field.value = qqGroup;
-    field.style.position = "fixed";
-    field.style.opacity = "0";
-    document.body.appendChild(field);
-    field.select();
-    const copied = document.execCommand("copy");
-    document.body.removeChild(field);
-    pushToast(copied ? "success" : "error", t(copied ? "settings.community.qqCopied" : "settings.community.qqCopyFailed"));
-  }
-}
-/** Manual check from the settings card; opens the modal or reports up to date. */
-async function checkUpdate() {
-  try {
-    const info = await update.check();
-    if (info.available) update.show();
-    else pushToast("success", t("settings.update.latest"));
-  } catch (error) {
-    emit("friendlyError", error);
-  }
-}
 onMounted(() => {
   void invoke<string>("get_cache_dir").then((dir) => (cacheDir.value = dir)).catch(() => {});
   void invoke<{ streamEnabled: boolean; prefetchSeconds: number; maxConcurrentDownloads: number }>("get_cache_config")
@@ -215,7 +162,7 @@ button.text-dim:hover:not(:disabled) {
     </header>
 
     <nav class="sticky top-0 z-20 -mx-6 border-b border-line bg-bg/95 px-6 py-2 backdrop-blur lg:-mx-8 lg:px-8" role="tablist" :aria-label="t('settings.tabs.label')">
-      <div class="grid grid-cols-4 gap-1">
+      <div class="grid grid-cols-3 gap-1">
         <button
           v-for="(item, index) in tabItems"
           :id="`settings-tab-${item.key}`"
@@ -286,6 +233,18 @@ button.text-dim:hover:not(:disabled) {
             </button>
           </div>
         </section>
+
+        <section class="ak-frame relative border border-line bg-surface">
+          <div class="relative grid gap-6 p-8">
+            <div class="grid gap-6">
+              <div class="flex items-center gap-5"><span class="grid h-24 w-24 shrink-0 place-items-center bg-accent text-accent-fg"><Music2 :size="42" :stroke-width="2" /></span><div class="min-w-0"><h2 class="text-3xl font-black uppercase leading-none tracking-tight sm:text-4xl">{{ t("settings.about.title") }}</h2><p class="mt-3 max-w-lg text-sm leading-[1.7] text-muted">{{ t("settings.about.tagline") }}</p></div></div>
+              <div class="grid gap-1 text-sm leading-relaxed">
+                <p class="flex flex-wrap items-baseline gap-1.5"><span class="font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.about.version") }}</span><span class="text-dim">{{ locale === "zh-CN" ? "：" : ":" }}</span><span class="font-semibold">{{ appCodename }}</span></p>
+                <p class="flex flex-wrap items-baseline gap-1.5"><span class="font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.about.author") }}</span><span class="text-dim">{{ locale === "zh-CN" ? "：" : ":" }}</span><span class="font-semibold">{{ t("settings.about.authorName") }}</span></p>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
       <div v-show="activeTab === 'playback'" id="settings-panel-playback" role="tabpanel" aria-labelledby="settings-tab-playback" class="space-y-6">
@@ -319,76 +278,10 @@ button.text-dim:hover:not(:disabled) {
           </div>
         </section>
 
-        <section class="ak-frame grid gap-6 border border-line bg-surface p-6 lg:grid-cols-[1fr_1.3fr]">
-          <div><h2 class="text-sm font-bold uppercase tracking-[0.2em]">{{ t("settings.waveform.title") }}</h2><p class="mt-2 text-sm text-muted">{{ t("settings.waveform.desc") }}</p></div>
-          <div class="grid gap-5">
-            <label class="flex items-center justify-between gap-4">
-              <span class="grid gap-1 text-[13px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.waveform.show") }}<span class="text-[11px] font-normal normal-case tracking-normal text-dim">{{ t("settings.waveform.showHint") }}</span></span>
-              <input v-model="showWaveform" class="ak-switch shrink-0" type="checkbox" :aria-label="t('settings.waveform.show')" />
-            </label>
-            <label class="flex items-center justify-between gap-4" :class="{ 'opacity-40': !showWaveform }">
-              <span class="grid gap-1 text-[13px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.waveform.height") }}<span class="text-[11px] font-normal normal-case tracking-normal text-dim">{{ t("settings.waveform.heightHint") }}</span></span>
-              <span class="flex shrink-0 items-center gap-3">
-                <input v-model.number="waveformScale" class="ak-slider w-40" type="range" min="0.5" max="3" step="0.25" :style="{ '--fill': `${((waveformScale - 0.5) / 2.5) * 100}%` }" :disabled="!showWaveform" :aria-label="t('settings.waveform.height')" />
-                <span class="w-12 text-right font-mono text-sm tabular-nums text-fg">{{ waveformScale }}×</span>
-              </span>
-            </label>
-          </div>
-        </section>
       </div>
 
       <div v-show="activeTab === 'lyrics'" id="settings-panel-lyrics" role="tabpanel" aria-labelledby="settings-tab-lyrics" class="space-y-6">
         <LyricsSettings />
-      </div>
-
-      <div v-show="activeTab === 'about'" id="settings-panel-about" role="tabpanel" aria-labelledby="settings-tab-about" class="space-y-6">
-        <section class="ak-frame relative border border-line bg-surface">
-          <div class="relative grid gap-6 p-8">
-            <div class="grid gap-6">
-              <div class="flex items-center gap-5"><span class="grid h-24 w-24 shrink-0 place-items-center bg-accent text-accent-fg"><Music2 :size="42" :stroke-width="2" /></span><div class="min-w-0"><h2 class="text-3xl font-black uppercase leading-none tracking-tight sm:text-4xl">{{ t("settings.about.title") }}</h2><p class="mt-3 max-w-lg text-sm leading-[1.7] text-muted">{{ t("settings.about.tagline") }}</p></div></div>
-              <div class="grid gap-1 text-sm leading-relaxed">
-                <p class="flex flex-wrap items-baseline gap-1.5"><span class="font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.about.version") }}</span><span class="text-dim">{{ locale === "zh-CN" ? "：" : ":" }}</span><span class="font-semibold">{{ appCodename }}</span></p>
-                <p class="flex flex-wrap items-baseline gap-1.5"><span class="font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.about.author") }}</span><span class="text-dim">{{ locale === "zh-CN" ? "：" : ":" }}</span><span class="font-semibold">{{ t("settings.about.authorName") }}</span></p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="ak-frame grid gap-6 border border-line bg-surface p-6 lg:grid-cols-[1fr_1.3fr]">
-          <div><h2 class="text-sm font-bold uppercase tracking-[0.2em]">{{ t("settings.update.title") }}</h2><p class="mt-2 text-sm text-muted">{{ t("settings.update.desc") }}</p></div>
-          <div class="grid gap-4">
-            <p class="flex flex-wrap items-baseline gap-1.5 text-[13px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.update.current") }}<span class="font-semibold tabular-nums text-fg">v{{ appVersion }}</span></p>
-            <div v-if="update.available" class="grid gap-3 border border-line bg-bg p-4">
-              <p class="text-sm font-semibold text-accent">{{ t("settings.update.available", { version: update.info?.version }) }}</p>
-              <button type="button" class="ak-clip-tr flex h-10 items-center justify-center border border-line px-5 text-[13px] font-semibold uppercase tracking-[0.25em] text-fg hover:border-accent hover:text-accent" @click="update.show()">{{ t("settings.update.view") }}</button>
-            </div>
-            <template v-else>
-              <p v-if="update.error" class="text-[12px] leading-relaxed text-rose-500">{{ update.error }}</p>
-              <p v-else-if="update.checked" class="text-sm text-muted">{{ t("settings.update.latest") }}</p>
-            </template>
-            <div class="flex justify-end">
-              <button type="button" class="ak-clip-tr h-10 border border-line px-5 text-[13px] font-semibold uppercase tracking-[0.25em] disabled:opacity-60" :disabled="update.checking" @click="checkUpdate">{{ t(update.checking ? "settings.update.checking" : "settings.update.check") }}</button>
-            </div>
-          </div>
-        </section>
-
-        <section class="ak-frame grid gap-6 border border-line bg-surface p-6 lg:grid-cols-[1fr_1.3fr]">
-          <div><h2 class="text-sm font-bold uppercase tracking-[0.2em]">{{ t("settings.community.title") }}</h2><p class="mt-2 text-sm text-muted">{{ t("settings.community.desc") }}</p></div>
-          <div class="grid min-w-0 gap-3">
-            <div class="flex flex-col gap-3 border border-line bg-bg px-4 py-3 overflow-hidden sm:flex-row sm:items-center sm:justify-between">
-              <span class="flex min-w-0 items-center gap-3"><GitFork class="shrink-0 text-accent" :size="18" :stroke-width="2" /><span class="min-w-0"><span class="block text-[13px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.community.repo") }}</span><span class="block break-all font-mono text-xs leading-relaxed text-fg">{{ repoUrl }}</span></span></span>
-              <button type="button" class="ak-clip-tr flex min-h-9 w-full shrink-0 items-center justify-center gap-2 py-2 text-center leading-tight whitespace-normal bg-accent px-4 text-[12px] font-bold uppercase tracking-[0.2em] text-accent-fg sm:w-auto" @click="openLink(repoUrl)"><ExternalLink :size="14" />{{ t("settings.community.repoAction") }}</button>
-            </div>
-            <div class="flex flex-col gap-3 border border-line bg-bg px-4 py-3 overflow-hidden sm:flex-row sm:items-center sm:justify-between">
-              <span class="flex min-w-0 items-center gap-3"><Bug class="shrink-0 text-accent" :size="18" :stroke-width="2" /><span class="min-w-0"><span class="block text-[13px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.community.issues") }}</span><span class="block break-all font-mono text-xs leading-relaxed text-fg">{{ issuesUrl }}</span></span></span>
-              <button type="button" class="ak-clip-tr flex min-h-9 w-full shrink-0 items-center justify-center gap-2 py-2 text-center leading-tight whitespace-normal border border-line px-4 text-[12px] font-bold uppercase tracking-[0.2em] text-fg sm:w-auto" @click="openLink(issuesUrl)"><ExternalLink :size="14" />{{ t("settings.community.issuesAction") }}</button>
-            </div>
-            <div class="flex flex-col gap-3 border border-line bg-bg px-4 py-3 overflow-hidden sm:flex-row sm:items-center sm:justify-between">
-              <span class="flex min-w-0 items-center gap-3"><Users class="shrink-0 text-accent" :size="18" :stroke-width="2" /><span class="min-w-0"><span class="block text-[13px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.community.qq") }}</span><span class="block break-all font-mono text-xs leading-relaxed text-fg">{{ t("settings.community.qqNumber") }}</span></span></span>
-              <button type="button" class="ak-clip-tr flex min-h-9 w-full shrink-0 items-center justify-center gap-2 py-2 text-center leading-tight whitespace-normal border border-line px-4 text-[12px] font-bold uppercase tracking-[0.2em] text-fg sm:w-auto" @click="copyQq"><Copy :size="14" />{{ t("settings.community.qqCopy") }}</button>
-            </div>
-          </div>
-        </section>
       </div>
     </div>
   </div>
