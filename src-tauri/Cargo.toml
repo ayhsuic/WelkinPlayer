@@ -26,7 +26,6 @@ tauri = { version = "3.0.0-alpha.5", features = ["protocol-asset", "image-png"] 
 tauri-plugin-opener = "3.0.0-alpha.3"
 tauri-plugin-store = "3.0.0-alpha.3"
 tauri-runtime-wry = { version = "3.0.0-alpha.5" }
-tauri-plugin-dialog = "3.0.0-alpha.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

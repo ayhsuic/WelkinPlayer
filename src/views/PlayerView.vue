@@ -33,7 +33,7 @@ import type { VirtualizerHandle } from "virtua/vue";
 import type { View } from "../lib/app";
 
 const props = defineProps<{ returnView: View }>();
-const emit = defineEmits<{ navigate: [view: View]; queue: []; openArtist: [artist: string]; openAlbum: [album: string] }>();
+const emit = defineEmits<{ navigate: [view: View]; openArtist: [artist: string]; openAlbum: [album: string] }>();
 const { t } = useI18n();
 const player = usePlayerStore();
 const lyrics = useLyricsStore();

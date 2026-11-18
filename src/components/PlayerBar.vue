@@ -5,7 +5,6 @@ import {
   Captions,
   CaptionsOff,
   ChevronUp,
-  ListMusic,
   LoaderCircle,
   Pause,
   Play,
@@ -27,12 +26,12 @@ import LayeredSelect from "./LayeredSelect.vue";
 import RealtimeWaveform from "./RealtimeWaveform.vue";
 
 defineProps<{ waveform?: boolean }>();
-const emit = defineEmits<{ open: []; queue: []; openArtist: [artist: string]; openAlbum: [album: string] }>();
+const emit = defineEmits<{ open: []; openArtist: [artist: string]; openAlbum: [album: string] }>();
 
 const { t } = useI18n();
 const player = usePlayerStore();
 const desktopLyrics = useDesktopLyricsStore();
-/** Mobile control tray; desktop always renders the full set of controls. */
+/** Expanded mobile control tray holding the extra transport controls. */
 const expanded = ref(false);
 
 /**
@@ -210,14 +209,6 @@ function endSeek() {
           <Captions v-if="desktopLyrics.settings.enabled" :size="17" :stroke-width="1.8" />
           <CaptionsOff v-else :size="17" :stroke-width="1.8" />
         </button>
-        <button
-          class="hidden text-muted transition-colors hover:text-fg sm:block"
-          :title="t('controls.queue')"
-          :aria-label="t('controls.queue')"
-          @click="emit('queue')"
-        >
-          <ListMusic :size="17" :stroke-width="1.8" />
-        </button>
         <LayeredSelect
           v-model="speed"
           :options="speedOptions"
@@ -297,9 +288,6 @@ function endSeek() {
         <button class="grid h-10 w-10 place-items-center transition-colors" :class="desktopLyrics.settings.enabled ? 'text-accent' : 'text-muted hover:text-fg'" :title="desktopLyricsTitle" :aria-label="desktopLyricsTitle" :aria-pressed="desktopLyrics.settings.enabled" :disabled="!desktopLyrics.supported" @click="toggleDesktopLyrics">
           <Captions v-if="desktopLyrics.settings.enabled" :size="18" :stroke-width="1.8" />
           <CaptionsOff v-else :size="18" :stroke-width="1.8" />
-        </button>
-        <button class="grid h-10 w-10 place-items-center text-muted transition-colors hover:text-fg" :title="t('controls.queue')" :aria-label="t('controls.queue')" @click="emit('queue')">
-          <ListMusic :size="18" :stroke-width="1.8" />
         </button>
       </div>
       <div class="flex items-center gap-3">

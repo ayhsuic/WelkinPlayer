@@ -57,7 +57,7 @@ const messages = {
     sponsor: {
       eyebrow: "支持 / 赞助",
       title: "赞助开发者",
-      subtitle: "Welkin 是免费、无广告的桌面播放器。如果你喜欢它，欢迎通过爱发电支持我继续开发与维护。",
+      subtitle: "Welkin 是免费、无广告的安卓播放器。如果你喜欢它，欢迎通过爱发电支持我继续开发与维护。",
       cardTitle: "为什么赞助",
       cardDesc: "这是一个独立的个人项目，没有商业收入。你的支持让开发、测试与持续更新成为可能。",
       points: {
@@ -476,7 +476,7 @@ const messages = {
       },
       about: {
         title: "Welkin",
-        tagline: "通过 WebDAV 读取你的音乐收藏，并把资料跨设备同步的桌面播放器。",
+        tagline: "通过 WebDAV 读取你的音乐收藏，并把资料跨设备同步的安卓播放器。",
         author: "作者",
         authorName: "Atemukesu",
         version: "版本",
@@ -594,14 +594,6 @@ const messages = {
         qqCopyFailed: "复制失败，请手动复制",
         openFailed: "无法打开链接",
       },
-      window: {
-        title: "窗口行为",
-        desc: "选择点击窗口关闭按钮时的行为。",
-        action: "关闭按钮",
-        close: "直接关闭",
-        tray: "最小化到托盘",
-        hint: "最小化到托盘后应用仍在后台运行，音乐与桌面歌词会继续播放；点击托盘图标可重新打开窗口。",
-      },
       lyrics: {
         title: "歌词",
         desc: "本地同文件名歌词始终优先，缺失时按下方顺序联网获取。",
@@ -660,7 +652,6 @@ const messages = {
         locked: "锁定（鼠标穿透）",
         lockedHint: "锁定后悬浮层不响应鼠标，避免误触。",
         androidLockHint: "安卓锁定后可在这里关闭锁定，也可通过桌面歌词通知中的按钮解锁。",
-        skipTaskbar: "隐藏任务栏图标",
         translation: "显示翻译",
         karaoke: "逐字卡拉OK",
         karaokeHint: "按当前进度逐字填充高亮，关闭则整行高亮。",
@@ -679,8 +670,6 @@ const messages = {
         strokeColor: "描边颜色",
         reset: "恢复默认样式",
         resetHint: "恢复桌面歌词的默认外观与行为。",
-        desktopOnly: "此项仅在桌面端生效。",
-        androidOnly: "此项仅在安卓端生效。",
       },
       appearance: {
         title: "外观",
@@ -737,12 +726,6 @@ const messages = {
       },
       save: "保存设置",
       saved: "设置已保存",
-    },
-    nowPlaying: {
-      now: "正在播放",
-      queue: "播放队列",
-      nextUp: "接下来 ({count})",
-      emptyQueue: "播放队列为空",
     },
     lyrics: {
       loading: "正在读取歌词…",
@@ -1036,7 +1019,7 @@ const messages = {
     sponsor: {
       eyebrow: "Support / Sponsor",
       title: "Sponsor the developer",
-      subtitle: "Welkin is a free, ad-free desktop player. If you enjoy it, consider supporting development on Afdian.",
+      subtitle: "Welkin is a free, ad-free Android player. If you enjoy it, consider supporting development on Afdian.",
       cardTitle: "Why sponsor",
       cardDesc: "This is an independent project with no commercial revenue. Your support makes development, testing and ongoing updates possible.",
       points: {
@@ -1455,7 +1438,7 @@ const messages = {
       },
       about: {
         title: "Welkin",
-        tagline: "A desktop player that reads your music collection over WebDAV and syncs your profile across devices.",
+        tagline: "An Android player that reads your music collection over WebDAV and syncs your profile across devices.",
         author: "Author",
         authorName: "Atemukesu",
         version: "Version",
@@ -1576,14 +1559,6 @@ const messages = {
         qqCopyFailed: "Copy failed, please copy manually",
         openFailed: "Could not open the link",
       },
-      window: {
-        title: "Window behaviour",
-        desc: "Choose what the window close button does.",
-        action: "Close button",
-        close: "Quit",
-        tray: "Minimise to tray",
-        hint: "When minimised to tray the app keeps running in the background, with music and desktop lyrics continuing. Click the tray icon to reopen the window.",
-      },
       lyrics: {
         title: "Lyrics",
         desc: "Lyrics from a same-named local file always win; when missing, sources are fetched online in the order below.",
@@ -1642,7 +1617,6 @@ const messages = {
         locked: "Lock (click-through)",
         lockedHint: "When locked the layer ignores the cursor to avoid accidental clicks.",
         androidLockHint: "On Android, turn locking off here or use the unlock action in the desktop-lyrics notification.",
-        skipTaskbar: "Hide from taskbar",
         translation: "Show translation",
         karaoke: "Word-by-word karaoke",
         karaokeHint: "Fill each word as it is sung; off highlights the whole line.",
@@ -1661,8 +1635,6 @@ const messages = {
         strokeColor: "Outline color",
         reset: "Reset style",
         resetHint: "Restore the default desktop-lyrics appearance and behaviour.",
-        desktopOnly: "This option applies on desktop only.",
-        androidOnly: "This option applies on Android only.",
       },
       appearance: {
         title: "Appearance",
@@ -1719,12 +1691,6 @@ const messages = {
       },
       save: "Save Settings",
       saved: "Settings saved",
-    },
-    nowPlaying: {
-      now: "Now Playing",
-      queue: "Queue",
-      nextUp: "Next up ({count})",
-      emptyQueue: "Queue is empty",
     },
     lyrics: {
       loading: "Loading lyrics…",

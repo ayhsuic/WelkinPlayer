@@ -8,7 +8,6 @@
     "core:window:allow-set-fullscreen",
     "core:window:allow-is-fullscreen",
     "opener:default",
-    "store:default",
-    "dialog:default"
+    "store:default"
   ]
 }

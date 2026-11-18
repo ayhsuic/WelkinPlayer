@@ -10,13 +10,6 @@
 - 支持平台：Android
 - 界面语言：简体中文、English
 
-## 截图
-
-![](/docs/assets/screenshot1.png)
-![](/docs/assets/screenshot2.png)
-![](/docs/assets/screenshot3.png)
-![](/docs/assets/screenshot4.png)
-
 ## 功能特性
 
 - **音乐来源**：同时配置多个 WebDAV 与本地文件夹来源，可指定其中一个作为云端同步位置。

@@ -38,8 +38,6 @@ export interface DesktopLyricSettings {
   enabled: boolean;
   /** When locked the window is click-through and ignores the cursor. */
   locked: boolean;
-  /** Hide the floating window from the taskbar / dock (desktop only). */
-  skipTaskbar: boolean;
   /** Render the translated sub-line under each primary line. */
   translation: boolean;
   /** Draw a word-by-word karaoke sweep instead of plain line highlighting. */
@@ -70,7 +68,6 @@ export interface DesktopLyricSettings {
 export const DEFAULT_DESKTOP_LYRIC: DesktopLyricSettings = {
   enabled: false,
   locked: false,
-  skipTaskbar: true,
   translation: true,
   karaoke: true,
   // Kept in the type and storage normalizer for backwards compatibility;

@@ -34,7 +34,6 @@ function asColor(value: unknown, fallback: string): string {
 type BooleanKey =
   | "enabled"
   | "locked"
-  | "skipTaskbar"
   | "translation"
   | "karaoke"
   | "stroke";
@@ -48,7 +47,6 @@ export function normalizeDesktopLyric(raw: unknown): DesktopLyricSettings {
   return {
     enabled: bool("enabled"),
     locked: bool("locked"),
-    skipTaskbar: bool("skipTaskbar"),
     translation: bool("translation"),
     karaoke: bool("karaoke"),
     // Legacy field retained so existing preferences remain readable. The

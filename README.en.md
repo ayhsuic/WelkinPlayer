@@ -10,13 +10,6 @@ An Android music player built with [Tauri 3](https://v3.tauri.app/). It reads yo
 - Platforms: Android
 - Languages: 简体中文, English
 
-## Screenshots
-
-![](/docs/assets/screenshot1.png)
-![](/docs/assets/screenshot2.png)
-![](/docs/assets/screenshot3.png)
-![](/docs/assets/screenshot4.png)
-
 ## Features
 
 - **Music sources**: Configure multiple WebDAV and local-folder sources at once; pick one as the cloud sync location.
