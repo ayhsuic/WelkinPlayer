@@ -44,6 +44,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
+          # Multi-ABI split builds additionally need:
+          #   armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
@@ -122,6 +124,9 @@ jobs:
           NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: pnpm tauri android build --apk --target aarch64 --ci
+        # Multi-ABI split build (disabled): build one APK per ABI instead of a
+        # single arm64-v8a package, then use the per-ABI staging block below.
+        #   pnpm tauri android build --apk --split-per-abi --ci
 
       - name: Stage APK
         run: |
@@ -137,6 +142,23 @@ jobs:
           cp "$apk" "dist/android/Welkin-${codename}-arm64-v8a.apk"
           ls -l dist/android
 
+          # --- Multi-ABI staging (disabled) ---------------------------------
+          # Stage every split APK under a per-ABI name instead of the single
+          # arm64-v8a copy above:
+          #   abi_for() { case "$1" in
+          #     *arm64-v8a*|*arm64*|*aarch64*) echo arm64-v8a ;;
+          #     *armeabi-v7a*|*armeabi*|*armv7*|*arm*) echo armeabi-v7a ;;
+          #     *x86_64*) echo x86_64 ;;
+          #     *x86*) echo x86 ;;
+          #     *) echo universal ;;
+          #   esac }
+          #   rm -f dist/android/*.apk
+          #   for apk in $(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk"); do
+          #     abi=$(abi_for "$apk")
+          #     cp "$apk" "dist/android/Welkin-${codename}-${abi}.apk"
+          #   done
+          # ---------------------------------------------------------------------
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -149,7 +171,30 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          node scripts/compose-release-notes.mjs --dist dist/android --tag "${GITHUB_REF_NAME}" --out release-notes.md
+          # Compose the release notes inline: a per-APK download guide grouped by
+          # ABI. The loop already covers a future multi-ABI split build; only the
+          # build/stage blocks above are disabled for now.
+          {
+            echo "## 下载指引"
+            echo
+            echo "请根据你的设备选择对应 APK。"
+            echo
+            echo "| 平台 | 文件 | 说明 |"
+            echo "| --- | --- | --- |"
+            for apk in dist/android/*.apk; do
+              [ -e "$apk" ] || continue
+              name=$(basename "$apk")
+              case "$name" in
+                *arm64-v8a*|*arm64*|*aarch64*) hint="绝大多数现代 64 位手机与平板" ;;
+                *armeabi-v7a*|*armeabi*|*armv7*|*arm*) hint="较旧的 32 位设备" ;;
+                *x86_64*) hint="模拟器或少数 x86_64 设备" ;;
+                *x86*) hint="模拟器或少数 x86 设备" ;;
+                *) hint="通用包，兼容多数设备但体积更大" ;;
+              esac
+              echo "| Android | \`${name}\` | ${hint} |"
+            done
+          } > release-notes.md
+
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             gh release upload "${GITHUB_REF_NAME}" dist/android/*.apk --clobber
           else
