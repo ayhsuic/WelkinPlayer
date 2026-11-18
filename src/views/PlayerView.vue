@@ -747,7 +747,7 @@ watch(
       decoding="async"
       class="player-blur-bg"
     />
-    <div v-if="lyrics.backgroundBlur" class="pointer-events-none absolute inset-0 bg-bg/60" />
+    <div v-if="lyrics.backgroundBlur" class="pointer-events-none absolute inset-0 bg-black/40" />
     <div class="pointer-events-none absolute inset-0 opacity-20" :style="{ background: `radial-gradient(circle at 20% 20%, ${player.currentTrack.color}, transparent 55%), radial-gradient(circle at 80% 80%, ${player.currentTrack.color}, transparent 55%)` }"></div>
     <div class="pointer-events-none absolute -right-32 top-1/2 h-[150%] w-40 rotate-[18deg] bg-accent/10"></div>
     <div class="pointer-events-none absolute -left-24 bottom-0 h-[60%] w-24 -rotate-[18deg] bg-accent/5"></div>
@@ -885,7 +885,7 @@ watch(
   height: 100%;
   object-fit: cover;
   transform: scale(1.12);
-  filter: blur(42px) saturate(1.25) brightness(0.55);
+  filter: blur(40px) saturate(1.1);
   pointer-events: none;
 }
 
@@ -895,6 +895,10 @@ watch(
   overscroll-behavior: contain;
   --lyric-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --lyric-duration: 800ms;
+  /* lmusic edgeTransparent: lyrics fade out toward the top and bottom viewport
+     edges instead of being hard-clipped; each fade band is ~30% of the height. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 30%, #000 70%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 30%, #000 70%, transparent 100%);
 }
 
 .lyrics-scroll::-webkit-scrollbar {

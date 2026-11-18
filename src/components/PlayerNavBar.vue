@@ -68,6 +68,21 @@ const switchRatio = ref(0.5);
 /** Buffered range never falls behind the playhead; mirrors the other three bars. */
 const bufferPercent = () => percent(Math.max(player.bufferedProgress, sliderValue()));
 
+/** Playhead ratio as a 0..100 number, used to park the elapsed label beside the thumb. */
+const fillRatio = () => Math.min(100, Math.max(0, sliderValue()));
+
+/**
+ * Elapsed label placement, matching lmusic's SeekbarDuration: the text sits
+ * on the layer above the fill track, its right edge just left of the thumb.
+ * When the playhead is near the start it parks at the left inset instead of
+ * sliding off the bar.
+ */
+const elapsedStyle = () => {
+  const ratio = fillRatio();
+  if (ratio < 14) return { left: "14px", transform: "none" };
+  return { left: `${ratio}%`, transform: "translateX(calc(-100% - 8px))" };
+};
+
 /** Centre ratio of each mode's third, so the thumb starts over the active mode. */
 const MODE_CENTER: Record<PlayMode, number> = { order: 1 / 6, one: 3 / 6, shuffle: 5 / 6 };
 
@@ -297,7 +312,7 @@ onBeforeUnmount(() => {
         <div class="seekbar-fill" :style="{ width: percent(sliderValue()) }" />
       </div>
       <template v-if="!switching">
-        <span class="seekbar-time seekbar-time--elapsed" :style="{ left: `clamp(26px, ${percent(sliderValue())}, calc(100% - 26px))` }">{{ player.elapsedTime }}</span>
+        <span class="seekbar-time seekbar-time--elapsed" :style="elapsedStyle()">{{ player.elapsedTime }}</span>
         <span class="seekbar-time seekbar-time--end">{{ player.totalTime }}</span>
       </template>
       <div v-if="switching" class="seekbar-switcher" :style="{ '--ratio': `${switchRatio * 100}%` }">
@@ -375,6 +390,7 @@ onBeforeUnmount(() => {
 .seekbar-time {
   position: absolute;
   top: 7px;
+  z-index: 2;
   font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -384,7 +400,7 @@ onBeforeUnmount(() => {
 }
 
 .seekbar-time--elapsed {
-  transform: translateX(-50%);
+  white-space: nowrap;
 }
 
 .seekbar-time--end {
