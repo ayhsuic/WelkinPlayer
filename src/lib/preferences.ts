@@ -13,7 +13,7 @@
  * `localStorage`). See `lib/profile.ts` for the cross-device document.
  */
 
-/** Typography for one lyrics renderer (standard or AMLL). */
+/** Typography for the standard lyrics renderer. */
 export interface LyricDisplaySettings {
   lineSize: number;
   translationSize: number;
@@ -40,16 +40,6 @@ export const DEFAULT_CLASSIC_DISPLAY: LyricDisplaySettings = {
   translate: true,
   ruby: true,
   fontWeight: 600,
-  fontFamilies: [],
-};
-
-export const DEFAULT_AMLL_DISPLAY: LyricDisplaySettings = {
-  lineSize: 38,
-  translationSize: 26,
-  lineSpacing: 24,
-  translate: true,
-  ruby: true,
-  fontWeight: 400,
   fontFamilies: [],
 };
 

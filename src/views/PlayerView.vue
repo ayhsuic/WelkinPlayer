@@ -42,8 +42,6 @@ useWakeLock();
 
 const lyricsScroll = ref<HTMLElement | null>(null);
 const rootEl = ref<HTMLElement | null>(null);
-const lyricAtTop = ref(true);
-const lyricAtBottom = ref(false);
 
 /**
  * Mobile: once the lyric sheet is already at its top, a further downward drag
@@ -587,19 +585,8 @@ function holdManualScroll() {
   if (!manualTimer) manualTimer = window.setTimeout(releaseManualScroll, MANUAL_RESUME_MS);
 }
 
-function updateLyricEdgeFlags() {
-  const handle = lyricsVirtualizer.value;
-  if (!handle) return;
-  const offset = handle.scrollOffset;
-  const viewport = handle.viewportSize;
-  const total = handle.scrollSize;
-  lyricAtTop.value = offset <= 1;
-  lyricAtBottom.value = offset + viewport >= total - 1;
-}
-
 function onVirtualScroll() {
   if (programmaticScroll) return;
-  updateLyricEdgeFlags();
   holdManualScroll();
 }
 
@@ -608,7 +595,6 @@ function onVirtualScrollEnd() {
   // a detached instance; refresh them on the next tick.
   wordCacheDirty = true;
   wordCacheRetryAt = 0;
-  updateLyricEdgeFlags();
   if (programmaticScroll) {
     programmaticScroll = false;
     followTarget = -1;
@@ -622,7 +608,6 @@ onMounted(() => {
   if (player.isPlaying) startLoop();
   else syncLyrics();
   bumpControls();
-  window.setTimeout(updateLyricEdgeFlags, 100);
   void syncFullscreen();
   window.addEventListener("keydown", onKeydown, true);
   window.addEventListener("pointermove", bumpControls);
@@ -754,6 +739,15 @@ watch(
 
 <template>
   <div v-if="player.currentTrack" ref="rootEl" class="fixed inset-0 z-50 flex h-screen flex-col overflow-hidden bg-bg text-fg" :style="rootStyle">
+    <img
+      v-if="lyrics.backgroundBlur && player.currentTrack.cover"
+      :key="player.currentTrack.cover"
+      :src="player.currentTrack.cover"
+      alt=""
+      decoding="async"
+      class="player-blur-bg"
+    />
+    <div v-if="lyrics.backgroundBlur" class="pointer-events-none absolute inset-0 bg-bg/60" />
     <div class="pointer-events-none absolute inset-0 opacity-20" :style="{ background: `radial-gradient(circle at 20% 20%, ${player.currentTrack.color}, transparent 55%), radial-gradient(circle at 80% 80%, ${player.currentTrack.color}, transparent 55%)` }"></div>
     <div class="pointer-events-none absolute -right-32 top-1/2 h-[150%] w-40 rotate-[18deg] bg-accent/10"></div>
     <div class="pointer-events-none absolute -left-24 bottom-0 h-[60%] w-24 -rotate-[18deg] bg-accent/5"></div>
@@ -782,7 +776,7 @@ watch(
       </div>
     </div>
     <div class="relative z-10 grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-6 overflow-hidden px-5 pt-[env(safe-area-inset-top)] py-4 md:grid-cols-[minmax(220px,0.34fr)_minmax(0,0.66fr)] md:grid-rows-1 md:gap-12 md:px-10 md:py-8 lg:grid-cols-[minmax(280px,0.32fr)_minmax(0,0.68fr)] lg:gap-16 lg:px-16">
-      <div class="amll-controls order-2 hidden min-h-0 flex-col justify-end md:flex md:order-none md:justify-center" :data-collapsed="controlsVisible ? 'false' : 'true'">
+      <div class="player-controls order-2 hidden min-h-0 flex-col justify-end md:flex md:order-none md:justify-center" :data-collapsed="controlsVisible ? 'false' : 'true'">
         <div class="ak-frame relative mx-auto hidden aspect-square w-full max-w-[420px] overflow-hidden md:block" :style="{ backgroundColor: player.currentTrack.color }">
           <img v-if="player.currentTrack.cover" :key="player.currentTrack.cover" :src="player.currentTrack.cover" alt="" decoding="async" class="player-art-in h-full w-full object-cover" />
           <span v-else-if="coverPending(player.currentTrack)" class="grid h-full w-full place-items-center text-white/90"><LoaderCircle :size="40" :stroke-width="1.8" class="animate-spin" /></span>
@@ -844,7 +838,7 @@ watch(
         </div>
       </div>
       <div class="order-1 flex min-h-0 min-w-0 flex-col justify-center pt-[env(safe-area-inset-top)] md:order-none md:pt-0">
-         <div ref="lyricsScroll" class="lyrics-scroll min-h-0 flex-1 overflow-y-auto pl-6 md:max-h-[76vh] md:border-l md:border-line md:pl-10" :class="{ 'lyric-at-top': lyricAtTop, 'lyric-at-bottom': lyricAtBottom }" :style="{ '--line-size': `${lyrics.classic.lineSize}px`, '--translation-size': `${lyrics.classic.translationSize}px`, '--line-spacing': `${lyrics.classic.lineSpacing}px`, '--line-weight': lyrics.classic.fontWeight, '--line-weight-active': lyricActiveWeight, fontFamily: lyricFontFamily }">
+         <div ref="lyricsScroll" class="lyrics-scroll min-h-0 flex-1 overflow-y-auto pl-6 md:max-h-[76vh] md:border-l md:border-line md:pl-10" :style="{ '--line-size': `${lyrics.classic.lineSize}px`, '--translation-size': `${lyrics.classic.translationSize}px`, '--line-spacing': `${lyrics.classic.lineSpacing}px`, '--line-weight': lyrics.classic.fontWeight, '--line-weight-active': lyricActiveWeight, fontFamily: lyricFontFamily }">
           <Virtualizer
             ref="lyricsVirtualizer"
             :data="lyrics.lines"
@@ -884,33 +878,23 @@ watch(
   initial-value: 0%;
 }
 
+.player-blur-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.12);
+  filter: blur(42px) saturate(1.25) brightness(0.55);
+  pointer-events: none;
+}
+
 .lyrics-scroll {
   scrollbar-width: none;
   touch-action: pan-y;
   overscroll-behavior: contain;
   --lyric-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --lyric-duration: 800ms;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 5%, #000 95%, transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 5%, #000 95%, transparent 100%);
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-size: 100% 100%;
-  mask-size: 100% 100%;
-}
-
-.lyrics-scroll.lyric-at-top {
-  -webkit-mask-image: linear-gradient(to bottom, #000 95%, transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 95%, transparent 100%);
-}
-
-.lyrics-scroll.lyric-at-bottom {
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 5%);
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 5%);
-}
-
-.lyrics-scroll.lyric-at-top.lyric-at-bottom {
-  -webkit-mask-image: none;
-  mask-image: none;
 }
 
 .lyrics-scroll::-webkit-scrollbar {
@@ -1074,37 +1058,26 @@ watch(
  * work here because the container's height is auto inside a flex column, so
  * animate `max-height` instead.
  */
-.amll-controls {
+.player-controls {
   max-height: 230px;
   overflow: hidden;
   transition: max-height 320ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 220ms ease;
 }
 
-.amll-controls[data-collapsed="true"] {
+.player-controls[data-collapsed="true"] {
   max-height: 0;
   opacity: 0;
   pointer-events: none;
 }
 
 @media (min-width: 768px) {
-  .amll-controls,
-  .amll-controls[data-collapsed="true"] {
+  .player-controls,
+  .player-controls[data-collapsed="true"] {
     max-height: none;
     overflow: visible;
     opacity: 1;
     pointer-events: auto;
   }
-}
-
-/* A touch thicker than the compact PlayerBar slider so it reads clearly on the
-   full-screen player, while keeping the same flat, square-cornered style. */
-.ak-slider {
-  height: 5px;
-}
-
-.ak-slider:hover,
-.ak-slider:focus-visible {
-  height: 7px;
 }
 
 /*

@@ -4,7 +4,7 @@
 -->
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch, watchEffect } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from "vue";
 import { useI18n } from "vue-i18n";
 import { describeError, invoke } from "./api";
 import { listen } from "@tauri-apps/api/event";
@@ -63,8 +63,6 @@ import LyricsEditorView from "./views/LyricsEditorView.vue";
 import TrackEditorView from "./views/TrackEditorView.vue";
 import TrackInfoView from "./views/TrackInfoView.vue";
 import SourceConfigView from "./views/SourceConfigView.vue";
-
-const AmllPlayerView = defineAsyncComponent(() => import("./views/AmllPlayerView.vue"));
 
 /** Hash routes the app can restore on boot; must be initialised before `view` calls `getViewFromHash`. */
 const VIEW_ROUTES: ReadonlySet<string> = new Set(["wall", "settings", "player", "tracks", "search", "favorites", "artists", "albums", "years", "genres", "sources", "folders", "webdav", "source-config", "source-browser", "playlists", "playlist-new", "lyrics-edit", "track-edit", "track-info", "downloading", "downloaded"]);
@@ -129,11 +127,6 @@ const DRAWER_SUB_VIEWS: ReadonlySet<View> = new Set([
 const drawerSubView = computed<View | null>(() => (DRAWER_SUB_VIEWS.has(baseView.value) ? baseView.value : null));
 /** Bumped to ask the cover wall to re-centre on the playing track. */
 const wallFocusToken = ref(0);
-/** Whether the AMLL full-screen player should be open. */
-const amllActive = computed(() => view.value === "player" && !!player.currentTrack && lyrics.useAmll);
-/** Stays true until AmllPlayerView finishes its slide-out, then it unmounts. */
-const amllMounted = ref(false);
-watch(amllActive, (active) => { if (active) amllMounted.value = true; }, { immediate: true });
 let restoringPlayback = false;
 let lastPositionSavedAt = 0;
 /** Once the user starts playback, a late cloud resume point must be ignored. */
@@ -491,8 +484,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
 </script>
 
 <template>
-  <AmllPlayerView v-if="amllMounted && player.currentTrack" :active="amllActive" :return-view="baseView" @navigate="returnFromPlayer" @closed="amllMounted = false" />
-  <Transition name="slide"><PlayerView v-if="view === 'player' && player.currentTrack && !lyrics.useAmll" :return-view="baseView" @navigate="returnFromPlayer" @open-artist="openArtist" @open-album="openAlbum" /></Transition>
+  <Transition name="slide"><PlayerView v-if="view === 'player' && player.currentTrack" :return-view="baseView" @navigate="returnFromPlayer" @open-artist="openArtist" @open-album="openAlbum" /></Transition>
   <Transition name="info"><TrackInfoView v-if="view === 'track-info' && viewingTrack" :path="viewingTrack.path ?? null" :source-id="viewingTrack.sourceId" @back="closeOverlay" /></Transition>
   <Transition name="info"><LyricsEditorView v-if="view === 'lyrics-edit' && editingLyricsTrack" :path="editingLyricsTrack.path ?? null" :source-id="editingLyricsTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
   <Transition name="info"><TrackEditorView v-if="view === 'track-edit' && editingTrack" :path="editingTrack.path ?? null" :source-id="editingTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>

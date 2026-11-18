@@ -155,13 +155,13 @@ button.text-dim:hover:not(:disabled) {
 </style>
 
 <template>
-  <div class="mx-auto w-full max-w-4xl p-6 lg:p-8">
-    <header class="pb-4">
+  <div class="mx-auto w-full max-w-4xl p-4 lg:p-6">
+    <header class="pb-3">
       <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ t("settings.eyebrow") }}</p>
-      <h1 class="mt-4 text-4xl font-black uppercase leading-none tracking-tight sm:text-5xl">{{ t("settings.title") }}</h1>
+      <h1 class="mt-2 text-3xl font-black uppercase leading-none tracking-tight sm:text-4xl">{{ t("settings.title") }}</h1>
     </header>
 
-    <nav class="sticky top-0 z-20 -mx-6 border-b border-line bg-bg/95 px-6 py-2 backdrop-blur lg:-mx-8 lg:px-8" role="tablist" :aria-label="t('settings.tabs.label')">
+    <nav class="sticky top-0 z-20 -mx-4 border-b border-line bg-bg/95 px-4 py-1.5 backdrop-blur lg:-mx-6 lg:px-6" role="tablist" :aria-label="t('settings.tabs.label')">
       <div class="grid grid-cols-3 gap-1">
         <button
           v-for="(item, index) in tabItems"
@@ -183,9 +183,9 @@ button.text-dim:hover:not(:disabled) {
       </div>
     </nav>
 
-    <div class="mt-6">
-      <div v-show="activeTab === 'general'" id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" class="space-y-6">
-        <section class="ak-frame grid gap-6 border border-line bg-surface p-6 lg:grid-cols-[1fr_1.3fr]">
+    <div class="mt-4">
+      <div v-show="activeTab === 'general'" id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" class="space-y-4">
+        <section class="ak-frame grid gap-4 border border-line bg-surface p-4 lg:grid-cols-[1fr_1.3fr]">
           <div><h2 class="text-sm font-bold uppercase tracking-[0.2em]">{{ t("settings.profile.title") }}</h2><p class="mt-2 text-sm text-muted">{{ t("settings.profile.desc") }}</p></div>
           <div class="grid gap-4">
             <label class="grid gap-2 text-[13px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.profile.nickname") }}<input v-model="profile.profile.nickname" maxlength="32" class="h-10 border border-line bg-bg px-3 text-sm font-normal normal-case tracking-normal text-fg outline-none focus:border-accent" :placeholder="t('settings.profile.nicknamePlaceholder')" @change="profile.setNickname(profile.profile.nickname)" /></label>
@@ -193,9 +193,9 @@ button.text-dim:hover:not(:disabled) {
           </div>
         </section>
 
-        <section class="ak-frame grid gap-6 border border-line bg-surface p-6 lg:grid-cols-[1fr_1.3fr]">
+        <section class="ak-frame grid gap-4 border border-line bg-surface p-4 lg:grid-cols-[1fr_1.3fr]">
           <div><h2 class="text-sm font-bold uppercase tracking-[0.2em]">{{ t("settings.appearance.title") }}</h2><p class="mt-2 text-sm text-muted">{{ t("settings.appearance.desc") }}</p></div>
-          <div class="grid gap-5">
+          <div class="grid gap-3">
             <div class="flex items-center justify-between gap-4">
               <span class="text-[13px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("theme.label") }}</span>
               <div class="inline-flex border border-line"><button type="button" class="flex h-9 items-center gap-2 px-3 text-[13px] font-semibold uppercase tracking-[0.2em]" :class="theme === 'light' ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'" @click="theme = 'light'"><Sun :size="14" />{{ t("theme.light") }}</button><button type="button" class="flex h-9 items-center gap-2 border-l border-line px-3 text-[13px] font-semibold uppercase tracking-[0.2em]" :class="theme === 'dark' ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'" @click="theme = 'dark'"><Moon :size="14" />{{ t("theme.dark") }}</button></div>
@@ -211,7 +211,7 @@ button.text-dim:hover:not(:disabled) {
           </div>
         </section>
 
-        <section class="ak-frame grid gap-6 border border-line bg-surface p-6 lg:grid-cols-[1fr_1.3fr]">
+        <section class="ak-frame grid gap-4 border border-line bg-surface p-4 lg:grid-cols-[1fr_1.3fr]">
           <div><h2 class="text-sm font-bold uppercase tracking-[0.2em]">{{ t("settings.sources.title") }}</h2><p class="mt-2 text-sm text-muted">{{ t("settings.sources.desc") }}</p></div>
           <div class="grid gap-4">
             <p class="text-sm text-muted">{{ t("settings.sources.count", { count: sources.sources.length }) }}</p>
@@ -220,7 +220,7 @@ button.text-dim:hover:not(:disabled) {
           </div>
         </section>
 
-        <section class="ak-frame grid gap-6 border border-line bg-surface p-6 lg:grid-cols-[1fr_1.3fr]">
+        <section class="ak-frame grid gap-4 border border-line bg-surface p-4 lg:grid-cols-[1fr_1.3fr]">
           <div><h2 class="text-sm font-bold uppercase tracking-[0.2em]">{{ t("settings.downloads.title") }}</h2><p class="mt-2 text-sm text-muted">{{ t("settings.downloads.desc") }}</p></div>
           <div class="grid gap-3 sm:grid-cols-2">
             <button type="button" class="flex flex-col items-start gap-2 border border-line bg-bg p-4 text-left transition-colors hover:border-accent" @click="emit('downloading')">
@@ -235,9 +235,9 @@ button.text-dim:hover:not(:disabled) {
         </section>
 
         <section class="ak-frame relative border border-line bg-surface">
-          <div class="relative grid gap-6 p-8">
-            <div class="grid gap-6">
-              <div class="flex items-center gap-5"><span class="grid h-24 w-24 shrink-0 place-items-center bg-accent text-accent-fg"><Music2 :size="42" :stroke-width="2" /></span><div class="min-w-0"><h2 class="text-3xl font-black uppercase leading-none tracking-tight sm:text-4xl">{{ t("settings.about.title") }}</h2><p class="mt-3 max-w-lg text-sm leading-[1.7] text-muted">{{ t("settings.about.tagline") }}</p></div></div>
+          <div class="relative grid gap-4 p-5">
+            <div class="grid gap-4">
+              <div class="flex items-center gap-4"><span class="grid h-16 w-16 shrink-0 place-items-center bg-accent text-accent-fg"><Music2 :size="30" :stroke-width="2" /></span><div class="min-w-0"><h2 class="text-2xl font-black uppercase leading-none tracking-tight sm:text-3xl">{{ t("settings.about.title") }}</h2><p class="mt-2 max-w-lg text-[13px] leading-[1.6] text-muted">{{ t("settings.about.tagline") }}</p></div></div>
               <div class="grid gap-1 text-sm leading-relaxed">
                 <p class="flex flex-wrap items-baseline gap-1.5"><span class="font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.about.version") }}</span><span class="text-dim">{{ locale === "zh-CN" ? "：" : ":" }}</span><span class="font-semibold">{{ appCodename }}</span></p>
                 <p class="flex flex-wrap items-baseline gap-1.5"><span class="font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.about.author") }}</span><span class="text-dim">{{ locale === "zh-CN" ? "：" : ":" }}</span><span class="font-semibold">{{ t("settings.about.authorName") }}</span></p>
@@ -247,10 +247,10 @@ button.text-dim:hover:not(:disabled) {
         </section>
       </div>
 
-      <div v-show="activeTab === 'playback'" id="settings-panel-playback" role="tabpanel" aria-labelledby="settings-tab-playback" class="space-y-6">
-        <section class="ak-frame grid gap-6 border border-line bg-surface p-6 lg:grid-cols-[1fr_1.3fr]">
+      <div v-show="activeTab === 'playback'" id="settings-panel-playback" role="tabpanel" aria-labelledby="settings-tab-playback" class="space-y-4">
+        <section class="ak-frame grid gap-4 border border-line bg-surface p-4 lg:grid-cols-[1fr_1.3fr]">
           <div><h2 class="text-sm font-bold uppercase tracking-[0.2em]">{{ t("settings.cache.title") }}</h2><p class="mt-2 text-sm text-muted">{{ t("settings.cache.desc") }}</p></div>
-          <div class="grid gap-5">
+          <div class="grid gap-3">
             <label class="grid gap-2 text-[13px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("settings.cache.dir") }}<input v-model="cacheDir" class="h-10 border border-line bg-bg px-3 text-sm font-normal normal-case tracking-normal text-fg outline-none focus:border-accent" /></label>
             <div class="flex justify-end"><button type="button" class="ak-clip-tr h-10 border border-line px-5 text-[13px] font-semibold uppercase tracking-[0.25em]" @click="saveCacheDir">{{ t("settings.cache.save") }}</button></div>
 
@@ -280,7 +280,7 @@ button.text-dim:hover:not(:disabled) {
 
       </div>
 
-      <div v-show="activeTab === 'lyrics'" id="settings-panel-lyrics" role="tabpanel" aria-labelledby="settings-tab-lyrics" class="space-y-6">
+      <div v-show="activeTab === 'lyrics'" id="settings-panel-lyrics" role="tabpanel" aria-labelledby="settings-tab-lyrics" class="space-y-4">
         <LyricsSettings />
       </div>
     </div>

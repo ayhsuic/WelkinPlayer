@@ -8,7 +8,6 @@ import { defineStore } from "pinia";
 import { detectFormat, findActiveLyricIndices, parseLyric, pickPrimaryIndex } from "lyric-kit";
 import { invoke, toAppError } from "../api";
 import {
-  DEFAULT_AMLL_DISPLAY,
   DEFAULT_CLASSIC_DISPLAY,
   LYRIC_PROVIDERS,
   normalizeLyricProviders,
@@ -43,9 +42,9 @@ export interface LyricTrackInfo {
 }
 
 const CLASSIC_KEY = "welkin-lyrics-classic";
-const AMLL_KEY = "welkin-lyrics-amll-settings";
 const ENABLED_KEY = "welkin-lyrics-enabled";
 const PROVIDERS_KEY = "welkin-lyrics-providers";
+const BLUR_KEY = "welkin-lyrics-blur";
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
   const numeric = Number(value);
@@ -106,7 +105,8 @@ function loadProviders(): LyricProvider[] {
 export const useLyricsStore = defineStore("lyrics", () => {
   const enabled = ref(localStorage.getItem(ENABLED_KEY) !== "0");
   const providers = ref<LyricProvider[]>(loadProviders());
-  const useAmll = ref(localStorage.getItem("welkin-lyrics-amll") === "1");
+  /** Blur the enlarged cover behind the full-screen player. */
+  const backgroundBlur = ref(localStorage.getItem(BLUR_KEY) !== "0");
 
   // Migrate the pre-split keys into the new per-mode defaults on first load.
   const legacySize = readLegacySetting("welkin-lyrics-size", 16, 48);
@@ -116,14 +116,6 @@ export const useLyricsStore = defineStore("lyrics", () => {
   const classic = ref<LyricDisplaySettings>(
     loadSettings(CLASSIC_KEY, {
       ...DEFAULT_CLASSIC_DISPLAY,
-      ...(legacySize !== undefined ? { lineSize: legacySize } : {}),
-      ...(legacyTranslationSize !== undefined ? { translationSize: legacyTranslationSize } : {}),
-      ...(legacyLineSpacing !== undefined ? { lineSpacing: legacyLineSpacing } : {}),
-    }),
-  );
-  const amll = ref<LyricDisplaySettings>(
-    loadSettings(AMLL_KEY, {
-      ...DEFAULT_AMLL_DISPLAY,
       ...(legacySize !== undefined ? { lineSize: legacySize } : {}),
       ...(legacyTranslationSize !== undefined ? { translationSize: legacyTranslationSize } : {}),
       ...(legacyLineSpacing !== undefined ? { lineSpacing: legacyLineSpacing } : {}),
@@ -151,12 +143,11 @@ export const useLyricsStore = defineStore("lyrics", () => {
   /** True when lyrics are intentionally off (global switch or this track), so
    * renderers should show nothing rather than a "no lyrics" message. */
   const suppressed = computed(() => !enabled.value || disabled.value);
-  /** Typography for the renderer currently in use. */
-  const display = computed(() => (useAmll.value ? amll.value : classic.value));
+  /** Typography for the standard lyrics renderer. */
+  const display = computed(() => classic.value);
 
   watch(classic, (value) => localStorage.setItem(CLASSIC_KEY, JSON.stringify(value)), { deep: true });
-  watch(amll, (value) => localStorage.setItem(AMLL_KEY, JSON.stringify(value)), { deep: true });
-  watch(useAmll, (value) => localStorage.setItem("welkin-lyrics-amll", value ? "1" : "0"));
+  watch(backgroundBlur, (value) => localStorage.setItem(BLUR_KEY, value ? "1" : "0"));
   watch(enabled, (value) => localStorage.setItem(ENABLED_KEY, value ? "1" : "0"));
   watch(providers, (value) => localStorage.setItem(PROVIDERS_KEY, JSON.stringify(value)), { deep: true });
 
@@ -460,9 +451,8 @@ export const useLyricsStore = defineStore("lyrics", () => {
     enabled,
     providers,
     translate: computed(() => display.value.translate),
-    useAmll,
+    backgroundBlur,
     classic,
-    amll,
     display,
     status,
     error,

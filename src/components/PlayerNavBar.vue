@@ -292,10 +292,12 @@ onBeforeUnmount(() => {
       @pointerup="onBarUp"
       @pointercancel="onBarCancel"
     >
-      <div class="seekbar-buffer" :style="{ width: bufferPercent() }" />
-      <div class="seekbar-fill" :style="{ width: percent(sliderValue()) }" />
+      <div class="seekbar-track">
+        <div class="seekbar-buffer" :style="{ width: bufferPercent() }" />
+        <div class="seekbar-fill" :style="{ width: percent(sliderValue()) }" />
+      </div>
       <template v-if="!switching">
-        <span class="seekbar-time seekbar-time--start">{{ player.elapsedTime }}</span>
+        <span class="seekbar-time seekbar-time--elapsed" :style="{ left: `clamp(26px, ${percent(sliderValue())}, calc(100% - 26px))` }">{{ player.elapsedTime }}</span>
         <span class="seekbar-time seekbar-time--end">{{ player.totalTime }}</span>
       </template>
       <div v-if="switching" class="seekbar-switcher" :style="{ '--ratio': `${switchRatio * 100}%` }">
@@ -321,8 +323,8 @@ onBeforeUnmount(() => {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  width: 320px;
-  max-width: calc(100vw - 32px);
+  width: 280px;
+  max-width: calc(100vw - 40px);
   bottom: calc(env(safe-area-inset-bottom) + 76px);
   z-index: 60;
   touch-action: none;
@@ -333,13 +335,22 @@ onBeforeUnmount(() => {
 
 .seekbar {
   position: relative;
-  height: 40px;
+  height: 44px;
   overflow: hidden;
-  border-radius: 14px;
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
   background: color-mix(in srgb, var(--line) 55%, transparent);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.26);
   cursor: pointer;
   touch-action: none;
+}
+
+.seekbar-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  height: 6px;
+  clip-path: polygon(0 0, calc(100% - 3px) 0, 100% 3px, 100% 100%, 3px 100%, 0 calc(100% - 3px));
 }
 
 .seekbar-buffer {
@@ -347,7 +358,6 @@ onBeforeUnmount(() => {
   top: 0;
   bottom: 0;
   left: 0;
-  border-radius: 14px;
   background: color-mix(in srgb, var(--fg) 16%, transparent);
   pointer-events: none;
 }
@@ -358,15 +368,13 @@ onBeforeUnmount(() => {
   bottom: 0;
   left: 0;
   z-index: 1;
-  border-radius: 14px;
   background: var(--accent);
   pointer-events: none;
 }
 
 .seekbar-time {
   position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 7px;
   font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -375,8 +383,8 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.seekbar-time--start {
-  left: 14px;
+.seekbar-time--elapsed {
+  transform: translateX(-50%);
 }
 
 .seekbar-time--end {
@@ -400,7 +408,7 @@ onBeforeUnmount(() => {
   bottom: 4px;
   left: clamp(0%, calc(var(--ratio, 50%) - 16.666%), 66.666%);
   width: 33.333%;
-  border-radius: 10px;
+  clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
   background: var(--accent);
   pointer-events: none;
 }
@@ -413,7 +421,6 @@ onBeforeUnmount(() => {
   place-items: center;
   padding: 0;
   border: none;
-  border-radius: 10px;
   background: transparent;
   color: rgba(255, 255, 255, 0.6);
   cursor: pointer;
