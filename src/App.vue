@@ -126,13 +126,50 @@ const navTab = computed<MainTab>(() => sheetTab.value);
  * Portrait keeps the mobile wall + bottom drawer.
  */
 const isLandscape = ref(false);
-const NAV_W_KEY = "welkin-nav-width";
-const MIN_NAV_W = 260;
-const MAX_NAV_W = 460;
-const navWidth = ref(Number(localStorage.getItem(NAV_W_KEY)) || 320);
+/**
+ * Rail width follows the short edge (height in landscape), not the viewport width.
+ * Comfortable band: narrow edge 9:21, wide edge landscape A4 (297:210). The wall
+ * keeps a minimum 9:21 width:height and can grow wider without limit. Below the
+ * 9:21 hide line the rail collapses and the wall goes full-screen.
+ */
+const RAIL_BASE_H_RATIO = 0.45;
+const RAIL_A4_H_RATIO = 297 / 210;
+const WALL_MIN_H_RATIO = 9 / 21;
+const RAIL_DRAG_MIN_H_RATIO = 0.4;
+const RAIL_HIDE_H_RATIO = 9 / 21;
+const HANDLE_W = 10;
+
+function railMaxWidth(): number {
+  const W = window.innerWidth;
+  const H = Math.max(1, window.innerHeight);
+  const byA4 = H * RAIL_A4_H_RATIO;
+  const byWall = W - H * WALL_MIN_H_RATIO - HANDLE_W;
+  return Math.max(H * RAIL_DRAG_MIN_H_RATIO, Math.min(byA4, byWall));
+}
+function baseRailWidth(): number {
+  return Math.max(1, window.innerHeight) * RAIL_BASE_H_RATIO;
+}
+function clampRail(w: number): number {
+  const H = Math.max(1, window.innerHeight);
+  const min = H * RAIL_DRAG_MIN_H_RATIO;
+  return Math.min(railMaxWidth(), Math.max(min, w));
+}
+
+const NAV_SCALE_KEY = "welkin-nav-scale";
+const baseW = ref(baseRailWidth());
+/** User width factor relative to the computed base; persisted across restarts. */
+const railScale = ref(Number(localStorage.getItem(NAV_SCALE_KEY)) || 1);
+const navWidth = ref(Math.round(clampRail(baseW.value * railScale.value)));
+/** Whether the landscape rail is shown; hidden state lets the wall go full-screen. */
+const navVisible = ref(true);
+/** Last usable size, kept so reopening restores a comfortable width. */
+let lastWidth = navWidth.value;
+let lastScale = railScale.value;
 
 function updateLandscape() {
   isLandscape.value = window.innerWidth / Math.max(1, window.innerHeight) >= 1.15;
+  baseW.value = baseRailWidth();
+  navWidth.value = Math.round(clampRail(baseW.value * railScale.value));
 }
 
 let navDrag: { startX: number; startWidth: number } | null = null;
@@ -142,13 +179,27 @@ function onHandleDown(event: PointerEvent) {
 }
 function onHandleMove(event: PointerEvent) {
   if (!navDrag) return;
-  const next = navDrag.startWidth + (event.clientX - navDrag.startX);
-  navWidth.value = Math.min(MAX_NAV_W, Math.max(MIN_NAV_W, next));
+  navWidth.value = Math.round(clampRail(navDrag.startWidth + (event.clientX - navDrag.startX)));
 }
 function onHandleUp() {
   if (!navDrag) return;
   navDrag = null;
-  localStorage.setItem(NAV_W_KEY, String(navWidth.value));
+  const H = Math.max(1, window.innerHeight);
+  if (navWidth.value < H * RAIL_HIDE_H_RATIO) {
+    // Collapse: keep the previous comfortable size for the next open.
+    navVisible.value = false;
+    navWidth.value = lastWidth;
+    railScale.value = lastScale;
+  } else {
+    lastWidth = navWidth.value;
+    railScale.value = navWidth.value / baseW.value;
+    lastScale = railScale.value;
+    localStorage.setItem(NAV_SCALE_KEY, String(railScale.value));
+  }
+}
+/** Reopen the landscape rail from the full-screen wall (pull-up on the seek bar). */
+function openSplitNav() {
+  navVisible.value = true;
 }
 
 /** Drill-down pages rendered inside the drawer instead of one of the four main tab pages. */
@@ -527,7 +578,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
          with the seek bar beside the wall. Width follows the viewport ratio,
          not a fixed breakpoint. -->
     <div v-if="isLandscape" class="split flex min-h-0 flex-1">
-      <aside class="split-nav" :style="{ width: `${navWidth}px` }">
+      <aside v-show="navVisible" class="split-nav" :style="{ width: `${navWidth}px` }">
         <div class="split-nav-body">
           <template v-if="drawerSubView">
             <TracksView v-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="split-tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
@@ -548,6 +599,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
         <MobileTabBar :active="navTab" @select="onTabSelect" />
       </aside>
       <div
+        v-show="navVisible"
         class="split-handle"
         role="separator"
         aria-orientation="vertical"
@@ -559,7 +611,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
       />
       <section class="split-wall">
         <WallView :focus-token="wallFocusToken" @open-lyrics="navigate('player')" />
-        <PlayerNavBar />
+        <PlayerNavBar @sheet="openSplitNav" />
       </section>
     </div>
 
@@ -649,6 +701,18 @@ main {
   touch-action: pan-y;
   padding-top: env(safe-area-inset-top);
   padding-bottom: calc(env(safe-area-inset-bottom) + 84px);
+}
+
+/* In the rail the tab bar sits in the flex column flow instead of an absolutely
+   positioned overlay, so it always renders at the bottom of the pane. */
+.split-nav :deep(.tab-bar) {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  flex: none;
+  margin: 0 24px calc(env(safe-area-inset-bottom) + 12px);
+  background: var(--surface);
 }
 
 .split-handle {
