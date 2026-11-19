@@ -13,7 +13,7 @@ import { mainNavTabs, type MainTab } from "../lib/app";
  * only when selected — a short label. Selected tint is the accent colour,
  * unselected is a dimmed foreground; corners stay square.
  */
-const props = defineProps<{ active: MainTab }>();
+const props = defineProps<{ active: MainTab; inline?: boolean }>();
 const emit = defineEmits<{ select: [tab: MainTab] }>();
 const { t } = useI18n();
 
@@ -25,6 +25,7 @@ function onSelect(tab: MainTab) {
 <template>
   <nav
     class="tab-bar no-scrollbar"
+    :class="{ 'tab-bar--inline': props.inline }"
     role="tablist"
     :aria-label="t('nav.menu')"
   >
@@ -60,6 +61,18 @@ function onSelect(tab: MainTab) {
   border: 1px solid var(--line);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+
+/* Flow layout for the landscape rail: sits in the flex column instead of an
+   absolutely positioned overlay, so it always renders at the pane bottom. */
+.tab-bar--inline {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  margin: 0;
+  background: var(--surface);
 }
 
 .tab-bar-item {

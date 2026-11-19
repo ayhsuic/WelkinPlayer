@@ -40,6 +40,7 @@ import { useCacheStore } from "./stores/cache";
 import PlayerBar from "./components/PlayerBar.vue";
 import PlayerNavBar from "./components/PlayerNavBar.vue";
 import MobileNavSheet from "./components/MobileNavSheet.vue";
+import MobileTabBar from "./components/MobileTabBar.vue";
 import WallView from "./components/wall/WallView.vue";
 import AudioQualityModal from "./components/AudioQualityModal.vue";
 import MeteredPlaybackModal from "./components/MeteredPlaybackModal.vue";
@@ -579,7 +580,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
          not a fixed breakpoint. -->
     <div v-if="isLandscape" class="split flex min-h-0 flex-1">
       <aside v-show="navVisible" class="split-nav" :style="{ width: `${navWidth}px` }">
-        <div class="split-nav-body">
+        <div class="split-nav-body" :style="{ zoom: railScale }">
           <template v-if="drawerSubView">
             <TracksView v-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="split-tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
             <SourcesView v-else-if="baseView === 'folders' || baseView === 'webdav' || (baseView === 'source-browser' && !browseSourceId)" :key="`split-sources-${sourcesPageKind}`" :kind="sourcesPageKind" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig(sourcesPageKind === 'webdav' ? 'webdav' : 'folders')" />
@@ -596,7 +597,9 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
           <SettingsView v-else-if="sheetTab === 'settings'" key="split-settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
           <SearchView v-else key="split-search" @open-artist="openArtist" @open-album="openAlbum" />
         </div>
-        <MobileTabBar :active="navTab" @select="onTabSelect" />
+        <div class="split-nav-bar">
+          <MobileTabBar inline :active="navTab" @select="onTabSelect" />
+        </div>
       </aside>
       <div
         v-show="navVisible"
@@ -703,16 +706,11 @@ main {
   padding-bottom: calc(env(safe-area-inset-bottom) + 84px);
 }
 
-/* In the rail the tab bar sits in the flex column flow instead of an absolutely
-   positioned overlay, so it always renders at the bottom of the pane. */
-.split-nav :deep(.tab-bar) {
-  position: relative;
-  left: auto;
-  right: auto;
-  bottom: auto;
+/* Rail bottom bar: a flow container at the pane bottom; the bar itself renders
+   in inline flow mode so it cannot be pushed out by the inner scroll view. */
+.split-nav-bar {
   flex: none;
   margin: 0 24px calc(env(safe-area-inset-bottom) + 12px);
-  background: var(--surface);
 }
 
 .split-handle {
