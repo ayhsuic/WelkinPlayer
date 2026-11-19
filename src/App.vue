@@ -128,35 +128,32 @@ const navTab = computed<MainTab>(() => sheetTab.value);
  */
 const isLandscape = ref(false);
 /**
- * Rail width follows the short edge (height in landscape), not the viewport width.
- * Comfortable band: narrow edge 9:21, wide edge landscape A4 (297:210). The wall
- * keeps a minimum 9:21 width:height and can grow wider without limit. Below the
- * 9:21 hide line the rail collapses and the wall goes full-screen.
+ * Rail width follows the short edge (height in landscape), measured from the real
+ * viewport rather than a fixed pixel value. Rail width:height is clamped between
+ * 9:16 (narrowest) and 3:2 (widest); the wall keeps a minimum 9:21 width:height.
+ * Below the 9:21 hide line the rail collapses and the wall goes full-screen.
  */
-const RAIL_BASE_H_RATIO = 0.45;
-const RAIL_A4_H_RATIO = 297 / 210;
+/** Default rail width as a fraction of the short edge: 1 = the full portrait width. */
+const RAIL_BASE_H_RATIO = 1;
+const RAIL_MIN_H_RATIO = 9 / 16;
+const RAIL_MAX_H_RATIO = 3 / 2;
 const WALL_MIN_H_RATIO = 9 / 21;
-const RAIL_DRAG_MIN_H_RATIO = 9 / 16;
 const RAIL_HIDE_H_RATIO = 9 / 21;
 const HANDLE_W = 18;
-/** Design width the rail content is laid out for (phone portrait CSS width). */
-const RAIL_DESIGN_W = 340;
-/** Floor for the whole-rail shrink, so tiny landscape panes never go illegible. */
-const RAIL_FIT_MIN = 0.55;
 
 function railMaxWidth(): number {
   const W = window.innerWidth;
   const H = Math.max(1, window.innerHeight);
-  const byA4 = H * RAIL_A4_H_RATIO;
+  const byRatio = H * RAIL_MAX_H_RATIO;
   const byWall = W - H * WALL_MIN_H_RATIO - HANDLE_W;
-  return Math.max(H * RAIL_DRAG_MIN_H_RATIO, Math.min(byA4, byWall));
+  return Math.max(H * RAIL_MIN_H_RATIO, Math.min(byRatio, byWall));
 }
 function baseRailWidth(): number {
   return Math.max(1, window.innerHeight) * RAIL_BASE_H_RATIO;
 }
 function clampRail(w: number): number {
   const H = Math.max(1, window.innerHeight);
-  const min = H * RAIL_DRAG_MIN_H_RATIO;
+  const min = H * RAIL_MIN_H_RATIO;
   return Math.min(railMaxWidth(), Math.max(min, w));
 }
 
@@ -165,12 +162,6 @@ const baseW = ref(baseRailWidth());
 /** User width factor relative to the computed base; persisted across restarts. */
 const railScale = ref(Number(localStorage.getItem(NAV_SCALE_KEY)) || 1);
 const navWidth = ref(Math.round(clampRail(baseW.value * railScale.value)));
-/**
- * Whole-rail shrink: content is laid out at the portrait design width and scaled
- * down to fit the narrow landscape pane, the way one-handed mode shrinks the UI.
- * Pure factor, no separate width zoom to avoid double scaling.
- */
-const fitScale = computed(() => Math.min(1, Math.max(RAIL_FIT_MIN, navWidth.value / RAIL_DESIGN_W)));
 /** Whether the landscape rail is shown; hidden state lets the wall go full-screen. */
 const navVisible = ref(true);
 /** Last usable size, kept so reopening restores a comfortable width. */
@@ -594,7 +585,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
          with the seek bar beside the wall. Width follows the viewport ratio,
          not a fixed breakpoint. -->
     <div v-if="isLandscape" class="split flex min-h-0 flex-1">
-      <aside v-show="navVisible" class="split-nav" :style="{ width: `${RAIL_DESIGN_W}px`, zoom: fitScale }">
+      <aside v-show="navVisible" class="split-nav" :style="{ width: `${navWidth}px` }">
         <div class="split-nav-body">
           <template v-if="drawerSubView">
             <TracksView v-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="split-tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
