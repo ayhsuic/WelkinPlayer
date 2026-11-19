@@ -113,7 +113,7 @@ const rows = computed<CategoryRow[]>(() => [
 </script>
 
 <template>
-  <div class="h-full w-full overflow-y-auto">
+  <div class="w-full">
     <div class="mx-auto flex w-full max-w-6xl flex-col px-4 py-5 sm:px-6 sm:py-6">
       <h1 class="text-3xl font-black leading-none tracking-tight sm:text-4xl">{{ t("nav.collection") }}</h1>
 

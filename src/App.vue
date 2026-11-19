@@ -703,7 +703,7 @@ main {
   overscroll-behavior: contain;
   touch-action: pan-y;
   padding-top: env(safe-area-inset-top);
-  padding-bottom: calc(env(safe-area-inset-bottom) + 84px);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .split-nav-bar {
