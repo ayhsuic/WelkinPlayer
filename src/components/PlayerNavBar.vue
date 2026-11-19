@@ -392,21 +392,21 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-/* Lighter back layer offset up-left; solid front layer covers it, leaving
-   only a top and left highlight edge. Each layer keeps its own clipped corner. */
+/* Lighter back layer sits inside the block; the solid front layer is inset on
+   the top and left, leaving an internal top/left highlight edge that does not
+   poke outside the bar. */
 .seekbar-fill::before {
   content: "";
   position: absolute;
   inset: 0;
   background: color-mix(in srgb, var(--accent) 50%, #fff);
-  transform: translate(-6px, -6px);
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
 
 .seekbar-fill::after {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: 6px 0 0 6px;
   background: var(--accent);
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
@@ -464,14 +464,13 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   background: color-mix(in srgb, var(--accent) 50%, #fff);
-  transform: translate(-6px, -6px);
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
 
 .switcher-thumb::after {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: 6px 0 0 6px;
   background: var(--accent);
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
