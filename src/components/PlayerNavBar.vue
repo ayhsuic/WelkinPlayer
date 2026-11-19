@@ -338,7 +338,7 @@ onBeforeUnmount(() => {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  width: min(340px, calc(100vw - 40px));
+  width: min(340px, calc(100vw - 80px));
   bottom: calc(env(safe-area-inset-bottom) + 76px);
   z-index: 60;
   touch-action: none;
