@@ -381,20 +381,26 @@ onBeforeUnmount(() => {
   bottom: 0;
   left: 0;
   z-index: 1;
-  /* Back layer: lighter accent showing along the top and left edges. */
-  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
-  background: color-mix(in srgb, var(--accent) 50%, #fff);
   pointer-events: none;
 }
 
+/* Lighter back layer offset up-left; solid front layer covers it, leaving
+   only a top and left highlight edge. Each layer keeps its own clipped corner. */
 .seekbar-fill::before {
   content: "";
   position: absolute;
-  /* Solid front layer inset by 6px on the top and left, so the lighter back
-     layer peeks out as a top and left highlight edge. */
-  inset: 6px 0 0 6px;
+  inset: 0;
+  background: color-mix(in srgb, var(--accent) 50%, #fff);
+  transform: translate(-6px, -6px);
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+
+.seekbar-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   background: var(--accent);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
 
 .seekbar-time {
@@ -435,17 +441,24 @@ onBeforeUnmount(() => {
   bottom: 4px;
   left: clamp(0%, calc(var(--ratio, 50%) - 16.666%), 66.666%);
   width: 33.333%;
-  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
-  background: color-mix(in srgb, var(--accent) 50%, #fff);
   pointer-events: none;
 }
 
 .switcher-thumb::before {
   content: "";
   position: absolute;
-  inset: 6px 0 0 6px;
+  inset: 0;
+  background: color-mix(in srgb, var(--accent) 50%, #fff);
+  transform: translate(-6px, -6px);
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+
+.switcher-thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   background: var(--accent);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
 
 .switcher-option {

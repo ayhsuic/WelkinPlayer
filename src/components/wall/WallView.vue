@@ -963,8 +963,8 @@ button.wall-card-meta {
   padding: 0;
   border: none;
   border-radius: 0;
-  /* Single-colour clipped-corner rectangle; no two-tone layered shell. */
-  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 calc(100% - var(--cut)), 0 var(--cut));
+  /* Single-colour rectangle clipped on the top-right and bottom-left corners. */
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
   background: var(--accent);
   color: var(--accent-fg);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.34);
