@@ -177,7 +177,18 @@ function onPointerUp(event: PointerEvent) {
   transform: scale(0.7);
   pointer-events: none;
   transition: opacity 160ms ease, transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+
+.track-index__bubble::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(color-mix(in srgb, var(--accent) 50%, #fff), color-mix(in srgb, var(--accent) 50%, #fff)) top left / 100% 6px no-repeat,
+    linear-gradient(color-mix(in srgb, var(--accent) 50%, #fff), color-mix(in srgb, var(--accent) 50%, #fff)) top left / 6px 100% no-repeat;
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+  pointer-events: none;
 }
 
 .track-index__bubble--visible {

@@ -963,13 +963,25 @@ button.wall-card-meta {
   padding: 0;
   border: none;
   border-radius: 0;
-  /* Single-colour rectangle clipped on the top-right and bottom-left corners. */
+  /* Accent rectangle clipped on the top-right and bottom-left corners, with
+     the same light L edge as the seekbar fill. */
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
   background: var(--accent);
   color: var(--accent-fg);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.34);
   cursor: pointer;
   z-index: 3;
+}
+
+.wall-card-center::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(color-mix(in srgb, var(--accent) 50%, #fff), color-mix(in srgb, var(--accent) 50%, #fff)) top left / 100% 6px no-repeat,
+    linear-gradient(color-mix(in srgb, var(--accent) 50%, #fff), color-mix(in srgb, var(--accent) 50%, #fff)) top left / 6px 100% no-repeat;
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+  pointer-events: none;
 }
 
 .wall-empty {
