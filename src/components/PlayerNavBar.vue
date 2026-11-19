@@ -392,23 +392,25 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-/* Lighter back layer sits inside the block; the solid front layer is inset on
-   the top and left, leaving an internal top/left highlight edge that does not
-   poke outside the bar. */
+/* Solid block with an inner light L (top + left edge) painted on top. The L is
+   clipped by the same diagonal polygon, so it never spills into the cut corners. */
 .seekbar-fill::before {
   content: "";
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--accent) 50%, #fff);
+  background: var(--accent);
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
 
 .seekbar-fill::after {
   content: "";
   position: absolute;
-  inset: 6px 0 0 6px;
-  background: var(--accent);
+  inset: 0;
+  background:
+    linear-gradient(color-mix(in srgb, var(--accent) 50%, #fff), color-mix(in srgb, var(--accent) 50%, #fff)) top left / 100% 6px no-repeat,
+    linear-gradient(color-mix(in srgb, var(--accent) 50%, #fff), color-mix(in srgb, var(--accent) 50%, #fff)) top left / 6px 100% no-repeat;
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+  pointer-events: none;
 }
 
 .seekbar-time {
@@ -438,7 +440,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  padding: 4px;
+  padding: 6px;
 }
 
 .seekbar-switcher::before {
@@ -452,8 +454,8 @@ onBeforeUnmount(() => {
 /* Sliding highlight: one third of the bar wide, centred under the finger. */
 .switcher-thumb {
   position: absolute;
-  top: 4px;
-  bottom: 4px;
+  top: 0;
+  bottom: 0;
   left: clamp(0%, calc(var(--ratio, 50%) - 16.666%), 66.666%);
   width: 33.333%;
   pointer-events: none;
@@ -463,16 +465,19 @@ onBeforeUnmount(() => {
   content: "";
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--accent) 50%, #fff);
+  background: var(--accent);
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
 
 .switcher-thumb::after {
   content: "";
   position: absolute;
-  inset: 6px 0 0 6px;
-  background: var(--accent);
+  inset: 0;
+  background:
+    linear-gradient(color-mix(in srgb, var(--accent) 50%, #fff), color-mix(in srgb, var(--accent) 50%, #fff)) top left / 100% 6px no-repeat,
+    linear-gradient(color-mix(in srgb, var(--accent) 50%, #fff), color-mix(in srgb, var(--accent) 50%, #fff)) top left / 6px 100% no-repeat;
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+  pointer-events: none;
 }
 
 .switcher-option {

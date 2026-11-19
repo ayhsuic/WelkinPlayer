@@ -89,16 +89,19 @@ function onSelect(tab: MainTab) {
   content: "";
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--accent) 50%, #fff);
+  background: var(--accent);
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
 
 .item-highlight::after {
   content: "";
   position: absolute;
-  inset: 6px 0 0 6px;
-  background: var(--accent);
+  inset: 0;
+  background:
+    linear-gradient(color-mix(in srgb, var(--accent) 50%, #fff), color-mix(in srgb, var(--accent) 50%, #fff)) top left / 100% 6px no-repeat,
+    linear-gradient(color-mix(in srgb, var(--accent) 50%, #fff), color-mix(in srgb, var(--accent) 50%, #fff)) top left / 6px 100% no-repeat;
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+  pointer-events: none;
 }
 
 .tab-bar-item.is-active {

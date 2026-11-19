@@ -118,6 +118,39 @@ const sheetTab = ref<MainTab>("home");
 /** Which bottom tab matches the current drawer page. */
 const navTab = computed<MainTab>(() => sheetTab.value);
 
+/* ------------------------------------------------------- split (landscape) */
+
+/**
+ * Wide-by-proportion, not a fixed breakpoint: the split two-pane layout opens
+ * when the viewport is clearly wider than tall (tablet landscape / wide window).
+ * Portrait keeps the mobile wall + bottom drawer.
+ */
+const isLandscape = ref(false);
+const NAV_W_KEY = "welkin-nav-width";
+const MIN_NAV_W = 260;
+const MAX_NAV_W = 460;
+const navWidth = ref(Number(localStorage.getItem(NAV_W_KEY)) || 320);
+
+function updateLandscape() {
+  isLandscape.value = window.innerWidth / Math.max(1, window.innerHeight) >= 1.15;
+}
+
+let navDrag: { startX: number; startWidth: number } | null = null;
+function onHandleDown(event: PointerEvent) {
+  navDrag = { startX: event.clientX, startWidth: navWidth.value };
+  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+}
+function onHandleMove(event: PointerEvent) {
+  if (!navDrag) return;
+  const next = navDrag.startWidth + (event.clientX - navDrag.startX);
+  navWidth.value = Math.min(MAX_NAV_W, Math.max(MIN_NAV_W, next));
+}
+function onHandleUp() {
+  if (!navDrag) return;
+  navDrag = null;
+  localStorage.setItem(NAV_W_KEY, String(navWidth.value));
+}
+
 /** Drill-down pages rendered inside the drawer instead of one of the four main tab pages. */
 const DRAWER_SUB_VIEWS: ReadonlySet<View> = new Set([
   "tracks", "favorites", "artists", "albums", "years", "genres",
@@ -470,8 +503,8 @@ function onGlobalKeydown(event: KeyboardEvent) {
   player.togglePlayback();
 }
 
-onMounted(() => { window.addEventListener("hashchange", syncViewFromHash); window.addEventListener("keydown", onGlobalKeydown); window.addEventListener("beforeunload", savePlaybackPositionOnLeave); window.addEventListener("pagehide", savePlaybackPositionOnLeave); document.addEventListener("visibilitychange", onVisibilityChange); document.addEventListener("scroll", onScrollCapture, true); void initAudio(); void network.start(); void cache.start(); bootMediaControl(); void invoke<string>("ping").catch((error) => console.warn("[welkin] ping failed", describeError(error))); void bootstrap(); });
-onUnmounted(() => { savePlaybackPosition(true); stopMediaControl(); window.removeEventListener("hashchange", syncViewFromHash); window.removeEventListener("keydown", onGlobalKeydown); window.removeEventListener("beforeunload", savePlaybackPositionOnLeave); window.removeEventListener("pagehide", savePlaybackPositionOnLeave); document.removeEventListener("visibilitychange", onVisibilityChange); document.removeEventListener("scroll", onScrollCapture, true); unlistenPlayback?.(); unlistenPlayback = null; void profile.flush(); });
+onMounted(() => { updateLandscape(); window.addEventListener("resize", updateLandscape); window.addEventListener("hashchange", syncViewFromHash); window.addEventListener("keydown", onGlobalKeydown); window.addEventListener("beforeunload", savePlaybackPositionOnLeave); window.addEventListener("pagehide", savePlaybackPositionOnLeave); document.addEventListener("visibilitychange", onVisibilityChange); document.addEventListener("scroll", onScrollCapture, true); void initAudio(); void network.start(); void cache.start(); bootMediaControl(); void invoke<string>("ping").catch((error) => console.warn("[welkin] ping failed", describeError(error))); void bootstrap(); });
+onUnmounted(() => { savePlaybackPosition(true); stopMediaControl(); window.removeEventListener("resize", updateLandscape); window.removeEventListener("hashchange", syncViewFromHash); window.removeEventListener("keydown", onGlobalKeydown); window.removeEventListener("beforeunload", savePlaybackPositionOnLeave); window.removeEventListener("pagehide", savePlaybackPositionOnLeave); document.removeEventListener("visibilitychange", onVisibilityChange); document.removeEventListener("scroll", onScrollCapture, true); unlistenPlayback?.(); unlistenPlayback = null; void profile.flush(); });
 
 // Mirror the Rust playback context into the store. The queue / play intent / next
 // / previous all live in Rust now; this is the single channel that keeps the UI
@@ -490,13 +523,53 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
   <Transition name="info"><TrackEditorView v-if="view === 'track-edit' && editingTrack" :path="editingTrack.path ?? null" :source-id="editingTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
   <SetupWizard v-if="booted && profile.firstRun" v-model:theme="theme" v-model:accent="accent" @finish="onWizardFinish" />
   <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg" :class="booted ? '' : 'opacity-0'">
-    <!-- Mobile: the playing wall is the persistent underlying layer; the drawer covers it when open. -->
-    <div class="relative flex min-h-0 flex-1 md:hidden">
+    <!-- Landscape split: navigation rail on the left, cover wall on the right
+         with the seek bar beside the wall. Width follows the viewport ratio,
+         not a fixed breakpoint. -->
+    <div v-if="isLandscape" class="split flex min-h-0 flex-1">
+      <aside class="split-nav" :style="{ width: `${navWidth}px` }">
+        <div class="split-nav-body">
+          <template v-if="drawerSubView">
+            <TracksView v-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="split-tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
+            <SourcesView v-else-if="baseView === 'folders' || baseView === 'webdav' || (baseView === 'source-browser' && !browseSourceId)" :key="`split-sources-${sourcesPageKind}`" :kind="sourcesPageKind" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig(sourcesPageKind === 'webdav' ? 'webdav' : 'folders')" />
+            <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="split-source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate(browseSourceKind === 'webdav' ? 'webdav' : 'folders')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
+            <SourceConfigView v-else-if="baseView === 'source-config'" key="split-source-config" :kind="sourceConfigKind" @back="closeSourceConfig" />
+            <CategoriesView v-else-if="categoryActive" key="split-categories" :kind="baseView" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @navigate="navigate" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @open-group="onOpenGroupFrom" @refresh="refreshLibrary" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
+            <FavoritesView v-else-if="baseView === 'favorites'" key="split-favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
+            <DownloadingView v-else-if="baseView === 'downloading'" key="split-downloading" />
+            <DownloadedView v-else-if="baseView === 'downloaded'" key="split-downloaded" @open-artist="openArtist" @open-album="openAlbum" />
+            <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="split-playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
+          </template>
+          <LibraryView v-else-if="sheetTab === 'home'" key="split-home" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="navigate('settings')" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
+          <LibraryListView v-else-if="sheetTab === 'library'" key="split-library" @navigate="navigate" @open-playlist="openUserPlaylist" @create-playlist="createPlaylist" />
+          <SettingsView v-else-if="sheetTab === 'settings'" key="split-settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
+          <SearchView v-else key="split-search" @open-artist="openArtist" @open-album="openAlbum" />
+        </div>
+        <MobileTabBar :active="navTab" @select="onTabSelect" />
+      </aside>
+      <div
+        class="split-handle"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize navigation rail"
+        @pointerdown="onHandleDown"
+        @pointermove="onHandleMove"
+        @pointerup="onHandleUp"
+        @pointercancel="onHandleUp"
+      />
+      <section class="split-wall">
+        <WallView :focus-token="wallFocusToken" @open-lyrics="navigate('player')" />
+        <PlayerNavBar />
+      </section>
+    </div>
+
+    <!-- Portrait: the persistent mobile wall under the bottom drawer. -->
+    <div v-else class="relative flex min-h-0 flex-1 md:hidden">
       <WallView :focus-token="wallFocusToken" @open-lyrics="navigate('player')" />
     </div>
 
     <!-- Desktop: the sidebar-driven main area. -->
-    <div class="relative hidden min-h-0 flex-1 md:flex">
+    <div v-if="!isLandscape" class="relative hidden min-h-0 flex-1 md:flex">
       <main class="relative min-w-0 flex-1 overflow-y-auto" :style="{ paddingTop: 'env(safe-area-inset-top)' }">
         <Transition name="page" mode="out-in">
           <WallView v-if="baseView === 'wall'" key="wall" :focus-token="wallFocusToken" @open-lyrics="navigate('player')" />
@@ -515,9 +588,9 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
         </Transition>
       </main>
     </div>
-    <PlayerBar v-if="player.currentTrack" class="hidden md:block" @open="openPlayer" @open-artist="openArtist" @open-album="openAlbum" />
-    <PlayerNavBar v-if="view === 'player' || baseView === 'wall' || !sheetOpen" @sheet="openSheet" />
-    <MobileNavSheet v-model:open="sheetOpen" :active-tab="navTab" @select="onTabSelect" @close="closeSheet">
+    <PlayerBar v-if="!isLandscape && player.currentTrack" class="hidden md:block" @open="openPlayer" @open-artist="openArtist" @open-album="openAlbum" />
+    <PlayerNavBar v-if="!isLandscape && (view === 'player' || baseView === 'wall' || !sheetOpen)" @sheet="openSheet" />
+    <MobileNavSheet v-if="!isLandscape" v-model:open="sheetOpen" :active-tab="navTab" @select="onTabSelect" @close="closeSheet">
       <!-- Drill-down pages inside the drawer. -->
       <template v-if="drawerSubView">
         <TracksView v-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="sheet-tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
@@ -548,5 +621,67 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
    so the category tabs glide up to the status bar instead of jumping. */
 main {
   transition: padding-top 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ------------------------------------------------ landscape split layout */
+.split {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+.split-nav {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+}
+
+.split-nav-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 84px);
+}
+
+.split-handle {
+  flex: none;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  position: relative;
+}
+
+.split-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--line);
+}
+
+.split-wall {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* In the split the seek bar belongs to the wall pane, so it anchors to the wall
+   instead of the viewport and overrides the >=768px mobile-only hide. */
+.split-wall :deep(.transport) {
+  position: absolute;
+  display: block;
+  width: min(340px, calc(100% - 80px));
+  bottom: calc(env(safe-area-inset-bottom) + 24px);
 }
 </style>
