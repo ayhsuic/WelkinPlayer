@@ -775,7 +775,7 @@ watch(
         </button>
       </div>
     </div>
-    <div class="relative z-10 grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-6 overflow-hidden px-5 pt-[env(safe-area-inset-top)] py-4 md:grid-cols-[minmax(220px,0.34fr)_minmax(0,0.66fr)] md:grid-rows-1 md:gap-12 md:px-10 md:py-8 lg:grid-cols-[minmax(280px,0.32fr)_minmax(0,0.68fr)] lg:gap-16 lg:px-16">
+    <div class="relative z-10 grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-6 overflow-hidden px-5 pt-[env(safe-area-inset-top)] md:grid-cols-[minmax(220px,0.34fr)_minmax(0,0.66fr)] md:grid-rows-1 md:gap-12 md:px-10 md:py-8 lg:grid-cols-[minmax(280px,0.32fr)_minmax(0,0.68fr)] lg:gap-16 lg:px-16">
       <div class="player-controls order-2 hidden min-h-0 flex-col justify-end md:flex md:order-none md:justify-center" :data-collapsed="controlsVisible ? 'false' : 'true'">
         <div class="ak-frame relative mx-auto hidden aspect-square w-full max-w-[420px] overflow-hidden md:block" :style="{ backgroundColor: player.currentTrack.color }">
           <img v-if="player.currentTrack.cover" :key="player.currentTrack.cover" :src="player.currentTrack.cover" alt="" decoding="async" class="player-art-in h-full w-full object-cover" />
@@ -837,7 +837,7 @@ watch(
           </div>
         </div>
       </div>
-      <div class="order-1 flex min-h-0 min-w-0 flex-col justify-center pt-[env(safe-area-inset-top)] md:order-none md:pt-0">
+      <div class="order-1 flex min-h-0 min-w-0 flex-col justify-center md:order-none md:pt-0">
          <div ref="lyricsScroll" class="lyrics-scroll min-h-0 flex-1 overflow-y-auto pl-6 md:max-h-[76vh] md:border-l md:border-line md:pl-10" :style="{ '--line-size': `${lyrics.classic.lineSize}px`, '--translation-size': `${lyrics.classic.translationSize}px`, '--line-spacing': `${lyrics.classic.lineSpacing}px`, '--line-weight': lyrics.classic.fontWeight, '--line-weight-active': lyricActiveWeight, fontFamily: lyricFontFamily }">
           <Virtualizer
             ref="lyricsVirtualizer"
