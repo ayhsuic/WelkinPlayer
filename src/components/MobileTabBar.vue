@@ -49,8 +49,8 @@ function onSelect(tab: MainTab) {
 <style scoped>
 .tab-bar {
   position: absolute;
-  left: 12px;
-  right: 12px;
+  left: 24px;
+  right: 24px;
   bottom: calc(env(safe-area-inset-bottom) + 12px);
   display: flex;
   flex-direction: row;

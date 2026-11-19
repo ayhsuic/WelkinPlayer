@@ -350,12 +350,20 @@ onBeforeUnmount(() => {
 .seekbar {
   position: relative;
   height: 44px;
-  /* Transparent track: only the top-right and bottom-left corners are clipped. */
-  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
-  background: color-mix(in srgb, var(--line) 35%, transparent);
+  /* The track background lives on ::before with its own clipped corner; the
+     container itself must not clip-path, or the offset highlight back layer
+     of the fill/thumb would be cut off. */
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.26);
   cursor: pointer;
   touch-action: none;
+}
+
+.seekbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--line) 35%, transparent);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
 
 /* Outer track fills the whole bar; the inner progress block is a second
@@ -431,7 +439,14 @@ onBeforeUnmount(() => {
   flex-direction: row;
   align-items: stretch;
   padding: 4px;
+}
+
+.seekbar-switcher::before {
+  content: "";
+  position: absolute;
+  inset: 0;
   background: color-mix(in srgb, var(--surface) 82%, transparent);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
 }
 
 /* Sliding highlight: one third of the bar wide, centred under the finger. */
