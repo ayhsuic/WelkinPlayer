@@ -140,7 +140,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <Teleport to="body"><Transition name="track-menu-backdrop"><div v-if="visible" class="fixed inset-0 z-[60]" @pointerdown="close"></div></Transition><Transition name="track-menu-close" @after-leave="emit('close')"><div v-if="visible" class="track-menu fixed z-[61] w-56" ref="menuRef" :style="{ left: `${position.x}px`, top: `${position.y}px` }" role="menu"><span class="track-menu__backdrop track-menu__backdrop--gray" aria-hidden="true"></span><span class="track-menu__backdrop track-menu__backdrop--white" aria-hidden="true"></span>        <div class="track-menu__content">
+  <Teleport to="body"><Transition name="track-menu-backdrop"><div v-if="visible" class="fixed inset-0 z-[89]" @pointerdown="close"></div></Transition><Transition name="track-menu-close" @after-leave="emit('close')"><div v-if="visible" class="track-menu fixed z-[90] w-56" ref="menuRef" :style="{ left: `${position.x}px`, top: `${position.y}px` }" role="menu"><span class="track-menu__backdrop track-menu__backdrop--gray" aria-hidden="true"></span><span class="track-menu__backdrop track-menu__backdrop--white" aria-hidden="true"></span>        <div class="track-menu__content">
           <div class="track-menu__header">
             <template v-if="isSelection"><p class="truncate text-xs font-semibold tracking-wide">{{ t("library.menu.selectedCount", { count: paths.length }) }}</p></template>
             <template v-else><p class="truncate text-xs font-semibold tracking-wide">{{ track.title }}</p><p class="truncate text-[11px] text-black/60">{{ track.artist }}</p></template>

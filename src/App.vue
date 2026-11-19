@@ -136,9 +136,13 @@ const isLandscape = ref(false);
 const RAIL_BASE_H_RATIO = 0.45;
 const RAIL_A4_H_RATIO = 297 / 210;
 const WALL_MIN_H_RATIO = 9 / 21;
-const RAIL_DRAG_MIN_H_RATIO = 0.4;
+const RAIL_DRAG_MIN_H_RATIO = 9 / 16;
 const RAIL_HIDE_H_RATIO = 9 / 21;
-const HANDLE_W = 10;
+const HANDLE_W = 18;
+/** Design width the rail content is laid out for (phone portrait CSS width). */
+const RAIL_DESIGN_W = 340;
+/** Floor for the whole-rail shrink, so tiny landscape panes never go illegible. */
+const RAIL_FIT_MIN = 0.55;
 
 function railMaxWidth(): number {
   const W = window.innerWidth;
@@ -161,6 +165,12 @@ const baseW = ref(baseRailWidth());
 /** User width factor relative to the computed base; persisted across restarts. */
 const railScale = ref(Number(localStorage.getItem(NAV_SCALE_KEY)) || 1);
 const navWidth = ref(Math.round(clampRail(baseW.value * railScale.value)));
+/**
+ * Whole-rail shrink: content is laid out at the portrait design width and scaled
+ * down to fit the narrow landscape pane, the way one-handed mode shrinks the UI.
+ * Pure factor, no separate width zoom to avoid double scaling.
+ */
+const fitScale = computed(() => Math.min(1, Math.max(RAIL_FIT_MIN, navWidth.value / RAIL_DESIGN_W)));
 /** Whether the landscape rail is shown; hidden state lets the wall go full-screen. */
 const navVisible = ref(true);
 /** Last usable size, kept so reopening restores a comfortable width. */
@@ -436,6 +446,11 @@ function navigate(nextView: View) {
 }
 /** Open the full-screen player without disturbing the page (and its filters) underneath. */
 function openPlayer() { setView("player"); }
+/** Lyrics entry: portrait opens the full-screen player; landscape keeps the inline card lyrics on the wall. */
+function onOpenLyrics() {
+  if (isLandscape.value) return;
+  navigate("player");
+}
 /** Fold the player away back to the page it was opened over, keeping that page's filters. */
 function returnFromPlayer() { setView(baseView.value); }
 function syncViewFromHash() { view.value = getViewFromHash(); }
@@ -569,7 +584,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
 </script>
 
 <template>
-  <Transition name="slide"><PlayerView v-if="view === 'player' && player.currentTrack" :return-view="baseView" @navigate="returnFromPlayer" @open-artist="openArtist" @open-album="openAlbum" /></Transition>
+  <Transition name="slide"><PlayerView v-if="view === 'player' && player.currentTrack && !isLandscape" :return-view="baseView" @navigate="returnFromPlayer" @open-artist="openArtist" @open-album="openAlbum" /></Transition>
   <Transition name="info"><TrackInfoView v-if="view === 'track-info' && viewingTrack" :path="viewingTrack.path ?? null" :source-id="viewingTrack.sourceId" @back="closeOverlay" /></Transition>
   <Transition name="info"><LyricsEditorView v-if="view === 'lyrics-edit' && editingLyricsTrack" :path="editingLyricsTrack.path ?? null" :source-id="editingLyricsTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
   <Transition name="info"><TrackEditorView v-if="view === 'track-edit' && editingTrack" :path="editingTrack.path ?? null" :source-id="editingTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
@@ -579,7 +594,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
          with the seek bar beside the wall. Width follows the viewport ratio,
          not a fixed breakpoint. -->
     <div v-if="isLandscape" class="split flex min-h-0 flex-1">
-      <aside v-show="navVisible" class="split-nav" :style="{ width: `${navWidth}px`, zoom: railScale }">
+      <aside v-show="navVisible" class="split-nav" :style="{ width: `${RAIL_DESIGN_W}px`, zoom: fitScale }">
         <div class="split-nav-body">
           <template v-if="drawerSubView">
             <TracksView v-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="split-tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
@@ -613,7 +628,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
         @pointercancel="onHandleUp"
       />
       <section class="split-wall">
-        <WallView :focus-token="wallFocusToken" @open-lyrics="navigate('player')" />
+        <WallView :focus-token="wallFocusToken" @open-lyrics="onOpenLyrics" />
         <PlayerNavBar @sheet="openSplitNav" />
       </section>
     </div>
@@ -712,10 +727,11 @@ main {
 
 .split-handle {
   flex: none;
-  width: 10px;
+  width: 18px;
   cursor: col-resize;
   touch-action: none;
   position: relative;
+  z-index: 2;
 }
 
 .split-handle::after {
@@ -724,8 +740,16 @@ main {
   top: 0;
   bottom: 0;
   left: 50%;
-  width: 1px;
-  background: var(--line);
+  width: 2px;
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--fg) 30%, transparent);
+  transition: background-color 180ms ease, width 180ms ease;
+}
+
+.split-handle:hover::after,
+.split-handle:active::after {
+  background: var(--accent);
+  width: 3px;
 }
 
 .split-wall {

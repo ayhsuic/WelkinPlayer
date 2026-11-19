@@ -424,6 +424,7 @@ onBeforeUnmount(() => {
 
 .seekbar-time--end {
   right: 14px;
+  z-index: 0;
   transform: translateY(-50%);
 }
 
