@@ -68,6 +68,5 @@ function clear() {
         @open-album="emit('openAlbum', $event)"
       />
     </div>
-    <div class="shrink-0" :style="{ height: 'calc(env(safe-area-inset-bottom) + 84px)' }" aria-hidden="true" />
   </div>
 </template>

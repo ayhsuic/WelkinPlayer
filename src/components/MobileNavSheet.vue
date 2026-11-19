@@ -244,7 +244,7 @@ onBeforeUnmount(() => {
         >
           <slot />
         </div>
-        <MobileTabBar inline :active="props.activeTab" @select="onSelect" />
+        <MobileTabBar :active="props.activeTab" @select="onSelect" />
       </section>
     </Transition>
   </Teleport>

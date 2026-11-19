@@ -598,7 +598,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
           <SearchView v-else key="split-search" @open-artist="openArtist" @open-album="openAlbum" />
         </div>
         <div class="split-nav-bar">
-          <MobileTabBar inline :active="navTab" @select="onTabSelect" />
+          <MobileTabBar :active="navTab" @select="onTabSelect" />
         </div>
       </aside>
       <div
@@ -706,8 +706,6 @@ main {
   padding-bottom: calc(env(safe-area-inset-bottom) + 84px);
 }
 
-/* Rail bottom bar: a flow container at the pane bottom; the bar itself renders
-   in inline flow mode so it cannot be pushed out by the inner scroll view. */
 .split-nav-bar {
   flex: none;
 }
