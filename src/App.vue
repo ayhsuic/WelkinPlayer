@@ -579,8 +579,8 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
          with the seek bar beside the wall. Width follows the viewport ratio,
          not a fixed breakpoint. -->
     <div v-if="isLandscape" class="split flex min-h-0 flex-1">
-      <aside v-show="navVisible" class="split-nav" :style="{ width: `${navWidth}px` }">
-        <div class="split-nav-body" :style="{ zoom: railScale }">
+      <aside v-show="navVisible" class="split-nav" :style="{ width: `${navWidth}px`, zoom: railScale }">
+        <div class="split-nav-body">
           <template v-if="drawerSubView">
             <TracksView v-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="split-tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
             <SourcesView v-else-if="baseView === 'folders' || baseView === 'webdav' || (baseView === 'source-browser' && !browseSourceId)" :key="`split-sources-${sourcesPageKind}`" :kind="sourcesPageKind" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig(sourcesPageKind === 'webdav' ? 'webdav' : 'folders')" />
@@ -710,7 +710,6 @@ main {
    in inline flow mode so it cannot be pushed out by the inner scroll view. */
 .split-nav-bar {
   flex: none;
-  margin: 0 24px calc(env(safe-area-inset-bottom) + 12px);
 }
 
 .split-handle {

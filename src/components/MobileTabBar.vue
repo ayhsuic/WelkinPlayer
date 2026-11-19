@@ -71,7 +71,8 @@ function onSelect(tab: MainTab) {
   right: auto;
   bottom: auto;
   width: 100%;
-  margin: 0;
+  flex: none;
+  margin: 0 24px calc(env(safe-area-inset-bottom) + 12px);
   background: var(--surface);
 }
 
