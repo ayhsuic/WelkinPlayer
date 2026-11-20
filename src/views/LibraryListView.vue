@@ -6,7 +6,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { Component } from "vue";
-import { CalendarDays, ChevronRight, Disc3, Folder, HardDriveDownload, ListMusic, Mic2, Music, Pause, Play } from "@lucide/vue";
+import { CalendarDays, ChevronRight, Disc3, Folder, HardDriveDownload, ListMusic, Mic2, Music } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
@@ -52,11 +52,17 @@ const recentlyAdded = computed(() => {
   return indexed.slice(0, RECENT_LIMIT).map((item) => item.track);
 });
 
+/** Recent additions grouped by album, kept as a vertical two-column album grid. */
+const recentAlbums = computed(() => {
+  const map = new Map<string, Track>();
+  for (const track of recentlyAdded.value) {
+    const key = (track.album ?? "").trim() || track.title;
+    if (!map.has(key)) map.set(key, track);
+  }
+  return [...map.values()].slice(0, RECENT_LIMIT);
+});
+
 function play(track: Track) { void player.playInQueue(player.tracks, track); }
-function onCardButton(track: Track) {
-  if (isActive(track)) void player.togglePlayback();
-  else play(track);
-}
 function isActive(track: Track) { return track.id === player.currentTrack?.id; }
 </script>
 
@@ -68,7 +74,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         <h1 class="truncate text-2xl font-black leading-none tracking-tight sm:text-3xl">{{ t("nav.collection") }}</h1>
         <button
           type="button"
-          class="flex shrink-0 items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:text-fg"
+          class="ak-clip flex shrink-0 items-center gap-1.5 border border-line bg-surface px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:text-fg"
           @click="emit('navigate', 'downloaded')"
         >
           <HardDriveDownload :size="16" />
@@ -92,39 +98,31 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         </template>
       </section>
 
-      <!-- Recently added: square cover cards on a horizontal rail. -->
-      <section v-if="recentlyAdded.length" class="mt-6">
+      <!-- Recently added: albums in a vertical two-column grid that scrolls with the page. -->
+      <section v-if="recentAlbums.length" class="mt-6">
         <div class="mb-3 flex items-center justify-between">
           <h2 class="text-lg font-bold tracking-tight">{{ t("home.recentlyAdded") }}</h2>
           <button
             type="button"
-            class="flex h-8 items-center rounded-full bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg"
+            class="ak-clip flex h-8 items-center border border-line bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg"
             @click="emit('navigate', 'tracks')"
           >
             {{ t("home.allSongs") }}
           </button>
         </div>
-        <div class="no-scrollbar -mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6">
+        <div class="grid grid-cols-2 gap-x-4 gap-y-6">
           <article
-            v-for="track in recentlyAdded"
-            :key="`add-${track.id}`"
-            class="w-24 shrink-0 cursor-pointer"
+            v-for="track in recentAlbums"
+            :key="`add-album-${track.id}`"
+            class="cursor-pointer"
             @click="play(track)"
           >
             <div class="ak-clip-tr relative aspect-square overflow-hidden" :style="{ backgroundColor: track.color }">
               <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
               <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
-              <button
-                type="button"
-                class="absolute bottom-2 left-2 grid h-8 w-8 place-items-center rounded-full bg-black/45 text-white transition-transform active:scale-95"
-                :title="t('controls.play')"
-                @click.stop="onCardButton(track)"
-              >
-                <Pause v-if="isActive(track) && player.isPlaying" :size="14" :stroke-width="2.2" />
-                <Play v-else :size="14" :stroke-width="2.2" />
-              </button>
+              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 grid h-6 w-6 place-items-center bg-black/45 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
             </div>
-            <p class="mt-2 truncate text-sm font-medium">{{ track.title }}</p>
+            <p class="mt-2 truncate text-sm font-medium">{{ track.album || track.title }}</p>
             <p class="truncate text-xs text-muted">{{ track.artist }}</p>
           </article>
         </div>

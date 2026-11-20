@@ -58,7 +58,7 @@ const isAlbumGrid = computed(() => props.kind === "albums");
 </script>
 
 <template>
-  <div ref="rootEl" class="h-full w-full overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+84px)]">
+  <div ref="rootEl" class="w-full">
     <div class="mx-auto w-full max-w-6xl px-6 py-6">
       <header
         class="sticky top-0 z-20 -mx-6 mb-4 mt-2 flex items-center justify-between gap-4 px-6 transition-[padding,background-color,border-color] duration-200"

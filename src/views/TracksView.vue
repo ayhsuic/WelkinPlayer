@@ -39,7 +39,7 @@ const contextPosition = ref({ x: 0, y: 0 });
 const selectMode = ref(false);
 const selected = ref<Set<string>>(new Set());
 const scrollEl = ref<HTMLElement | null>(null);
-const { collapsed } = useCollapsibleHeader(scrollEl);
+const { collapsed, scroller } = useCollapsibleHeader(scrollEl);
 const smartOpen = ref(false);
 
 const activePlaylist = computed(() => props.playlistId ? profile.playlists.find((item) => item.id === props.playlistId) ?? null : null);
@@ -224,7 +224,7 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
 </script>
 
 <template>
-  <div ref="scrollEl" class="h-full w-full overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+84px)]">
+  <div ref="scrollEl" class="w-full">
     <div class="mx-auto flex w-full max-w-6xl flex-col px-6 py-6">
       <header
         class="sticky top-0 z-20 -mx-6 mb-4 mt-2 px-6 transition-[padding,background-color,border-color] duration-200"
@@ -300,7 +300,7 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
         <template v-if="loading"><span class="ak-pulse"></span><p class="text-sm font-semibold uppercase tracking-[0.2em] text-muted">{{ t("library.loading") }}</p></template>
         <template v-else><p class="max-w-md text-sm text-muted">{{ t("library.emptyDesc") }}</p></template>
       </div>
-      <div v-else class="min-h-0 flex-1"><TrackList v-model:selected="selected" :tracks="tracks" :scroller="scrollEl" :letter-index="letterIndex" empty-key="library.playlists.noTracks" :selectable="selectMode" @play="play" @menu="openContextMenu" @open-artist="emit('openArtist', $event)" @open-album="emit('openAlbum', $event)" /></div>
+      <div v-else class="min-h-0 flex-1"><TrackList v-model:selected="selected" :tracks="tracks" :scroller="scroller" :letter-index="letterIndex" empty-key="library.playlists.noTracks" :selectable="selectMode" @play="play" @menu="openContextMenu" @open-artist="emit('openArtist', $event)" @open-album="emit('openAlbum', $event)" /></div>
 
       <TrackContextMenu v-if="contextTrack" :track="contextTrack" :x="contextPosition.x" :y="contextPosition.y" :selected-paths="[...selected]" :playlist-id="activePlaylist?.id ?? null" :downloading="downloadingTrackId === contextTrack.id" @close="contextTrack = null" @download-metadata="downloadMetadata" @edit-lyrics="emit('editLyrics', $event)" @edit-info="emit('editInfo', $event)" @show-info="emit('showInfo', $event)" />
       <SmartTransitionDialog v-if="activePlaylist" :playlist-id="activePlaylist.id" :open="smartOpen" @close="smartOpen = false" />

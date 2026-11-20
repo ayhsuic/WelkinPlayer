@@ -245,10 +245,10 @@ function openGroupFromPanel(view: View, key: string) {
 </script>
 
 <template>
-  <div ref="rootEl" class="flex h-full min-h-0 flex-col" style="touch-action: pan-y">
-    <div class="relative min-h-0 w-full flex-1 overflow-hidden">
-      <div ref="strip" class="flex h-full w-full" :style="stripStyle">
-        <section v-for="view in categoryViews" :key="view" class="h-full w-full shrink-0 overflow-y-auto overscroll-contain">
+  <div ref="rootEl" class="w-full" style="touch-action: pan-y">
+    <div class="relative w-full overflow-x-clip">
+      <div ref="strip" class="flex w-full" :style="stripStyle">
+        <section v-for="view in categoryViews" :key="view" class="w-full shrink-0">
           <PlaylistsView v-if="view === 'playlists'" @open-playlist="emit('openPlaylist', $event)" @edit-playlist="emit('editPlaylist', $event)" @create-playlist="emit('createPlaylist')" @navigate="emit('navigate', $event)" />
           <GroupedLibraryView v-else-if="view !== 'tracks'" :kind="view as GroupKind" :loading="loading" @open="openGroupFromPanel(view, $event)" />
           <TracksView v-else :loading="loading" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="emit('refresh')" @download-metadata="emit('downloadMetadata', $event)" @edit-lyrics="emit('editLyrics', $event)" @edit-info="emit('editInfo', $event)" @show-info="emit('showInfo', $event)" @open-artist="emit('openArtist', $event)" @open-album="emit('openAlbum', $event)" />
