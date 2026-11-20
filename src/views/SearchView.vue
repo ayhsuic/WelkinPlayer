@@ -9,15 +9,20 @@ import { Search, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
+import { groupTracks, isUnknownGroup, type GroupKind } from "../lib/grouping";
 import TrackList from "../components/TrackList.vue";
 
 /**
  * Global library search. Matches title / artist / album against the loaded
- * tracks; tapping a result plays that track inside the filtered list. This
- * replaces the per-page inline filter boxes, which no longer live in the
- * library categories.
+ * tracks; tapping a result plays that track inside the filtered list. The genre
+ * chips sit permanently under the search box and drill into a genre-filtered
+ * track list.
  */
-const emit = defineEmits<{ openArtist: [artist: string]; openAlbum: [album: string] }>();
+const emit = defineEmits<{
+  openArtist: [artist: string];
+  openAlbum: [album: string];
+  openGroup: [kind: GroupKind, key: string];
+}>();
 const { t } = useI18n();
 const player = usePlayerStore();
 const query = ref("");
@@ -31,6 +36,22 @@ const filtered = computed<Track[]>(() => {
       .some((field) => field?.toLocaleLowerCase().includes(value)),
   );
 });
+
+interface GenreChip {
+  key: string;
+  name: string;
+}
+
+const genres = computed<GenreChip[]>(() =>
+  groupTracks(player.tracks, "genres").map((group) => ({
+    key: group.key,
+    name: isUnknownGroup(group.key) ? t("library.collections.unknownGenre") : group.key,
+  })),
+);
+
+function openGenre(key: string) {
+  emit("openGroup", "genres", key);
+}
 
 function play(track: Track) {
   void player.playInQueue(filtered.value, track);
@@ -59,6 +80,20 @@ function clear() {
             <X :size="16" :stroke-width="2" />
           </button>
         </label>
+        <div v-if="genres.length" class="mt-3">
+          <p class="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("nav.genres") }}</p>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="genre in genres"
+              :key="genre.key"
+              type="button"
+              class="rounded-full border border-line bg-surface px-3 py-1.5 text-sm text-muted transition-colors hover:text-fg"
+              @click="openGenre(genre.key)"
+            >
+              {{ genre.name }}
+            </button>
+          </div>
+        </div>
       </header>
 
       <div class="mt-4 min-h-0 flex-1">

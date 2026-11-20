@@ -4,7 +4,7 @@
  */
 
 import type { Component } from "vue";
-import { CalendarDays, CircleCheck, Disc3, Folder, HardDriveDownload, LayoutGrid, Library, ListMusic, ListPlus, Mic2, Music, Search, Server } from "@lucide/vue";
+import { CircleCheck, Folder, HardDriveDownload, LayoutGrid, Library, Search, Server } from "@lucide/vue";
 
 export type View = "wall" | "library" | "tracks" | "favorites" | "artists" | "albums" | "years" | "genres" | "sources" | "folders" | "webdav" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "downloading" | "downloaded" | "settings" | "search" | "player";
 export type Theme = "light" | "dark";
@@ -40,16 +40,6 @@ export const mainNavTabs: MainTabItem[] = [
   { id: "search", view: "search", labelKey: "nav.search", icon: Search },
 ];
 
-/** Library group: playlists plus the swipeable classifications. */
-export const libraryNavItems: NavItem[] = [
-  { id: "playlists", labelKey: "nav.playlists", index: "03", icon: ListPlus },
-  { id: "artists", labelKey: "nav.artists", index: "04", icon: Mic2 },
-  { id: "albums", labelKey: "nav.albums", index: "05", icon: Disc3 },
-  { id: "tracks", labelKey: "nav.tracks", index: "06", icon: ListMusic },
-  { id: "genres", labelKey: "nav.genres", index: "07", icon: Music },
-  { id: "years", labelKey: "nav.years", index: "08", icon: CalendarDays },
-];
-
 /** System group: the two source kinds (kept separate on purpose). */
 export const systemNavItems: NavItem[] = [
   { id: "folders", labelKey: "nav.folders", index: "09", icon: Folder },
@@ -63,8 +53,8 @@ export const systemNavItems: NavItem[] = [
  */
 export const RECENT_PLAYS_ID = "builtin-recent-plays";
 
-/** The six swipeable category panels, in sidebar order. */
-export const categoryViews: View[] = ["playlists", "artists", "albums", "tracks", "genres", "years"];
+/** The five swipeable category panels, in sidebar order. */
+export const categoryViews: View[] = ["playlists", "artists", "albums", "tracks", "years"];
 
 /** Manual cache download manager, grouped with the library entries. */
 export const downloadNavItems: NavItem[] = [

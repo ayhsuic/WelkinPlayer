@@ -8,7 +8,6 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { categoryViews, type View } from "../lib/app";
 import type { GroupKind } from "../lib/grouping";
 import type { Track } from "../stores/player";
-import CategoryTabs from "../components/CategoryTabs.vue";
 import PlaylistsView from "./PlaylistsView.vue";
 import GroupedLibraryView from "./GroupedLibraryView.vue";
 import TracksView from "./TracksView.vue";
@@ -30,12 +29,11 @@ const emit = defineEmits<{
 }>();
 
 /**
- * The six library categories are one horizontal pager driven by a hand-written
- * transform animation. Swiping anywhere inside this component — including the
- * tab bar — moves the strip with the pointer; on release it animates to the
- * nearest page and then publishes the settled page. Clicking a tab or sidebar
- * item animates the strip to that page. No native horizontal scrolling is used,
- * so scroll events can never fight the animation.
+ * The five library categories are one horizontal pager driven by a hand-written
+ * transform animation. Swiping anywhere inside this component moves the strip
+ * with the pointer; on release it animates to the nearest page and then publishes
+ * the settled page. No native horizontal scrolling is used, so scroll events can
+ * never fight the animation.
  *
  * Events: touch (primary, reliably interceptable in Android WebView with a
  * non-passive touchmove) and pointer for mouse drags on desktop. A tap that
@@ -248,7 +246,6 @@ function openGroupFromPanel(view: View, key: string) {
 
 <template>
   <div ref="rootEl" class="flex h-full min-h-0 flex-col" style="touch-action: pan-y">
-    <CategoryTabs :active="kind" @navigate="emit('navigate', $event)" />
     <div class="relative min-h-0 w-full flex-1 overflow-hidden">
       <div ref="strip" class="flex h-full w-full" :style="stripStyle">
         <section v-for="view in categoryViews" :key="view" class="h-full w-full shrink-0 overflow-y-auto overscroll-contain">

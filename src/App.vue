@@ -579,9 +579,9 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
             <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="split-playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
           </template>
           <LibraryView v-else-if="sheetTab === 'home'" key="split-home" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-          <LibraryListView v-else-if="sheetTab === 'library'" key="split-library" @navigate="navigate" @open-playlist="openUserPlaylist" @create-playlist="createPlaylist" />
+          <LibraryListView v-else-if="sheetTab === 'library'" key="split-library" @navigate="navigate" />
           <SettingsView v-else-if="sheetTab === 'settings'" key="split-settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
-          <SearchView v-else key="split-search" @open-artist="openArtist" @open-album="openAlbum" />
+          <SearchView v-else key="split-search" @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" />
         </div>
         <div class="split-nav-bar">
           <MobileTabBar :active="navTab" @select="onTabSelect" />
@@ -621,7 +621,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
           <SourceConfigView v-else-if="baseView === 'source-config'" key="source-config" :kind="sourceConfigKind" @back="closeSourceConfig" />
           <CategoriesView v-else-if="categoryActive" key="categories" :kind="baseView" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @navigate="navigate" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @open-group="onOpenGroupFrom" @refresh="refreshLibrary" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
           <FavoritesView v-else-if="baseView === 'favorites'" key="favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-          <SearchView v-else-if="baseView === 'search'" key="search" @open-artist="openArtist" @open-album="openAlbum" />
+          <SearchView v-else-if="baseView === 'search'" key="search" @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" />
           <DownloadingView v-else-if="baseView === 'downloading'" key="downloading" />
           <DownloadedView v-else-if="baseView === 'downloaded'" key="downloaded" @open-artist="openArtist" @open-album="openAlbum" />
           <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
@@ -647,9 +647,9 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
 
       <!-- The main tab pages. -->
       <LibraryView v-else-if="sheetTab === 'home'" key="sheet-home" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-      <LibraryListView v-else-if="sheetTab === 'library'" key="sheet-library" @navigate="navigate" @open-playlist="openUserPlaylist" @create-playlist="createPlaylist" />
+      <LibraryListView v-else-if="sheetTab === 'library'" key="sheet-library" @navigate="navigate" />
       <SettingsView v-else-if="sheetTab === 'settings'" key="sheet-settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
-      <SearchView v-else key="sheet-search" @open-artist="openArtist" @open-album="openAlbum" />
+      <SearchView v-else key="sheet-search" @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" />
     </MobileNavSheet>
     <ToastStack />
     <AudioQualityModal />
