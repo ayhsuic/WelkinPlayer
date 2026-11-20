@@ -107,7 +107,10 @@ const librarySignature = computed(() =>
 );
 watch(librarySignature, refreshRecommended, { immediate: true });
 
-function play(track: Track) { void player.playInQueue(player.tracks, track); }
+function play(track: Track) {
+  if (isActive(track)) { void player.togglePlayback(); return; }
+  void player.playInQueue(player.tracks, track);
+}
 function openContextMenu(event: MouseEvent, track: Track) { contextTrack.value = track; contextPosition.value = { x: event.clientX, y: event.clientY }; }
 function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
 
