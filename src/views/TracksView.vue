@@ -50,8 +50,6 @@ const groupKeyValue = computed(() => props.artist ?? props.album ?? props.year ?
 const isGroup = computed(() => groupKeyValue.value !== null);
 const sourceFilter = computed(() => props.sourceId ?? null);
 const sourceName = computed(() => sources.sources.find((source) => source.id === sourceFilter.value)?.name ?? null);
-/** The split source page this filtered list belongs to (文件夹 / WebDAV). */
-const sourceKindLabel = computed(() => (sources.sources.find((source) => source.id === sourceFilter.value)?.kind === "webdav" ? t("nav.webdav") : t("nav.folders")));
 const groupTracks = computed(() => {
   const key = groupKeyValue.value;
   if (key === null) return null;
@@ -225,9 +223,9 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
 
 <template>
   <div ref="scrollEl" class="h-full w-full overflow-y-auto">
-    <div class="mx-auto flex w-full max-w-6xl flex-col px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
-      <header class="shrink-0 border-b border-line pb-6">
-        <div class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-stretch sm:gap-6">
+    <div class="mx-auto flex w-full max-w-6xl flex-col px-6 py-6">
+      <header class="mb-4 mt-2">
+        <div class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6">
           <PlaylistCover v-if="activePlaylist" :playlist="activePlaylist" class="ak-frame h-32 w-32 shrink-0 border border-line text-5xl" :icon-size="40" />
           <span v-else-if="smartPlays" class="ak-frame grid h-32 w-32 shrink-0 place-items-center border border-line bg-accent/10 text-accent"><TrendingUp :size="40" :stroke-width="2" /></span>
           <span v-else-if="isGroup" class="ak-frame grid h-32 w-32 shrink-0 place-items-center overflow-hidden border border-line text-5xl font-black text-white/90" :style="{ backgroundColor: groupCoverTrack?.color ?? 'var(--accent)' }">
@@ -236,23 +234,20 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
           </span>
           <div class="@container flex min-w-0 flex-col sm:flex-1">
             <template v-if="activePlaylist">
-              <h1 class="truncate text-3xl font-black leading-tight tracking-tight sm:text-4xl">{{ activePlaylist.name }}</h1>
-              <p class="mt-2 font-mono text-sm uppercase tracking-[0.2em] text-dim">{{ t("library.playlists.count", { count: activePlaylist.tracks.length }) }}</p>
+              <h1 class="truncate text-2xl font-black tracking-tight">{{ activePlaylist.name }}</h1>
+              <p class="mt-1 text-sm text-muted">{{ t("library.playlists.count", { count: activePlaylist.tracks.length }) }}</p>
             </template>
             <template v-else-if="smartPlays">
-              <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ t("playlistsPage.smart") }}</p>
-              <h1 class="mt-4 truncate text-4xl font-black leading-none tracking-tight sm:text-5xl">{{ t("playlistsPage.recentTitle") }}</h1>
-              <p class="mt-3 font-mono text-sm uppercase tracking-[0.2em] text-dim">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
+              <h1 class="truncate text-2xl font-black tracking-tight">{{ t("playlistsPage.recentTitle") }}</h1>
+              <p class="mt-1 text-sm text-muted">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
             </template>
             <template v-else-if="isGroup">
-              <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ t(groupKind === "artists" ? "nav.artists" : "nav.albums") }}</p>
-              <h1 class="mt-4 truncate text-3xl font-black leading-tight tracking-tight sm:text-4xl">{{ groupTitle }}</h1>
-              <p class="mt-3 font-mono text-sm uppercase tracking-[0.2em] text-dim">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
+              <h1 class="truncate text-2xl font-black tracking-tight">{{ groupTitle }}</h1>
+              <p class="mt-1 text-sm text-muted">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
             </template>
             <template v-else>
-              <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ sourceFilter ? sourceKindLabel : t("nav.tracks") }}</p>
-              <h1 class="mt-4 truncate text-4xl font-black leading-none tracking-tight sm:text-5xl">{{ sourceFilter ? (sourceName ?? t("nav.tracks")) : t("nav.tracks") }}</h1>
-              <p class="mt-3 font-mono text-sm uppercase tracking-[0.2em] text-dim">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
+              <h1 class="truncate text-2xl font-black tracking-tight">{{ sourceFilter ? (sourceName ?? t("nav.tracks")) : t("nav.tracks") }}</h1>
+              <p class="mt-1 text-sm text-muted">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
             </template>
 
             <div class="mt-auto flex flex-wrap items-center gap-3 pt-4">
@@ -261,9 +256,9 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
               </div>
               <div v-if="activePlaylist || smartPlays || isGroup" class="flex items-center gap-3 @2xl:order-1" :class="activePlaylist || smartPlays ? 'order-1' : 'order-2'">
                 <template v-if="activePlaylist || smartPlays">
-                  <button type="button" class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 bg-accent px-4 text-[13px] font-bold text-accent-fg transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50" :disabled="!tracks.length" @click="playFirst"><Play :size="15" :stroke-width="2.2" />{{ t("library.play") }}</button>
-                  <button v-if="activePlaylist" type="button" class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 border border-line px-4 text-[13px] font-semibold transition-colors hover:border-accent hover:text-accent" @click="emit('edit', activePlaylist.id)"><Pencil :size="15" />{{ t("library.edit") }}</button>
-                  <button v-if="activePlaylist" type="button" class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 border px-4 text-[13px] font-semibold transition-colors" :class="activePlaylist.smartTransition?.enabled ? 'border-accent/60 text-accent' : 'border-line hover:border-accent hover:text-accent'" :title="t('library.playlists.smart.buttonHint')" @click="openSmart">
+                  <button type="button" class="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-accent px-3.5 text-xs font-semibold text-accent-fg transition-transform active:scale-95 disabled:opacity-50" :disabled="!tracks.length" @click="playFirst"><Play :size="14" :stroke-width="2.2" />{{ t("library.play") }}</button>
+                  <button v-if="activePlaylist" type="button" class="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3.5 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('edit', activePlaylist.id)"><Pencil :size="14" />{{ t("library.edit") }}</button>
+                  <button v-if="activePlaylist" type="button" class="flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-xs font-medium transition-colors" :class="activePlaylist.smartTransition?.enabled ? 'bg-accent-soft text-accent' : 'bg-surface text-muted hover:text-fg'" :title="t('library.playlists.smart.buttonHint')" @click="openSmart">
                     <Sparkles :size="15" />
                     {{ activePlaylist.smartTransition?.status === 'ready' ? t('library.playlists.smart.badgeReady') : t('library.playlists.smart.button') }}
                     <span v-if="activePlaylist.smartTransition?.status === 'stale'" class="border border-amber-500/50 px-1.5 text-[10px] font-mono uppercase text-amber-400">{{ t('library.playlists.smart.badgeStale') }}</span>
@@ -274,8 +269,8 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
                     role="switch"
                     :aria-checked="smartEnabled"
                     :title="t('library.playlists.smart.toggleHint')"
-                    class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 border px-3 text-[13px] font-semibold transition-colors"
-                    :class="smartEnabled ? 'border-accent/60 text-accent' : 'border-line text-muted hover:border-accent hover:text-accent'"
+                    class="flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors"
+                    :class="smartEnabled ? 'bg-accent-soft text-accent' : 'bg-surface text-muted hover:text-fg'"
                     @click="toggleSmart"
                   >
                     <span class="relative inline-flex h-4 w-8 shrink-0 rounded-full transition-colors" :class="smartEnabled ? 'bg-accent/70' : 'bg-line'">
@@ -284,7 +279,7 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
                     {{ smartEnabled ? t('library.playlists.smart.toggleOn') : t('library.playlists.smart.toggleOff') }}
                   </button>
                 </template>
-                <button v-else type="button" class="ak-clip-tr flex h-10 shrink-0 items-center gap-2 bg-accent px-4 text-[13px] font-bold text-accent-fg transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50" :disabled="!tracks.length" @click="playFirst"><Play :size="15" :stroke-width="2.2" />{{ t("library.collections.playAll") }}</button>
+                <button v-else type="button" class="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-accent px-3.5 text-xs font-semibold text-accent-fg transition-transform active:scale-95 disabled:opacity-50" :disabled="!tracks.length" @click="playFirst"><Play :size="14" :stroke-width="2.2" />{{ t("library.collections.playAll") }}</button>
               </div>
               <div class="order-3 flex items-center gap-3">
                 <TrackSortMenu v-if="!smartPlays" :context="sortContext" />
