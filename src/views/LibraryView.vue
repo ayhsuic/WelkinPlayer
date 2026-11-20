@@ -1,17 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import type { Component } from "vue";
-import { Activity, AudioLines, Heart, Library, ListMusic, LoaderCircle, Play, Plus, RefreshCw, Shuffle, X } from "@lucide/vue";
+import { AudioLines, LoaderCircle, Play, Plus, RefreshCw, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
-import { tracksForPaths, useProfileStore, profileKeyForTrack } from "../stores/profile";
+import { tracksForPaths, useProfileStore } from "../stores/profile";
 import { coverPending, initial } from "../lib/format";
 import { trackKey } from "../lib/sources";
 import type { View } from "../lib/app";
 import { RECENT_PLAYS_ID } from "../lib/app";
 import PlaylistCover from "../components/PlaylistCover.vue";
-import TrackCard from "../components/TrackCard.vue";
 import TrackContextMenu from "../components/TrackContextMenu.vue";
 
 withDefaults(defineProps<{ loading: boolean; downloadingTrackId?: number | null }>(), { downloadingTrackId: null });
@@ -21,45 +19,32 @@ const player = usePlayerStore();
 const profile = useProfileStore();
 const contextTrack = ref<Track | null>(null);
 const contextPosition = ref({ x: 0, y: 0 });
+
 /** Randomly recommended tracks, held by path so a library re-list keeps the same picks with fresh metadata. */
 const recommendedPaths = ref<string[]>([]);
 const recommended = computed(() => tracksForPaths(recommendedPaths.value, player.tracks));
 const creating = ref(false);
 const newName = ref("");
 
-const RECOMMEND_LIMIT = 5;
-const TOP_LIMIT = 5;
+const HOME_LIMIT = 8;
 
-const greetingKey = computed(() => {
-  const hour = new Date().getHours();
-  if (hour < 6) return "home.greetingNight";
-  if (hour < 11) return "home.greetingMorning";
-  if (hour < 14) return "home.greetingNoon";
-  if (hour < 18) return "home.greetingAfternoon";
-  return "home.greetingEvening";
+/** Tracks most recently added to the library, newest source modification first. */
+const recentlyAdded = computed(() => {
+  const indexed = player.tracks
+    .map((track, index) => ({ track, index, time: Date.parse(track.modified ?? "") || 0 }))
+    .filter((item) => item.track.path);
+  indexed.sort((a, b) => (b.time - a.time) || (a.index - b.index));
+  return indexed.slice(0, HOME_LIMIT).map((item) => item.track);
 });
-const greetingText = computed(() => profile.nickname ? `${t(greetingKey.value)}，${profile.nickname}` : t(greetingKey.value));
+const recentTracks = computed(() => tracksForPaths(profile.recent, player.tracks).slice(0, HOME_LIMIT));
 
-const heroTrack = computed(() => player.currentTrack);
-const recentTracks = computed(() => tracksForPaths(profile.recent, player.tracks).slice(0, RECOMMEND_LIMIT));
-const favoriteTracks = computed(() => tracksForPaths(profile.favorites, player.tracks));
-const playedTracks = computed(() => {
-  const counts = profile.profile.playCounts;
-  return player.tracks
-    .map((track) => ({ track, key: profileKeyForTrack(track) }))
-    .filter((item): item is { track: Track; key: string } => !!item.key && (counts[item.key] ?? 0) > 0)
-    .map((item) => ({ track: item.track, count: counts[item.key] }))
-    .sort((a, b) => b.count - a.count);
-});
-const totalPlays = computed(() => playedTracks.value.reduce((sum, item) => sum + item.count, 0));
-const topTracks = computed(() => playedTracks.value.slice(0, TOP_LIMIT).map((item) => item.track));
-const stats = computed<{ key: string; value: number; icon: Component; view?: View; playlist?: string }[]>(() => [
-  { key: "home.statsTracks", value: player.tracks.length, icon: Library, view: "tracks" },
-  { key: "home.statsPlaylists", value: profile.playlists.length, icon: ListMusic },
-  { key: "home.statsFavorites", value: favoriteTracks.value.length, icon: Heart, view: "favorites" },
-  // The play ranking is a generated playlist now, so this card opens that list.
-  { key: "home.statsPlays", value: totalPlays.value, icon: Activity, playlist: RECENT_PLAYS_ID },
-]);
+const EXT_LABEL: Record<string, string> = {
+  mp3: "MP3", flac: "FLAC", ogg: "OGG", wav: "WAV", m4a: "M4A", aac: "AAC", opus: "OPUS", ape: "APE", wma: "WMA",
+};
+function extLabel(track: Track): string {
+  const ext = (track.path ?? "").split(".").pop()?.toLowerCase() ?? "";
+  return EXT_LABEL[ext] ?? (ext ? ext.toUpperCase().slice(0, 4) : "");
+}
 
 function pickRandom(list: Track[], count: number): Track[] {
   const pool = list.filter((track) => track.path);
@@ -74,7 +59,7 @@ function pickRandom(list: Track[], count: number): Track[] {
   return result;
 }
 function refreshRecommended() {
-  recommendedPaths.value = pickRandom(player.tracks, RECOMMEND_LIMIT)
+  recommendedPaths.value = pickRandom(player.tracks, HOME_LIMIT)
     .map((track) => trackKey(track))
     .filter((key): key is string => !!key);
 }
@@ -89,95 +74,118 @@ const librarySignature = computed(() =>
 watch(librarySignature, refreshRecommended, { immediate: true });
 
 function play(track: Track) { void player.playInQueue(player.tracks, track); }
-async function shuffleAll() {
-  const pool = player.tracks.filter((track) => track.path);
-  if (pool.length === 0) return;
-  const first = pool[Math.floor(Math.random() * pool.length)];
-  // Replace any smart-locked queue first (that also releases the shuffle lock),
-  // then request shuffle for the new library queue.
-  await player.playInQueue(player.tracks, first);
-  if (!player.shuffle) await player.setShuffle(true);
-}
 function openContextMenu(event: MouseEvent, track: Track) { contextTrack.value = track; contextPosition.value = { x: event.clientX, y: event.clientY }; }
 function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
 
 function selectPlaylist(id: string) { emit("openPlaylist", id); }
 function startCreate() { creating.value = true; newName.value = ""; }
 function confirmCreate() { const name = newName.value.trim(); if (name) profile.createPlaylist(name); creating.value = false; newName.value = ""; }
+
+function isActive(track: Track) { return track.id === player.currentTrack?.id; }
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-6xl px-6 py-6 lg:px-8 lg:py-8">
+  <div class="mx-auto w-full max-w-6xl px-6 py-6">
     <div v-if="player.tracks.length === 0" class="ak-frame grid place-items-center gap-4 border border-dashed border-line bg-surface/50 px-6 py-24 text-center">
       <template v-if="loading"><span class="ak-pulse"></span><p class="text-sm font-semibold uppercase tracking-[0.2em] text-muted">{{ t("library.loading") }}</p></template>
       <template v-else><AudioLines :size="36" class="text-dim" /><p class="text-base font-semibold uppercase tracking-[0.2em]">{{ t("library.emptyTitle") }}</p><p class="max-w-md text-sm text-muted">{{ t("library.emptyDesc") }}</p><button type="button" class="ak-clip-tr h-10 bg-accent px-5 text-[13px] font-bold uppercase tracking-[0.25em] text-accent-fg" @click="emit('settings')">{{ t("library.emptyAction") }}</button></template>
     </div>
 
     <template v-else>
-      <section class="ak-frame relative overflow-hidden border border-line bg-surface">
-        <div v-if="heroTrack" class="pointer-events-none absolute inset-0 opacity-25" :style="{ background: `radial-gradient(circle at 88% 10%, ${heroTrack.color}, transparent 58%)` }"></div>
-        <div class="relative grid gap-8 p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:p-8">
-          <div class="min-w-0">
-            <h1 class="text-4xl font-black leading-[1.05] tracking-tight sm:text-5xl">{{ greetingText }}</h1>
-            <p class="mt-4 max-w-xl text-sm text-muted">{{ t("home.heroSubtitle") }}</p>
-            <div class="mt-6 flex flex-wrap items-center gap-3">
-              <button type="button" class="ak-clip-tr flex h-11 items-center gap-2 bg-accent px-5 text-sm font-bold text-accent-fg transition-transform hover:scale-[1.02] active:scale-95" @click="shuffleAll"><Shuffle :size="17" :stroke-width="2.2" />{{ t("home.shuffleAll") }}</button>
-              <button v-if="heroTrack" type="button" class="ak-clip-tr flex h-11 items-center gap-2 border border-line px-5 text-sm font-semibold transition-colors hover:border-accent hover:text-accent" @click="play(heroTrack)"><Play :size="16" :stroke-width="2.2" />{{ t("home.continue") }}</button>
+      <!-- Daily recommendation: wide cover cards on a horizontal rail. -->
+      <section v-if="recommended.length">
+        <div class="mb-3 mt-2 flex items-center justify-between">
+          <h2 class="text-lg font-bold tracking-tight">{{ t("home.dailyRecommend") }}</h2>
+          <button type="button" class="flex h-8 items-center gap-1.5 rounded-full bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg" @click="refreshRecommended">
+            <RefreshCw :size="13" />{{ t("home.refresh") }}
+          </button>
+        </div>
+        <div class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
+          <article
+            v-for="track in recommended"
+            :key="`rec-${track.id}`"
+            class="ak-clip-tr group relative aspect-[4/5] w-[62%] max-w-[260px] shrink-0 cursor-pointer overflow-hidden"
+            :style="{ backgroundColor: track.color }"
+            @click="play(track)"
+            @contextmenu.prevent="openContextMenu($event, track)"
+          >
+            <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+            <LoaderCircle v-else-if="coverPending(track)" :size="26" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
+            <span v-else class="absolute inset-0 grid place-items-center text-4xl font-black text-white/90">{{ initial(track) }}</span>
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent p-4">
+              <p class="truncate text-base font-semibold text-white">{{ track.title }}</p>
+              <p class="mt-0.5 truncate text-xs text-white/75">{{ track.artist }}</p>
             </div>
-          </div>
-          <div v-if="heroTrack" class="flex items-center gap-4">
-            <span class="ak-frame grid h-28 w-28 shrink-0 place-items-center overflow-hidden text-4xl font-black text-white/90" :style="{ backgroundColor: heroTrack.color }">
-              <img v-if="heroTrack.cover" :src="heroTrack.cover" alt="" decoding="async" class="h-full w-full object-cover" />
-              <LoaderCircle v-else-if="coverPending(heroTrack)" :size="30" :stroke-width="2" class="animate-spin" />
-              <template v-else>{{ initial(heroTrack) }}</template>
+          </article>
+        </div>
+      </section>
+
+      <!-- Recently added: square cover cards on a horizontal rail. -->
+      <section v-if="recentlyAdded.length">
+        <div class="mb-3 mt-6 flex items-center justify-between">
+          <h2 class="text-lg font-bold tracking-tight">{{ t("home.recentlyAdded") }}</h2>
+          <button type="button" class="flex h-8 items-center rounded-full bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('navigate', 'tracks')">{{ t("home.allSongs") }}</button>
+        </div>
+        <div class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
+          <article
+            v-for="track in recentlyAdded"
+            :key="`add-${track.id}`"
+            class="w-24 shrink-0 cursor-pointer"
+            @click="play(track)"
+            @contextmenu.prevent="openContextMenu($event, track)"
+          >
+            <div class="ak-clip-tr relative aspect-square overflow-hidden" :style="{ backgroundColor: track.color }">
+              <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+              <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
+              <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
+              <button
+                type="button"
+                class="absolute inset-0 m-auto grid h-10 w-10 place-items-center rounded-full bg-black/45 text-white transition-transform active:scale-95"
+                :title="t('controls.play')"
+                @click.stop="play(track)"
+              >
+                <span v-if="isActive(track) && player.isPlaying" class="ak-eq"><i></i><i></i><i></i></span>
+                <Play v-else :size="16" />
+              </button>
+            </div>
+            <p class="mt-2 truncate text-sm font-medium">{{ track.title }}</p>
+            <p class="truncate text-xs text-muted">{{ track.artist }}</p>
+          </article>
+        </div>
+      </section>
+
+      <!-- Recently played: compact rows with format badge, duration and thumb. -->
+      <section v-if="recentTracks.length">
+        <div class="mb-1 mt-6 flex items-center justify-between">
+          <h2 class="text-lg font-bold tracking-tight">{{ t("home.recent") }}</h2>
+          <button type="button" class="flex h-8 items-center rounded-full bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('openPlaylist', RECENT_PLAYS_ID)">{{ t("home.history") }}</button>
+        </div>
+        <div class="flex flex-col">
+          <button
+            v-for="track in recentTracks"
+            :key="`hist-${track.id}`"
+            type="button"
+            class="ak-hover flex w-full items-center gap-3 py-3 text-left"
+            :class="isActive(track) ? 'text-accent' : ''"
+            @click="play(track)"
+            @contextmenu.prevent="openContextMenu($event, track)"
+          >
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm font-semibold" :class="isActive(track) ? 'text-accent' : 'text-fg'">{{ track.title }}</p>
+              <p class="mt-0.5 truncate text-xs text-muted">{{ track.artist }}</p>
+            </div>
+            <span v-if="extLabel(track)" class="shrink-0 rounded border border-line px-1.5 py-0.5 font-mono text-[10px] text-muted">{{ extLabel(track) }}</span>
+            <span class="shrink-0 font-mono text-xs tabular-nums text-muted">{{ track.duration }}</span>
+            <span class="grid h-12 w-12 shrink-0 place-items-center overflow-hidden" :style="{ backgroundColor: track.color }">
+              <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="h-full w-full object-cover" />
+              <LoaderCircle v-else-if="coverPending(track)" :size="18" :stroke-width="2" class="animate-spin text-white/90" />
+              <span v-else class="text-xl font-black text-white/90">{{ initial(track) }}</span>
             </span>
-            <div class="hidden max-w-[200px] sm:block">
-              <p class="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.25em] text-dim"><span class="h-2 w-2" :class="player.isPlaying ? 'bg-accent ak-pulse' : 'bg-dim'"></span>{{ t("home.nowPlaying") }}</p>
-              <p class="mt-2 truncate text-sm font-bold">{{ heroTrack.title }}</p>
-              <p class="truncate text-xs text-muted">{{ heroTrack.artist }}</p>
-              <p class="mt-1 truncate text-xs text-dim">{{ heroTrack.album }}</p>
-            </div>
-          </div>
+          </button>
         </div>
       </section>
 
-      <section class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <button v-for="stat in stats" :key="stat.key" type="button" :disabled="!stat.view && !stat.playlist" class="ak-frame flex items-center gap-4 border border-line bg-surface p-4 text-left transition-colors" :class="stat.view || stat.playlist ? 'hover:border-accent' : 'cursor-default'" @click="stat.playlist ? emit('openPlaylist', stat.playlist) : stat.view && emit('navigate', stat.view)">
-          <span class="grid h-10 w-10 shrink-0 place-items-center bg-accent/10 text-accent"><component :is="stat.icon" :size="18" :stroke-width="2" /></span>
-          <div class="min-w-0">
-            <p class="font-mono text-2xl font-black tabular-nums leading-none">{{ stat.value }}</p>
-            <p class="mt-1.5 truncate text-[11px] uppercase tracking-[0.2em] text-dim">{{ t(stat.key) }}</p>
-          </div>
-        </button>
-      </section>
-
-      <section v-if="recommended.length" class="mt-10">
-        <div class="mb-4 flex items-end justify-between">
-          <h2 class="flex items-center gap-3 text-sm font-bold uppercase tracking-[0.25em]"><span class="h-3 w-1 bg-accent"></span>{{ t("home.recommended") }}</h2>
-          <button type="button" class="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.2em] text-dim transition-colors hover:text-fg" @click="refreshRecommended"><RefreshCw :size="14" />{{ t("home.refresh") }}</button>
-        </div>
-        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5"><TrackCard v-for="track in recommended" :key="`rec-${track.id}`" :track="track" :active="track.id === player.currentTrack?.id" :playing="player.isPlaying" @play="play" @menu="openContextMenu" /></div>
-      </section>
-
-      <section v-if="recentTracks.length" class="mt-10">
-        <div class="mb-4 flex items-end justify-between"><h2 class="flex items-center gap-3 text-sm font-bold uppercase tracking-[0.25em]"><span class="h-3 w-1 bg-accent"></span>{{ t("home.recent") }}</h2></div>
-        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5"><TrackCard v-for="track in recentTracks" :key="`recent-${track.id}`" :track="track" :active="track.id === player.currentTrack?.id" :playing="player.isPlaying" @play="play" @menu="openContextMenu" /></div>
-      </section>
-
-      <section v-if="topTracks.length" class="mt-10">
-        <div class="mb-4 flex items-end justify-between"><h2 class="flex items-center gap-3 text-sm font-bold uppercase tracking-[0.25em]"><span class="h-3 w-1 bg-accent"></span>{{ t("home.mostPlayed") }}</h2></div>
-        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5"><TrackCard v-for="track in topTracks" :key="`top-${track.id}`" :track="track" :active="track.id === player.currentTrack?.id" :playing="player.isPlaying" @play="play" @menu="openContextMenu" /></div>
-      </section>
-
-      <section v-if="favoriteTracks.length" class="mt-10">
-        <div class="mb-4 flex items-end justify-between">
-          <h2 class="flex items-center gap-3 text-sm font-bold uppercase tracking-[0.25em]"><span class="h-3 w-1 bg-accent"></span>{{ t("home.favorites") }}</h2>
-          <button type="button" class="text-[12px] font-semibold uppercase tracking-[0.2em] text-dim transition-colors hover:text-fg" @click="emit('navigate', 'favorites')">{{ t("home.viewAll") }}</button>
-        </div>
-        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5"><TrackCard v-for="track in favoriteTracks.slice(0, RECOMMEND_LIMIT)" :key="`fav-${track.id}`" :track="track" :active="track.id === player.currentTrack?.id" :playing="player.isPlaying" @play="play" @menu="openContextMenu" /></div>
-      </section>
-
-      <section class="mt-10">
+      <section class="mt-8">
         <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
           <h2 class="flex items-center gap-3 text-sm font-bold uppercase tracking-[0.25em]"><span class="h-3 w-1 bg-accent"></span>{{ t("home.playlists") }}</h2>
           <div class="flex flex-wrap items-center gap-4">
