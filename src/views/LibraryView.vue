@@ -35,6 +35,13 @@ const recentlyAdded = computed(() => {
 });
 const recentTracks = computed(() => tracksForPaths(profile.recent, player.tracks).slice(0, HOME_LIMIT));
 
+/** List mode chunks three rows per page; the pages flip sideways. */
+const recentChunks = computed(() => {
+  const chunks: Track[][] = [];
+  for (let i = 0; i < recentTracks.value.length; i += 3) chunks.push(recentTracks.value.slice(i, i + 3));
+  return chunks;
+});
+
 /** Home section layout toggles: recent plays rail ↔ row list; recent adds rail ↔ album grid. */
 const recentListMode = ref(false);
 const addedGridMode = ref(false);
@@ -67,14 +74,6 @@ onMounted(() => {
   syncCollapsed();
 });
 onBeforeUnmount(() => scroller?.removeEventListener("scroll", syncCollapsed));
-
-const EXT_LABEL: Record<string, string> = {
-  mp3: "MP3", flac: "FLAC", ogg: "OGG", wav: "WAV", m4a: "M4A", aac: "AAC", opus: "OPUS", ape: "APE", wma: "WMA",
-};
-function extLabel(track: Track): string {
-  const ext = (track.path ?? "").split(".").pop()?.toLowerCase() ?? "";
-  return EXT_LABEL[ext] ?? (ext ? ext.toUpperCase().slice(0, 4) : "");
-}
 
 /** Hi-Res: above the 48 kHz ceiling, or 24-bit and up. */
 function isHiRes(track: Track): boolean {
@@ -184,30 +183,33 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </button>
         </div>
 
-        <!-- Row list: title + format badge + artist on the left, duration and cover on the right. -->
-        <div v-if="recentListMode" class="flex flex-col">
-          <article
-            v-for="track in recentTracks"
-            :key="`hist-row-${track.id}`"
-            class="flex cursor-pointer items-center gap-3 py-2.5"
-            @click="play(track)"
-            @contextmenu.prevent="openContextMenu($event, track)"
+        <!-- List mode: three rows per page, pages flip sideways. -->
+        <div v-if="recentListMode" class="no-scrollbar -mx-6 flex overflow-x-auto px-6 pb-2 snap-x snap-mandatory">
+          <div
+            v-for="(chunk, chunkIndex) in recentChunks"
+            :key="`hist-chunk-${chunkIndex}`"
+            class="w-full shrink-0 snap-start"
           >
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
+            <article
+              v-for="track in chunk"
+              :key="`hist-list-${track.id}`"
+              class="flex cursor-pointer items-center gap-3 py-2.5"
+              @click="play(track)"
+              @contextmenu.prevent="openContextMenu($event, track)"
+            >
+              <div class="min-w-0 flex-1">
                 <p class="truncate text-sm font-semibold" :class="isActive(track) ? 'text-accent' : ''">{{ track.title }}</p>
-                <span v-if="extLabel(track)" class="shrink-0 rounded border border-line px-1 py-0.5 font-mono text-[9px] leading-none text-muted">{{ extLabel(track) }}</span>
+                <p class="truncate text-xs text-muted">{{ track.artist }}</p>
               </div>
-              <p class="truncate text-xs text-muted">{{ track.artist }}</p>
-            </div>
-            <span class="shrink-0 text-xs tabular-nums text-muted">{{ track.duration }}</span>
-            <div class="ak-clip-tr relative h-12 w-12 shrink-0 overflow-hidden" :style="{ backgroundColor: track.color }">
-              <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-              <LoaderCircle v-else-if="coverPending(track)" :size="18" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
-              <span v-else class="absolute inset-0 grid place-items-center text-xl font-black text-white/90">{{ initial(track) }}</span>
-              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1 left-1 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-            </div>
-          </article>
+              <span class="shrink-0 text-xs tabular-nums text-muted">{{ track.duration }}</span>
+              <div class="ak-clip-tr relative h-12 w-12 shrink-0 overflow-hidden" :style="{ backgroundColor: track.color }">
+                <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                <LoaderCircle v-else-if="coverPending(track)" :size="18" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
+                <span v-else class="absolute inset-0 grid place-items-center text-xl font-black text-white/90">{{ initial(track) }}</span>
+                <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1 left-1 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+              </div>
+            </article>
+          </div>
         </div>
 
         <!-- Three-column rail: extra columns scroll sideways. -->
@@ -273,7 +275,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recentlyAdded"
             :key="`add-${track.id}`"
-            class="w-24 shrink-0 cursor-pointer"
+            class="w-[calc((100%-2rem)/3)] shrink-0 cursor-pointer"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
