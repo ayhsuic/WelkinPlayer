@@ -95,10 +95,13 @@ const sourceFilter = ref<string | null>(null);
 const browseSourceKind = ref<SourceKind>("local");
 /** Kind the source editor is scoped to; `null` means every source (Settings). */
 const sourceConfigKind = ref<SourceKind | null>(null);
-/** The kind the current 文件夹 / WebDAV page shows. */
-const sourcesPageKind = computed<SourceKind>(() =>
-  baseView.value === "webdav" ? "webdav" : baseView.value === "source-browser" ? browseSourceKind.value : "local",
-);
+/** The kind the current source page shows; `undefined` means the merged all-sources page. */
+const sourcesPageKind = computed<SourceKind | undefined>(() => {
+  if (baseView.value === "webdav") return "webdav";
+  if (baseView.value === "source-browser") return browseSourceKind.value;
+  if (baseView.value === "sources") return undefined;
+  return "local";
+});
 
 /** The six library categories share one swipeable container while one of them is active (no drill-down). */
 const categoryActive = computed(() =>
@@ -106,7 +109,7 @@ const categoryActive = computed(() =>
   (baseView.value === "tracks" && !playlistFilter.value && !artistFilter.value && !albumFilter.value && !yearFilter.value && !genreFilter.value && !sourceFilter.value),
 );
 const browseSourceId = ref<string | null>(null);
-const sourceConfigReturn = ref<View>("folders");
+const sourceConfigReturn = ref<View>("sources");
 const editingPlaylist = ref<string | null>(null);
 const editingLyricsTrack = ref<Track | null>(null);
 const editingTrack = ref<Track | null>(null);
@@ -206,7 +209,7 @@ function openSplitNav() {
 /** Drill-down pages rendered inside the drawer instead of one of the main tab pages. */
 const DRAWER_SUB_VIEWS: ReadonlySet<View> = new Set([
   "tracks", "favorites", "artists", "albums", "years", "genres",
-  "folders", "webdav", "source-browser", "source-config", "playlists",
+  "sources", "folders", "webdav", "source-browser", "source-config", "playlists",
   "playlist-new", "downloading", "downloaded",
 ]);
 const drawerSubView = computed<View | null>(() => (DRAWER_SUB_VIEWS.has(baseView.value) ? baseView.value : null));
@@ -384,8 +387,6 @@ watch([() => player.queue, () => player.queueIndex], () => {
 function readAccent(): Accent { const value = localStorage.getItem("welkin-accent"); return (accents.some((item) => item.id === value) ? value : "amber") as Accent; }
 function getViewFromHash(): View {
   const route = window.location.hash.slice(1);
-  // `#sources` predates the folder / WebDAV split; keep old links working.
-  if (route === "sources") return "folders";
   return VIEW_ROUTES.has(route) ? (route as View) : "wall";
 }
 /** How long a scrolled container keeps its auto-hiding scrollbar visible after the last scroll. */
@@ -569,8 +570,8 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
         <div class="split-nav-body">
           <template v-if="drawerSubView">
             <TracksView v-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="split-tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-            <SourcesView v-else-if="baseView === 'folders' || baseView === 'webdav' || (baseView === 'source-browser' && !browseSourceId)" :key="`split-sources-${sourcesPageKind}`" :kind="sourcesPageKind" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig(sourcesPageKind === 'webdav' ? 'webdav' : 'folders')" />
-            <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="split-source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate(browseSourceKind === 'webdav' ? 'webdav' : 'folders')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
+            <SourcesView v-else-if="baseView === 'sources' || baseView === 'folders' || baseView === 'webdav' || (baseView === 'source-browser' && !browseSourceId)" :key="`split-sources-${sourcesPageKind}`" :kind="sourcesPageKind" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig(sourcesPageKind === 'webdav' ? 'webdav' : sourcesPageKind === 'local' ? 'folders' : 'sources')" />
+            <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="split-source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate('sources')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
             <SourceConfigView v-else-if="baseView === 'source-config'" key="split-source-config" :kind="sourceConfigKind" @back="closeSourceConfig" />
             <CategoriesView v-else-if="categoryActive" key="split-categories" :kind="baseView" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @navigate="navigate" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @open-group="onOpenGroupFrom" @refresh="refreshLibrary" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
             <FavoritesView v-else-if="baseView === 'favorites'" key="split-favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
@@ -580,7 +581,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
           </template>
           <LibraryView v-else-if="sheetTab === 'home'" key="split-home" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <LibraryListView v-else-if="sheetTab === 'library'" key="split-library" @navigate="navigate" />
-          <SettingsView v-else-if="sheetTab === 'settings'" key="split-settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
+          <SettingsView v-else-if="sheetTab === 'settings'" key="split-settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @friendly-error="showError" />
           <SearchView v-else key="split-search" @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" />
         </div>
         <div class="split-nav-bar">
@@ -616,8 +617,8 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
           <WallView v-if="baseView === 'wall'" key="wall" :focus-token="wallFocusToken" @open-lyrics="navigate('player')" />
           <LibraryView v-else-if="baseView === 'library'" key="library" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <TracksView v-else-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-          <SourcesView v-else-if="baseView === 'folders' || baseView === 'webdav' || (baseView === 'source-browser' && !browseSourceId)" :key="`sources-${sourcesPageKind}`" :kind="sourcesPageKind" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig(sourcesPageKind === 'webdav' ? 'webdav' : 'folders')" />
-          <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate(browseSourceKind === 'webdav' ? 'webdav' : 'folders')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
+          <SourcesView v-else-if="baseView === 'sources' || baseView === 'folders' || baseView === 'webdav' || (baseView === 'source-browser' && !browseSourceId)" :key="`sources-${sourcesPageKind}`" :kind="sourcesPageKind" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig(sourcesPageKind === 'webdav' ? 'webdav' : sourcesPageKind === 'local' ? 'folders' : 'sources')" />
+          <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate('sources')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
           <SourceConfigView v-else-if="baseView === 'source-config'" key="source-config" :kind="sourceConfigKind" @back="closeSourceConfig" />
           <CategoriesView v-else-if="categoryActive" key="categories" :kind="baseView" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @navigate="navigate" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @open-group="onOpenGroupFrom" @refresh="refreshLibrary" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
           <FavoritesView v-else-if="baseView === 'favorites'" key="favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
@@ -625,7 +626,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
           <DownloadingView v-else-if="baseView === 'downloading'" key="downloading" />
           <DownloadedView v-else-if="baseView === 'downloaded'" key="downloaded" @open-artist="openArtist" @open-album="openAlbum" />
           <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
-          <SettingsView v-else key="settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
+          <SettingsView v-else key="settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @friendly-error="showError" />
         </Transition>
       </main>
     </div>
@@ -635,8 +636,8 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
       <!-- Drill-down pages inside the drawer. -->
       <template v-if="drawerSubView">
         <TracksView v-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="sheet-tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-        <SourcesView v-else-if="baseView === 'folders' || baseView === 'webdav' || (baseView === 'source-browser' && !browseSourceId)" :key="`sheet-sources-${sourcesPageKind}`" :kind="sourcesPageKind" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig(sourcesPageKind === 'webdav' ? 'webdav' : 'folders')" />
-        <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="sheet-source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate(browseSourceKind === 'webdav' ? 'webdav' : 'folders')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
+        <SourcesView v-else-if="baseView === 'sources' || baseView === 'folders' || baseView === 'webdav' || (baseView === 'source-browser' && !browseSourceId)" :key="`sheet-sources-${sourcesPageKind}`" :kind="sourcesPageKind" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig(sourcesPageKind === 'webdav' ? 'webdav' : sourcesPageKind === 'local' ? 'folders' : 'sources')" />
+        <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="sheet-source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate('sources')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
         <SourceConfigView v-else-if="baseView === 'source-config'" key="sheet-source-config" :kind="sourceConfigKind" @back="closeSourceConfig" />
         <CategoriesView v-else-if="categoryActive" key="sheet-categories" :kind="baseView" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @navigate="navigate" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @open-group="onOpenGroupFrom" @refresh="refreshLibrary" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
         <FavoritesView v-else-if="baseView === 'favorites'" key="sheet-favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
@@ -648,7 +649,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
       <!-- The main tab pages. -->
       <LibraryView v-else-if="sheetTab === 'home'" key="sheet-home" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
       <LibraryListView v-else-if="sheetTab === 'library'" key="sheet-library" @navigate="navigate" />
-      <SettingsView v-else-if="sheetTab === 'settings'" key="sheet-settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
+      <SettingsView v-else-if="sheetTab === 'settings'" key="sheet-settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @friendly-error="showError" />
       <SearchView v-else key="sheet-search" @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" />
     </MobileNavSheet>
     <ToastStack />

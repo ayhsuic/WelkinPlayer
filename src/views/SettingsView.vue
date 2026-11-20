@@ -5,7 +5,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { CircleCheck, HardDrive, HardDriveDownload, Mic2, Moon, Music2, Play, SlidersHorizontal, Sun } from "@lucide/vue";
+import { CircleCheck, HardDriveDownload, Mic2, Moon, Music2, Play, SlidersHorizontal, Sun } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { invoke } from "../api";
 import { formatBytes } from "../lib/format";
@@ -21,7 +21,7 @@ import pkg from "../../package.json";
 
 const theme = defineModel<Theme>("theme", { required: true });
 const accent = defineModel<Accent>("accent", { required: true });
-const emit = defineEmits<{ sources: []; downloading: []; downloaded: []; friendlyError: [error: unknown] }>();
+const emit = defineEmits<{ downloading: []; downloaded: []; friendlyError: [error: unknown] }>();
 const { t, locale } = useI18n();
 /** Public release codename (e.g. Lyra); shown in the About row instead of the numeric version. */
 const appCodename = pkg.codename ?? pkg.version;
@@ -208,15 +208,6 @@ button.text-dim:hover:not(:disabled) {
               <span class="text-[13px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("language.label") }}</span>
               <div class="inline-flex border border-line"><button v-for="(item, index) in localeOptions" :key="item.id" type="button" class="h-9 px-4 text-[13px] font-semibold uppercase tracking-[0.2em]" :class="[index ? 'border-l border-line' : '', locale === item.id ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg']" @click="locale = item.id">{{ t(item.labelKey) }}</button></div>
             </div>
-          </div>
-        </section>
-
-        <section class="ak-frame grid gap-4 border border-line bg-surface p-4 lg:grid-cols-[1fr_1.3fr]">
-          <div><h2 class="text-sm font-bold uppercase tracking-[0.2em]">{{ t("settings.sources.title") }}</h2><p class="mt-2 text-sm text-muted">{{ t("settings.sources.desc") }}</p></div>
-          <div class="grid gap-4">
-            <p class="text-sm text-muted">{{ t("settings.sources.count", { count: sources.sources.length }) }}</p>
-            <p class="flex items-center gap-2 text-[11px] text-dim"><span class="h-2 w-2" :class="sources.hasCloudSync ? 'bg-accent' : 'bg-dim'"></span>{{ sources.hasCloudSync ? t("settings.sources.cloudAvailable") : t("settings.sources.cloudUnavailable") }}</p>
-            <div class="flex justify-end"><button type="button" class="ak-clip-tr flex h-10 items-center gap-2 bg-accent px-5 text-[13px] font-bold uppercase tracking-[0.25em] text-accent-fg" @click="emit('sources')"><HardDrive :size="15" />{{ t("settings.sources.manage") }}</button></div>
           </div>
         </section>
 

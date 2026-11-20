@@ -4,7 +4,7 @@
  */
 
 import type { Component } from "vue";
-import { CircleCheck, Folder, HardDriveDownload, LayoutGrid, Library, Search, Server } from "@lucide/vue";
+import { CircleCheck, HardDriveDownload, LayoutGrid, Library, Search, Server } from "@lucide/vue";
 
 export type View = "wall" | "library" | "tracks" | "favorites" | "artists" | "albums" | "years" | "genres" | "sources" | "folders" | "webdav" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "downloading" | "downloaded" | "settings" | "search" | "player";
 export type Theme = "light" | "dark";
@@ -40,10 +40,9 @@ export const mainNavTabs: MainTabItem[] = [
   { id: "search", view: "search", labelKey: "nav.search", icon: Search },
 ];
 
-/** System group: the two source kinds (kept separate on purpose). */
+/** System group: the merged source entry (local folders + WebDAV together). */
 export const systemNavItems: NavItem[] = [
-  { id: "folders", labelKey: "nav.folders", index: "09", icon: Folder },
-  { id: "webdav", labelKey: "nav.webdav", index: "10", icon: Server },
+  { id: "sources", labelKey: "nav.sources", index: "09", icon: Server },
 ];
 
 /**
@@ -53,8 +52,8 @@ export const systemNavItems: NavItem[] = [
  */
 export const RECENT_PLAYS_ID = "builtin-recent-plays";
 
-/** The five swipeable category panels, in sidebar order. */
-export const categoryViews: View[] = ["playlists", "artists", "albums", "tracks", "years"];
+/** The six swipeable category panels, in sidebar order. */
+export const categoryViews: View[] = ["playlists", "artists", "albums", "tracks", "years", "genres"];
 
 /** Manual cache download manager, grouped with the library entries. */
 export const downloadNavItems: NavItem[] = [

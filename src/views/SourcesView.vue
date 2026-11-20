@@ -14,10 +14,10 @@ import type { SongSource, SourceKind } from "../lib/sources";
 import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
 
 /**
- * Source list for one kind. Folders and WebDAV are separate pages (and separate
- * sheet entries), so this view only ever shows the kind it was opened for.
+ * Source list. Without a `kind` it shows every source (the merged "来源" page);
+ * otherwise it is scoped to one kind for the legacy single-kind entry.
  */
-const props = defineProps<{ kind: SourceKind; loading: boolean }>();
+const props = defineProps<{ kind?: SourceKind; loading: boolean }>();
 const emit = defineEmits<{ open: [id: string]; manage: [] }>();
 const { t } = useI18n();
 const player = usePlayerStore();
@@ -34,7 +34,7 @@ interface SourceRow {
 
 const rows = computed<SourceRow[]>(() =>
   sources.sources
-    .filter((source) => source.kind === props.kind)
+    .filter((source) => !props.kind || source.kind === props.kind)
     .map((source) => ({
       source,
       count: player.tracks.filter((track) => track.sourceId === source.id).length,
@@ -42,22 +42,31 @@ const rows = computed<SourceRow[]>(() =>
     })),
 );
 
-/** Page copy for the current kind, keeping both halves in one place. */
-const copy = computed(() =>
-  props.kind === "webdav"
-    ? {
-        title: t("sources.webdavTitle"),
-        desc: t("sources.webdavDesc"),
-        emptyTitle: t("sources.webdavEmptyTitle"),
-        emptyDesc: t("sources.webdavEmptyDesc"),
-      }
-    : {
-        title: t("sources.foldersTitle"),
-        desc: t("sources.foldersDesc"),
-        emptyTitle: t("sources.foldersEmptyTitle"),
-        emptyDesc: t("sources.foldersEmptyDesc"),
-      },
-);
+/** Page copy for the merged page or the current single kind. */
+const copy = computed(() => {
+  if (!props.kind) {
+    return {
+      title: t("sources.title"),
+      desc: t("sources.desc"),
+      emptyTitle: t("sources.emptyTitle"),
+      emptyDesc: t("sources.emptyDesc"),
+    };
+  }
+  if (props.kind === "webdav") {
+    return {
+      title: t("sources.webdavTitle"),
+      desc: t("sources.webdavDesc"),
+      emptyTitle: t("sources.webdavEmptyTitle"),
+      emptyDesc: t("sources.webdavEmptyDesc"),
+    };
+  }
+  return {
+    title: t("sources.foldersTitle"),
+    desc: t("sources.foldersDesc"),
+    emptyTitle: t("sources.foldersEmptyTitle"),
+    emptyDesc: t("sources.foldersEmptyDesc"),
+  };
+});
 
 /** Localized label for a source kind, falling back to the raw kind. */
 function kindLabel(kind: SourceKind): string {
@@ -82,10 +91,10 @@ function kindLabel(kind: SourceKind): string {
       <button type="button" class="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('manage')"><Settings2 :size="13" />{{ t("sources.manage") }}</button>
     </header>
 
-    <p v-if="kind === 'local' && !sources.hasCloudSync && sources.hasSources" class="ak-frame mt-6 border border-accent/60 bg-accent/5 p-4 text-sm text-fg">{{ t("sources.localOnlyWarning") }}</p>
+    <p v-if="!sources.hasCloudSync && sources.hasSources" class="ak-frame mt-6 border border-accent/60 bg-accent/5 p-4 text-sm text-fg">{{ t("sources.localOnlyWarning") }}</p>
 
     <div v-if="rows.length === 0" class="ak-frame mt-8 grid place-items-center gap-4 border border-dashed border-line bg-surface/50 px-6 py-20 text-center">
-      <Server v-if="kind === 'webdav'" :size="36" class="text-dim" />
+      <Server v-if="kind !== 'local'" :size="36" class="text-dim" />
       <FolderOpen v-else :size="36" class="text-dim" />
       <p class="text-base font-semibold">{{ copy.emptyTitle }}</p>
       <p class="max-w-md text-sm text-muted">{{ copy.emptyDesc }}</p>

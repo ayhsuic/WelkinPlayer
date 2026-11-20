@@ -225,7 +225,7 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
 
 <template>
   <div ref="scrollEl" class="w-full">
-    <div class="mx-auto flex w-full max-w-6xl flex-col px-6 py-6">
+    <div class="mx-auto flex w-full max-w-6xl flex-col px-6 pb-2 pt-6">
       <header
         class="sticky top-0 z-20 -mx-6 mb-4 mt-2 px-6 transition-[padding,background-color,border-color] duration-200"
         :class="collapsed ? 'border-b border-line bg-bg/95 py-2 backdrop-blur' : 'border-b border-transparent bg-transparent py-1'"

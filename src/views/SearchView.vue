@@ -10,6 +10,7 @@ import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
 import { groupTracks, isUnknownGroup, type GroupKind } from "../lib/grouping";
+import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
 import TrackList from "../components/TrackList.vue";
 
 /**
@@ -27,6 +28,7 @@ const { t } = useI18n();
 const player = usePlayerStore();
 const query = ref("");
 const scrollEl = ref<HTMLElement | null>(null);
+const { collapsed, scroller } = useCollapsibleHeader(scrollEl);
 
 const filtered = computed<Track[]>(() => {
   const value = query.value.trim().toLocaleLowerCase();
@@ -63,10 +65,13 @@ function clear() {
 </script>
 
 <template>
-  <div ref="scrollEl" class="h-full w-full overflow-y-auto">
-    <div class="mx-auto flex w-full max-w-6xl flex-col px-4 py-5 sm:px-6 sm:py-6">
-      <header class="shrink-0 border-b border-line py-4">
-        <p class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ t("nav.search") }}</p>
+  <div ref="scrollEl" class="w-full">
+    <div class="mx-auto flex w-full max-w-6xl flex-col px-4 pb-2 pt-5 sm:px-6 sm:pt-6">
+      <header
+        class="sticky top-0 z-20 -mx-4 px-4 transition-[padding,background-color,border-color] duration-200 sm:-mx-6 sm:px-6"
+        :class="collapsed ? 'border-b border-line bg-bg/95 py-2 backdrop-blur' : 'border-b border-transparent bg-transparent py-1'"
+      >
+        <p v-if="!collapsed" class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ t("nav.search") }}</p>
         <label class="mt-3 flex h-11 items-center gap-3 border border-line bg-bg px-3">
           <Search :size="17" :stroke-width="2" class="shrink-0 text-dim" />
           <input
@@ -80,7 +85,7 @@ function clear() {
             <X :size="16" :stroke-width="2" />
           </button>
         </label>
-        <div v-if="genres.length" class="mt-3">
+        <div v-if="!collapsed && genres.length" class="mt-3">
           <p class="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("nav.genres") }}</p>
           <div class="flex flex-wrap gap-2">
             <button
@@ -99,7 +104,7 @@ function clear() {
       <div class="mt-4 min-h-0 flex-1">
         <TrackList
           :tracks="filtered"
-          :scroller="scrollEl"
+          :scroller="scroller"
           empty-key="nav.searchEmpty"
           @play="play"
           @open-artist="emit('openArtist', $event)"

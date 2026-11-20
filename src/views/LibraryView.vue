@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { LoaderCircle, RefreshCw, User } from "@lucide/vue";
+import { History, ListMusic, LoaderCircle, RefreshCw, User } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
@@ -144,7 +144,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
       <section v-if="recommended.length">
         <div class="mb-3 mt-2 flex items-center justify-between">
           <h2 class="text-lg font-bold tracking-tight">{{ t("home.dailyRecommend") }}</h2>
-          <button type="button" class="ak-clip flex h-8 items-center gap-1.5 border border-line bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg" @click="refreshRecommended">
+          <button type="button" class="ak-clip flex h-7 items-center gap-1.5 border border-line bg-surface px-2.5 text-xs font-medium text-muted transition-colors hover:text-fg" @click="refreshRecommended">
             <RefreshCw :size="13" />{{ t("home.refresh") }}
           </button>
         </div>
@@ -179,7 +179,9 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           >
             {{ t("home.recent") }}
           </button>
-          <button type="button" class="ak-clip flex h-8 items-center border border-line bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('openPlaylist', RECENT_PLAYS_ID)">{{ t("home.history") }}</button>
+          <button type="button" class="ak-clip flex h-7 items-center gap-1.5 border border-line bg-surface px-2.5 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('openPlaylist', RECENT_PLAYS_ID)">
+            <History :size="13" />{{ t("home.history") }}
+          </button>
         </div>
 
         <!-- Row list: title + format badge + artist on the left, duration and cover on the right. -->
@@ -203,7 +205,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
               <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
               <LoaderCircle v-else-if="coverPending(track)" :size="18" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
               <span v-else class="absolute inset-0 grid place-items-center text-xl font-black text-white/90">{{ initial(track) }}</span>
-              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1 left-1 grid h-5 w-5 place-items-center bg-black/45 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1 left-1 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
             </div>
           </article>
         </div>
@@ -221,7 +223,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
               <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
               <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
               <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
-              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 grid h-6 w-6 place-items-center bg-black/45 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
             </div>
             <p class="mt-2 truncate text-sm font-medium">{{ track.title }}</p>
             <p class="truncate text-xs text-muted">{{ track.artist }}</p>
@@ -240,11 +242,13 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           >
             {{ t("home.recentlyAdded") }}
           </button>
-          <button type="button" class="ak-clip flex h-8 items-center border border-line bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('navigate', 'tracks')">{{ t("home.allSongs") }}</button>
+          <button type="button" class="ak-clip flex h-7 items-center gap-1.5 border border-line bg-surface px-2.5 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('navigate', 'tracks')">
+            <ListMusic :size="13" />{{ t("home.allSongs") }}
+          </button>
         </div>
 
-        <!-- Two-column album grid, laid out vertically with the page scroll. -->
-        <div v-if="addedGridMode" class="grid grid-cols-2 gap-x-4 gap-y-6">
+        <!-- Responsive album grid: columns reflow 1 → many with the available width. -->
+        <div v-if="addedGridMode" class="grid album-wall gap-x-4 gap-y-6">
           <article
             v-for="track in recentlyAdded"
             :key="`add-grid-${track.id}`"
@@ -256,7 +260,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
               <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
               <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
               <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
-              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 grid h-6 w-6 place-items-center bg-black/45 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
               <span v-if="isHiRes(track)" class="absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide text-black">HR</span>
             </div>
             <p class="mt-2 truncate text-sm font-medium">{{ track.title }}</p>
@@ -277,7 +281,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
               <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
               <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
               <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
-              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 grid h-6 w-6 place-items-center bg-black/45 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
               <span v-if="isHiRes(track)" class="absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide text-black">HR</span>
             </div>
             <p class="mt-2 truncate text-sm font-medium">{{ track.title }}</p>

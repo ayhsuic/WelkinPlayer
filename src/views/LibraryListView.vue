@@ -4,20 +4,22 @@
 -->
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import type { Component } from "vue";
-import { CalendarDays, ChevronRight, Disc3, Folder, HardDriveDownload, ListMusic, Mic2, Music } from "@lucide/vue";
+import { CalendarDays, ChevronRight, Disc3, HardDriveDownload, ListMusic, Mic2, Music, Server } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
 import { initial } from "../lib/format";
+import { groupTracks } from "../lib/grouping";
+import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
 import type { View } from "../lib/app";
 
 /**
  * Library ("资料库") entry, modelled on the Mornye reference: a plain linear
- * list of category rows (playlists / artists / albums / tracks / genres /
- * folders) with accent line icons and a chevron, followed by a recently-added
- * cover rail. Rows drill into the matching classification inside the drawer.
+ * list of category rows (playlists / artists / tracks / years / folders) with
+ * accent line icons and a chevron, followed by a recently-added cover wall.
+ * Rows drill into the matching classification inside the drawer.
  */
 const emit = defineEmits<{
   navigate: [view: View];
@@ -25,6 +27,10 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const player = usePlayerStore();
+
+/** Collapsing sticky header, mirroring the home page: tucks into a pinned bar on scroll. */
+const rootEl = ref<HTMLElement | null>(null);
+const { collapsed } = useCollapsibleHeader(rootEl);
 
 interface CategoryRow {
   id: View;
@@ -35,10 +41,9 @@ interface CategoryRow {
 const rows: CategoryRow[] = [
   { id: "playlists", titleKey: "nav.playlists", icon: ListMusic },
   { id: "artists", titleKey: "nav.artists", icon: Mic2 },
-  { id: "albums", titleKey: "nav.albums", icon: Disc3 },
   { id: "tracks", titleKey: "nav.tracks", icon: Music },
   { id: "years", titleKey: "nav.years", icon: CalendarDays },
-  { id: "folders", titleKey: "nav.folders", icon: Folder },
+  { id: "sources", titleKey: "nav.sources", icon: Server },
 ];
 
 const RECENT_LIMIT = 8;
@@ -62,16 +67,22 @@ const recentAlbums = computed(() => {
   return [...map.values()].slice(0, RECENT_LIMIT);
 });
 
+/** Total number of albums in the library, matching the albums drill-down count. */
+const albumCount = computed(() => groupTracks(player.tracks, "albums").length);
+
 function play(track: Track) { void player.playInQueue(player.tracks, track); }
 function isActive(track: Track) { return track.id === player.currentTrack?.id; }
 </script>
 
 <template>
-  <div class="w-full">
+  <div ref="rootEl" class="w-full">
     <div class="mx-auto flex w-full max-w-6xl flex-col px-4 py-5 sm:px-6 sm:py-6">
-      <!-- Header: title on the left, downloads entry on the right. -->
-      <header class="flex items-center justify-between">
-        <h1 class="truncate text-2xl font-black leading-none tracking-tight sm:text-3xl">{{ t("nav.collection") }}</h1>
+      <!-- Sticky header: title on the left, downloads entry on the right; tucks into a pinned bar on scroll. -->
+      <header
+        class="sticky top-0 z-20 -mx-4 flex items-center justify-between gap-4 px-4 transition-[padding,background-color,border-color] duration-200 sm:-mx-6 sm:px-6"
+        :class="collapsed ? 'border-b border-line bg-bg/95 py-2 backdrop-blur' : 'border-b border-transparent bg-transparent py-1'"
+      >
+        <h1 class="truncate font-black leading-none tracking-tight transition-[font-size] duration-200" :class="collapsed ? 'text-base' : 'text-2xl'">{{ t("nav.collection") }}</h1>
         <button
           type="button"
           class="ak-clip flex shrink-0 items-center gap-1.5 border border-line bg-surface px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:text-fg"
@@ -98,19 +109,25 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         </template>
       </section>
 
-      <!-- Recently added: albums in a vertical two-column grid that scrolls with the page. -->
+      <!-- Recently added: responsive album grid, columns reflowing 1 → many with width. -->
       <section v-if="recentAlbums.length" class="mt-6">
         <div class="mb-3 flex items-center justify-between">
           <h2 class="text-lg font-bold tracking-tight">{{ t("home.recentlyAdded") }}</h2>
-          <button
-            type="button"
-            class="ak-clip flex h-8 items-center border border-line bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg"
-            @click="emit('navigate', 'tracks')"
-          >
-            {{ t("home.allSongs") }}
-          </button>
         </div>
-        <div class="grid grid-cols-2 gap-x-4 gap-y-6">
+        <div class="grid album-wall gap-x-4 gap-y-6">
+          <!-- Albums entry: cover-sized placeholder card with the offset clipped layer. -->
+          <button type="button" class="group text-left" @click="emit('navigate', 'albums')">
+            <div class="relative aspect-square">
+              <div class="ak-clip absolute inset-0 -translate-x-1.5 -translate-y-1.5 bg-accent-soft"></div>
+              <div class="ak-clip relative flex aspect-square flex-col bg-surface p-4">
+                <div class="flex flex-1 flex-col justify-center gap-1.5">
+                  <Disc3 :size="22" class="text-accent" />
+                  <p class="truncate text-base font-bold">{{ t("nav.albums") }}</p>
+                </div>
+                <p class="truncate text-xs text-muted">{{ t("library.collections.albumCount", { count: albumCount }) }}</p>
+              </div>
+            </div>
+          </button>
           <article
             v-for="track in recentAlbums"
             :key="`add-album-${track.id}`"
@@ -120,7 +137,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
             <div class="ak-clip-tr relative aspect-square overflow-hidden" :style="{ backgroundColor: track.color }">
               <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
               <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
-              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 grid h-6 w-6 place-items-center bg-black/45 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
             </div>
             <p class="mt-2 truncate text-sm font-medium">{{ track.album || track.title }}</p>
             <p class="truncate text-xs text-muted">{{ track.artist }}</p>
