@@ -11,7 +11,7 @@ import type { MainTab } from "../lib/app";
 /**
  * Full-screen mobile drawer, modelled on lmusic's BottomSheetLayout: the sheet
  * is a separate layer above the playing wall. Its body renders the active tab
- * page (provided through the default slot); the bottom holds the four-tab bar.
+ * page (provided through the default slot); the bottom holds the tab bar.
  * Once every scrollable ancestor in the touched page is pinned to its top, a
  * further downward drag collapses the drawer back onto the wall. The gesture is
  * bound to the scrolling body (not just a handle strip) and mirrors the nested

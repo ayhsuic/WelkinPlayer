@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { AudioLines, LoaderCircle, Pause, Play, RefreshCw } from "@lucide/vue";
+import { AudioLines, LoaderCircle, Pause, Play, RefreshCw, User } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
@@ -34,6 +34,12 @@ const recentlyAdded = computed(() => {
   return indexed.slice(0, HOME_LIMIT).map((item) => item.track);
 });
 const recentTracks = computed(() => tracksForPaths(profile.recent, player.tracks).slice(0, HOME_LIMIT));
+
+/** First nickname glyph for the home avatar; falls back to the person icon when unnamed. */
+const avatarInitial = computed(() => {
+  const name = profile.nickname.trim();
+  return name ? Array.from(name)[0]?.toUpperCase() ?? "" : "";
+});
 
 const EXT_LABEL: Record<string, string> = {
   mp3: "MP3", flac: "FLAC", ogg: "OGG", wav: "WAV", m4a: "M4A", aac: "AAC", opus: "OPUS", ape: "APE", wma: "WMA",
@@ -94,6 +100,21 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
     </div>
 
     <template v-else>
+      <!-- Home header: title on the left, avatar entry to settings on the right. -->
+      <header class="mb-4 mt-1 flex items-center justify-between">
+        <h1 class="text-2xl font-black tracking-tight">{{ t("nav.home") }}</h1>
+        <button
+          type="button"
+          class="grid h-11 w-11 place-items-center rounded-full border border-line bg-surface text-accent transition-transform active:scale-95"
+          :aria-label="t('nav.settings')"
+          :title="t('nav.settings')"
+          @click="emit('settings')"
+        >
+          <span v-if="avatarInitial" class="text-base font-bold leading-none">{{ avatarInitial }}</span>
+          <User v-else :size="20" />
+        </button>
+      </header>
+
       <!-- Daily recommendation: square cover cards on a horizontal rail. -->
       <section v-if="recommended.length">
         <div class="mb-3 mt-2 flex items-center justify-between">

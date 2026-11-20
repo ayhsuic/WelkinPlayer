@@ -4,7 +4,7 @@
  */
 
 import type { Component } from "vue";
-import { CalendarDays, CircleCheck, Disc3, Folder, HardDriveDownload, LayoutGrid, Library, ListMusic, ListPlus, Mic2, Music, Search, Server, Settings2 } from "@lucide/vue";
+import { CalendarDays, CircleCheck, Disc3, Folder, HardDriveDownload, LayoutGrid, Library, ListMusic, ListPlus, Mic2, Music, Search, Server } from "@lucide/vue";
 
 export type View = "wall" | "library" | "tracks" | "favorites" | "artists" | "albums" | "years" | "genres" | "sources" | "folders" | "webdav" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "downloading" | "downloaded" | "settings" | "search" | "player";
 export type Theme = "light" | "dark";
@@ -23,7 +23,7 @@ export const primaryNavItems: NavItem[] = [
   { id: "library", labelKey: "nav.media", index: "01", icon: Library },
 ];
 
-/** The four bottom tabs of the mobile drawer, modelled on lmusic's NavigateTabBar. */
+/** The bottom tabs of the mobile drawer; settings is reached from the home avatar instead. */
 export type MainTab = "home" | "library" | "settings" | "search";
 
 export interface MainTabItem {
@@ -37,7 +37,6 @@ export interface MainTabItem {
 export const mainNavTabs: MainTabItem[] = [
   { id: "home", view: "library", labelKey: "nav.home", icon: Library },
   { id: "library", view: "playlists", labelKey: "nav.media", icon: LayoutGrid },
-  { id: "settings", view: "settings", labelKey: "nav.settings", icon: Settings2 },
   { id: "search", view: "search", labelKey: "nav.search", icon: Search },
 ];
 
