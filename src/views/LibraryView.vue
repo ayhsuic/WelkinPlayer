@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { LayoutGrid, List, LoaderCircle, Play, RefreshCw, User } from "@lucide/vue";
+import { LoaderCircle, RefreshCw, User } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
@@ -67,6 +67,14 @@ onMounted(() => {
   syncCollapsed();
 });
 onBeforeUnmount(() => scroller?.removeEventListener("scroll", syncCollapsed));
+
+const EXT_LABEL: Record<string, string> = {
+  mp3: "MP3", flac: "FLAC", ogg: "OGG", wav: "WAV", m4a: "M4A", aac: "AAC", opus: "OPUS", ape: "APE", wma: "WMA",
+};
+function extLabel(track: Track): string {
+  const ext = (track.path ?? "").split(".").pop()?.toLowerCase() ?? "";
+  return EXT_LABEL[ext] ?? (ext ? ext.toUpperCase().slice(0, 4) : "");
+}
 
 /** Hi-Res: above the 48 kHz ceiling, or 24-bit and up. */
 function isHiRes(track: Track): boolean {
@@ -160,23 +168,21 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         </div>
       </section>
 
-      <!-- Recently played: tap the title to toggle the horizontal rail ↔ row list. -->
+      <!-- Recently played: tap the title to toggle the three-column rail ↔ row list. -->
       <section v-if="recentTracks.length">
         <div class="mb-3 mt-6 flex items-center justify-between">
           <button
             type="button"
-            class="flex items-center gap-1.5 text-lg font-bold tracking-tight transition-colors hover:text-accent"
+            class="text-lg font-bold tracking-tight transition-colors hover:text-accent"
             :title="t('home.recent')"
             @click="recentListMode = !recentListMode"
           >
             {{ t("home.recent") }}
-            <List v-if="!recentListMode" :size="16" class="text-dim" />
-            <LayoutGrid v-else :size="16" class="text-dim" />
           </button>
           <button type="button" class="ak-clip flex h-8 items-center border border-line bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('openPlaylist', RECENT_PLAYS_ID)">{{ t("home.history") }}</button>
         </div>
 
-        <!-- Row list: square cover, title + artist, trailing play glyph. -->
+        <!-- Row list: title + format badge + artist on the left, duration and cover on the right. -->
         <div v-if="recentListMode" class="flex flex-col">
           <article
             v-for="track in recentTracks"
@@ -185,26 +191,29 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="ak-clip-tr relative h-14 w-14 shrink-0 overflow-hidden" :style="{ backgroundColor: track.color }">
-              <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-              <LoaderCircle v-else-if="coverPending(track)" :size="20" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
-              <span v-else class="absolute inset-0 grid place-items-center text-2xl font-black text-white/90">{{ initial(track) }}</span>
-              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 grid h-6 w-6 place-items-center bg-black/45 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-            </div>
             <div class="min-w-0 flex-1">
-              <p class="truncate text-sm font-semibold" :class="isActive(track) ? 'text-accent' : ''">{{ track.title }}</p>
+              <div class="flex items-center gap-2">
+                <p class="truncate text-sm font-semibold" :class="isActive(track) ? 'text-accent' : ''">{{ track.title }}</p>
+                <span v-if="extLabel(track)" class="shrink-0 rounded border border-line px-1 py-0.5 font-mono text-[9px] leading-none text-muted">{{ extLabel(track) }}</span>
+              </div>
               <p class="truncate text-xs text-muted">{{ track.artist }}</p>
             </div>
-            <Play :size="18" class="shrink-0 text-dim" />
+            <span class="shrink-0 text-xs tabular-nums text-muted">{{ track.duration }}</span>
+            <div class="ak-clip-tr relative h-12 w-12 shrink-0 overflow-hidden" :style="{ backgroundColor: track.color }">
+              <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+              <LoaderCircle v-else-if="coverPending(track)" :size="18" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
+              <span v-else class="absolute inset-0 grid place-items-center text-xl font-black text-white/90">{{ initial(track) }}</span>
+              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1 left-1 grid h-5 w-5 place-items-center bg-black/45 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+            </div>
           </article>
         </div>
 
-        <!-- Horizontal rail: small square covers. -->
+        <!-- Three-column rail: extra columns scroll sideways. -->
         <div v-else class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
           <article
             v-for="track in recentTracks"
             :key="`hist-${track.id}`"
-            class="w-24 shrink-0 cursor-pointer"
+            class="w-[calc((100%-2rem)/3)] shrink-0 cursor-pointer"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
@@ -225,13 +234,11 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         <div class="mb-3 mt-6 flex items-center justify-between">
           <button
             type="button"
-            class="flex items-center gap-1.5 text-lg font-bold tracking-tight transition-colors hover:text-accent"
+            class="text-lg font-bold tracking-tight transition-colors hover:text-accent"
             :title="t('home.recentlyAdded')"
             @click="addedGridMode = !addedGridMode"
           >
             {{ t("home.recentlyAdded") }}
-            <LayoutGrid v-if="!addedGridMode" :size="16" class="text-dim" />
-            <List v-else :size="16" class="text-dim" />
           </button>
           <button type="button" class="ak-clip flex h-8 items-center border border-line bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('navigate', 'tracks')">{{ t("home.allSongs") }}</button>
         </div>
