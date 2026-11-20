@@ -4,13 +4,14 @@
 -->
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { FolderOpen, FolderTree, HardDrive, Server, Settings2 } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import { useSourcesStore } from "../stores/sources";
 import { SOURCE_KINDS } from "../lib/sources";
 import type { SongSource, SourceKind } from "../lib/sources";
+import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
 
 /**
  * Source list for one kind. Folders and WebDAV are separate pages (and separate
@@ -21,6 +22,9 @@ const emit = defineEmits<{ open: [id: string]; manage: [] }>();
 const { t } = useI18n();
 const player = usePlayerStore();
 const sources = useSourcesStore();
+
+const rootEl = ref<HTMLElement | null>(null);
+const { collapsed } = useCollapsibleHeader(rootEl);
 
 interface SourceRow {
   source: SongSource;
@@ -63,11 +67,17 @@ function kindLabel(kind: SourceKind): string {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-6xl px-6 py-6">
-    <header class="mb-4 mt-2 flex items-end justify-between gap-4">
+  <div ref="rootEl" class="mx-auto w-full max-w-6xl px-6 py-6">
+    <header
+      class="sticky top-0 z-20 -mx-6 mb-4 mt-2 flex items-center justify-between gap-4 px-6 transition-[padding,background-color,border-color] duration-200"
+      :class="collapsed ? 'border-b border-line bg-bg/95 py-2 backdrop-blur' : 'border-b border-transparent bg-transparent py-1'"
+    >
       <div class="min-w-0">
-        <h1 class="truncate text-2xl font-black tracking-tight">{{ copy.title }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ copy.desc }}</p>
+        <h1
+          class="truncate font-black tracking-tight transition-[font-size] duration-200"
+          :class="collapsed ? 'text-base' : 'text-2xl'"
+        >{{ copy.title }}</h1>
+        <p v-if="!collapsed" class="mt-1 text-sm text-muted">{{ copy.desc }}</p>
       </div>
       <button type="button" class="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('manage')"><Settings2 :size="13" />{{ t("sources.manage") }}</button>
     </header>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { CalendarDays, Disc3, Mic2, Music } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
@@ -7,11 +7,15 @@ import type { Track } from "../stores/player";
 import { groupTracks, isUnknownGroup, type GroupKind } from "../lib/grouping";
 import { sortGroups, useGroupSort } from "../lib/sort";
 import GroupSortMenu from "../components/GroupSortMenu.vue";
+import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
 
 const props = withDefaults(defineProps<{ kind: GroupKind; loading?: boolean }>(), { loading: false });
 const emit = defineEmits<{ open: [key: string] }>();
 const { t } = useI18n();
 const player = usePlayerStore();
+
+const rootEl = ref<HTMLElement | null>(null);
+const { collapsed } = useCollapsibleHeader(rootEl);
 // Each grid page keeps its own persistent choice; the component remounts per kind.
 const { key: sortKey, dir: sortDir } = useGroupSort(props.kind);
 
@@ -54,12 +58,18 @@ const isAlbumGrid = computed(() => props.kind === "albums");
 </script>
 
 <template>
-  <div class="h-full w-full overflow-y-auto">
+  <div ref="rootEl" class="h-full w-full overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+84px)]">
     <div class="mx-auto w-full max-w-6xl px-6 py-6">
-      <header class="mb-4 mt-2 flex items-end justify-between gap-4">
+      <header
+        class="sticky top-0 z-20 -mx-6 mb-4 mt-2 flex items-center justify-between gap-4 px-6 transition-[padding,background-color,border-color] duration-200"
+        :class="collapsed ? 'border-b border-line bg-bg/95 py-2 backdrop-blur' : 'border-b border-transparent bg-transparent py-1'"
+      >
         <div class="min-w-0">
-          <h1 class="truncate text-2xl font-black tracking-tight">{{ t(kindMeta.title) }}</h1>
-          <p class="mt-1 text-sm text-muted">{{ t(kindMeta.count, { count: total }) }}</p>
+          <h1
+            class="truncate font-black tracking-tight transition-[font-size] duration-200"
+            :class="collapsed ? 'text-base' : 'text-2xl'"
+          >{{ t(kindMeta.title) }}</h1>
+          <p v-if="!collapsed" class="mt-1 text-sm text-muted">{{ t(kindMeta.count, { count: total }) }}</p>
         </div>
         <GroupSortMenu :context="kind" />
       </header>

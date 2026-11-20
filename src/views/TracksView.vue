@@ -25,6 +25,7 @@ import TrackSortMenu from "../components/TrackSortMenu.vue";
 import ViewModeToggle from "../components/ViewModeToggle.vue";
 import PlaylistCover from "../components/PlaylistCover.vue";
 import SmartTransitionDialog from "../components/SmartTransitionDialog.vue";
+import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
 
 const props = withDefaults(defineProps<{ playlistId?: string | null; artist?: string | null; album?: string | null; year?: string | null; genre?: string | null; sourceId?: string | null; loading: boolean; refreshing?: boolean; downloadingTrackId?: number | null }>(), { playlistId: null, artist: null, album: null, year: null, genre: null, sourceId: null, refreshing: false, downloadingTrackId: null });
 const emit = defineEmits<{ refresh: []; edit: [id: string]; openArtist: [artist: string]; openAlbum: [album: string]; downloadMetadata: [track: Track]; editLyrics: [track: Track]; editInfo: [track: Track]; showInfo: [track: Track] }>();
@@ -38,6 +39,7 @@ const contextPosition = ref({ x: 0, y: 0 });
 const selectMode = ref(false);
 const selected = ref<Set<string>>(new Set());
 const scrollEl = ref<HTMLElement | null>(null);
+const { collapsed } = useCollapsibleHeader(scrollEl);
 const smartOpen = ref(false);
 
 const activePlaylist = computed(() => props.playlistId ? profile.playlists.find((item) => item.id === props.playlistId) ?? null : null);
@@ -222,32 +224,35 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
 </script>
 
 <template>
-  <div ref="scrollEl" class="h-full w-full overflow-y-auto">
+  <div ref="scrollEl" class="h-full w-full overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+84px)]">
     <div class="mx-auto flex w-full max-w-6xl flex-col px-6 py-6">
-      <header class="mb-4 mt-2">
+      <header
+        class="sticky top-0 z-20 -mx-6 mb-4 mt-2 px-6 transition-[padding,background-color,border-color] duration-200"
+        :class="collapsed ? 'border-b border-line bg-bg/95 py-2 backdrop-blur' : 'border-b border-transparent bg-transparent py-1'"
+      >
         <div class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6">
-          <PlaylistCover v-if="activePlaylist" :playlist="activePlaylist" class="ak-frame h-32 w-32 shrink-0 border border-line text-5xl" :icon-size="40" />
-          <span v-else-if="smartPlays" class="ak-frame grid h-32 w-32 shrink-0 place-items-center border border-line bg-accent/10 text-accent"><TrendingUp :size="40" :stroke-width="2" /></span>
-          <span v-else-if="isGroup" class="ak-frame grid h-32 w-32 shrink-0 place-items-center overflow-hidden border border-line text-5xl font-black text-white/90" :style="{ backgroundColor: groupCoverTrack?.color ?? 'var(--accent)' }">
+          <PlaylistCover v-if="activePlaylist && !collapsed" :playlist="activePlaylist" class="ak-frame h-32 w-32 shrink-0 border border-line text-5xl" :icon-size="40" />
+          <span v-else-if="smartPlays && !collapsed" class="ak-frame grid h-32 w-32 shrink-0 place-items-center border border-line bg-accent/10 text-accent"><TrendingUp :size="40" :stroke-width="2" /></span>
+          <span v-else-if="isGroup && !collapsed" class="ak-frame grid h-32 w-32 shrink-0 place-items-center overflow-hidden border border-line text-5xl font-black text-white/90" :style="{ backgroundColor: groupCoverTrack?.color ?? 'var(--accent)' }">
             <img v-if="groupCoverTrack?.cover" :src="groupCoverTrack.cover" alt="" decoding="async" class="h-full w-full object-cover" />
             <template v-else>{{ groupTitle.charAt(0) }}</template>
           </span>
           <div class="@container flex min-w-0 flex-col sm:flex-1">
             <template v-if="activePlaylist">
-              <h1 class="truncate text-2xl font-black tracking-tight">{{ activePlaylist.name }}</h1>
-              <p class="mt-1 text-sm text-muted">{{ t("library.playlists.count", { count: activePlaylist.tracks.length }) }}</p>
+              <h1 class="truncate font-black tracking-tight transition-[font-size] duration-200" :class="collapsed ? 'text-base' : 'text-2xl'">{{ activePlaylist.name }}</h1>
+              <p v-if="!collapsed" class="mt-1 text-sm text-muted">{{ t("library.playlists.count", { count: activePlaylist.tracks.length }) }}</p>
             </template>
             <template v-else-if="smartPlays">
-              <h1 class="truncate text-2xl font-black tracking-tight">{{ t("playlistsPage.recentTitle") }}</h1>
-              <p class="mt-1 text-sm text-muted">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
+              <h1 class="truncate font-black tracking-tight transition-[font-size] duration-200" :class="collapsed ? 'text-base' : 'text-2xl'">{{ t("playlistsPage.recentTitle") }}</h1>
+              <p v-if="!collapsed" class="mt-1 text-sm text-muted">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
             </template>
             <template v-else-if="isGroup">
-              <h1 class="truncate text-2xl font-black tracking-tight">{{ groupTitle }}</h1>
-              <p class="mt-1 text-sm text-muted">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
+              <h1 class="truncate font-black tracking-tight transition-[font-size] duration-200" :class="collapsed ? 'text-base' : 'text-2xl'">{{ groupTitle }}</h1>
+              <p v-if="!collapsed" class="mt-1 text-sm text-muted">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
             </template>
             <template v-else>
-              <h1 class="truncate text-2xl font-black tracking-tight">{{ sourceFilter ? (sourceName ?? t("nav.tracks")) : t("nav.tracks") }}</h1>
-              <p class="mt-1 text-sm text-muted">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
+              <h1 class="truncate font-black tracking-tight transition-[font-size] duration-200" :class="collapsed ? 'text-base' : 'text-2xl'">{{ sourceFilter ? (sourceName ?? t("nav.tracks")) : t("nav.tracks") }}</h1>
+              <p v-if="!collapsed" class="mt-1 text-sm text-muted">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
             </template>
 
             <div class="mt-auto flex flex-wrap items-center gap-3 pt-4">
