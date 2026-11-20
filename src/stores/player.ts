@@ -95,6 +95,10 @@ export interface Track {
   modified?: string | null;
   /** Cover thumbnail URL (asset protocol), once resolved. */
   cover?: string;
+  /** Sample rate in Hz, once metadata has been loaded. */
+  sampleRate?: number;
+  /** Bits per sample (usually 16 or 24), once metadata has been loaded. */
+  bitDepth?: number;
   /** Hex cache id of the cover thumbnail, for native media controls. */
   coverHash?: string;
   /** Whether metadata has already been loaded from cache or the network. */

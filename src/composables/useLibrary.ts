@@ -112,6 +112,8 @@ export function useLibrary() {
           if (meta.genre) patch.genre = meta.genre;
           if (meta.year) patch.year = String(meta.year);
           if (meta.durationSecs) patch.duration = formatDuration(meta.durationSecs);
+          if (meta.sampleRate) patch.sampleRate = meta.sampleRate;
+          if (meta.bitDepth) patch.bitDepth = meta.bitDepth;
           patch.metaLoaded = true;
         }
         const url = coverUrl(entry?.coverPath, track.modified);
@@ -131,6 +133,8 @@ export function useLibrary() {
     if (meta.genre) patch.genre = meta.genre;
     if (meta.year) patch.year = String(meta.year);
     if (meta.durationSecs) patch.duration = formatDuration(meta.durationSecs);
+    if (meta.sampleRate) patch.sampleRate = meta.sampleRate;
+    if (meta.bitDepth) patch.bitDepth = meta.bitDepth;
     if (Object.keys(patch).length > 0) player.updateTrack(track.id, patch);
 
     const resolved: Partial<Track> = { metaLoaded: true };

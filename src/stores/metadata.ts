@@ -138,6 +138,8 @@ export const useMetadataStore = defineStore("metadata", () => {
     if (meta.genre) patch.genre = meta.genre;
     if (meta.year) patch.year = String(meta.year);
     if (meta.durationSecs) patch.duration = formatDuration(meta.durationSecs);
+    if (meta.sampleRate) patch.sampleRate = meta.sampleRate;
+    if (meta.bitDepth) patch.bitDepth = meta.bitDepth;
     const url = coverUrl(result?.coverPath, current?.modified);
     if (url) patch.cover = url;
     if (meta.coverHash) patch.coverHash = meta.coverHash;

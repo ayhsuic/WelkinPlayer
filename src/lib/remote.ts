@@ -69,6 +69,8 @@ export interface TrackMetadata {
   genre: string | null;
   year: number | null;
   durationSecs: number | null;
+  sampleRate: number | null;
+  bitDepth: number | null;
   coverHash: string | null;
 }
 

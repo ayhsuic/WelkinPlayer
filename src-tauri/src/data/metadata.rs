@@ -32,6 +32,12 @@ pub struct TrackMetadata {
     pub year: Option<u32>,
     /// Track length in whole seconds, when the container advertises it.
     pub duration_secs: Option<u64>,
+    /// Sample rate in Hz, when the container advertises it.
+    #[serde(default)]
+    pub sample_rate: Option<u32>,
+    /// Bits per sample (usually 16 or 24), when the container advertises it.
+    #[serde(default)]
+    pub bit_depth: Option<u8>,
     /// Cache id of the generated cover thumbnail, when one was embedded.
     pub cover_hash: Option<String>,
 }
@@ -91,8 +97,11 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedMetadata, AppError> {
         .map(|value| value.into_owned());
     let year = tag.and_then(|tag| tag.year());
 
-    let duration: Duration = tagged.properties().duration();
+    let properties = tagged.properties();
+    let duration: Duration = properties.duration();
     let duration_secs = (duration.as_secs() > 0).then_some(duration.as_secs());
+    let sample_rate = properties.sample_rate();
+    let bit_depth = properties.bit_depth();
 
     // Cover art can live on any tag, so look through all of them.
     let cover = tagged
@@ -109,6 +118,8 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedMetadata, AppError> {
             genre,
             year,
             duration_secs,
+            sample_rate,
+            bit_depth,
             cover_hash: None,
         },
         cover,
