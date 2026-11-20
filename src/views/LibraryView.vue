@@ -270,12 +270,12 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </article>
         </div>
 
-        <!-- Horizontal rail: tap the cover to play directly. -->
-        <div v-else class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
+        <!-- Compact responsive wall: columns reflow 1 → many with the available width. -->
+        <div v-else class="grid album-wall-sm gap-x-4 gap-y-4">
           <article
             v-for="track in recentlyAdded"
             :key="`add-${track.id}`"
-            class="w-[calc((100%-2rem)/3)] shrink-0 cursor-pointer"
+            class="cursor-pointer"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
