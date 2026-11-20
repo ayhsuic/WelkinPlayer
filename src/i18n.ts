@@ -235,9 +235,7 @@ const messages = {
       colTrack: "曲目",
       colAlbum: "专辑",
       colTime: "时长",
-      emptyTitle: "未配置来源",
       emptyDesc: "尚未配置音乐来源，请前往设置添加。",
-      emptyAction: "前往设置",
       loading: "正在加载远端曲库…",
         usingCache: "部分来源无响应，正在使用本地缓存",
         menu: {
@@ -990,9 +988,7 @@ const messages = {
       colTrack: "Track",
       colAlbum: "Album",
       colTime: "Time",
-      emptyTitle: "No source configured",
       emptyDesc: "No music source is configured. Add one in Settings.",
-      emptyAction: "Open settings",
       loading: "Loading remote library…",
         usingCache: "Some sources are unavailable — using the local cache",
         menu: {

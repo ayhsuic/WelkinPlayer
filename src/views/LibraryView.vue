@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { AudioLines, LoaderCircle, Pause, Play, RefreshCw, User } from "@lucide/vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { LoaderCircle, Pause, Play, RefreshCw, User } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
@@ -11,7 +11,7 @@ import type { View } from "../lib/app";
 import { RECENT_PLAYS_ID } from "../lib/app";
 import TrackContextMenu from "../components/TrackContextMenu.vue";
 
-withDefaults(defineProps<{ loading: boolean; downloadingTrackId?: number | null }>(), { downloadingTrackId: null });
+withDefaults(defineProps<{ downloadingTrackId?: number | null }>(), { downloadingTrackId: null });
 const emit = defineEmits<{ settings: []; downloadMetadata: [track: Track]; editLyrics: [track: Track]; editInfo: [track: Track]; showInfo: [track: Track]; navigate: [view: View]; openPlaylist: [id: string] }>();
 const { t } = useI18n();
 const player = usePlayerStore();
@@ -40,6 +40,29 @@ const avatarInitial = computed(() => {
   const name = profile.nickname.trim();
   return name ? Array.from(name)[0]?.toUpperCase() ?? "" : "";
 });
+
+/** Collapsing sticky header: once the list scrolls past a short peek, the large title
+ *  and avatar tuck into a pinned top bar (mirrors Mornye's pinned SliverAppBar). */
+const rootEl = ref<HTMLElement | null>(null);
+const collapsed = ref(false);
+let scroller: HTMLElement | null = null;
+const HEADER_PEEK_PX = 12;
+
+function syncCollapsed() {
+  collapsed.value = (scroller?.scrollTop ?? 0) > HEADER_PEEK_PX;
+}
+
+onMounted(() => {
+  let el: HTMLElement | null = rootEl.value?.parentElement ?? null;
+  while (el) {
+    const overflowY = getComputedStyle(el).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll") { scroller = el; break; }
+    el = el.parentElement;
+  }
+  scroller?.addEventListener("scroll", syncCollapsed, { passive: true });
+  syncCollapsed();
+});
+onBeforeUnmount(() => scroller?.removeEventListener("scroll", syncCollapsed));
 
 const EXT_LABEL: Record<string, string> = {
   mp3: "MP3", flac: "FLAC", ogg: "OGG", wav: "WAV", m4a: "M4A", aac: "AAC", opus: "OPUS", ape: "APE", wma: "WMA",
@@ -93,27 +116,29 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-6xl px-6 py-6">
-    <div v-if="player.tracks.length === 0" class="ak-frame grid place-items-center gap-4 border border-dashed border-line bg-surface/50 px-6 py-24 text-center">
-      <template v-if="loading"><span class="ak-pulse"></span><p class="text-sm font-semibold uppercase tracking-[0.2em] text-muted">{{ t("library.loading") }}</p></template>
-      <template v-else><AudioLines :size="36" class="text-dim" /><p class="text-base font-semibold uppercase tracking-[0.2em]">{{ t("library.emptyTitle") }}</p><p class="max-w-md text-sm text-muted">{{ t("library.emptyDesc") }}</p><button type="button" class="ak-clip-tr h-10 bg-accent px-5 text-[13px] font-bold uppercase tracking-[0.25em] text-accent-fg" @click="emit('settings')">{{ t("library.emptyAction") }}</button></template>
-    </div>
-
-    <template v-else>
-      <!-- Home header: title on the left, avatar entry to settings on the right. -->
-      <header class="mb-4 mt-1 flex items-center justify-between">
-        <h1 class="text-2xl font-black tracking-tight">{{ t("nav.home") }}</h1>
-        <button
-          type="button"
-          class="grid h-11 w-11 place-items-center rounded-full border border-line bg-surface text-accent transition-transform active:scale-95"
-          :aria-label="t('nav.settings')"
-          :title="t('nav.settings')"
-          @click="emit('settings')"
-        >
-          <span v-if="avatarInitial" class="text-base font-bold leading-none">{{ avatarInitial }}</span>
-          <User v-else :size="20" />
-        </button>
-      </header>
+  <div ref="rootEl" class="mx-auto w-full max-w-6xl px-6 py-6">
+    <!-- Home header: title on the left, avatar entry to settings on the right.
+         Sticky: scrolling tucks the large title and avatar into a pinned top bar. -->
+    <header
+      class="sticky top-0 z-20 -mx-6 flex items-center justify-between px-6 transition-[padding,background-color,border-color] duration-200"
+      :class="collapsed ? 'border-b border-line bg-bg/95 py-2 backdrop-blur' : 'border-b border-transparent bg-transparent py-1'"
+    >
+      <h1
+        class="truncate font-black tracking-tight transition-[font-size] duration-200"
+        :class="collapsed ? 'text-base' : 'text-2xl'"
+      >{{ t("nav.home") }}</h1>
+      <button
+        type="button"
+        class="grid shrink-0 place-items-center rounded-full border border-line bg-surface text-accent transition-[width,height,font-size] duration-200 active:scale-95"
+        :class="collapsed ? 'h-9 w-9' : 'h-11 w-11'"
+        :aria-label="t('nav.settings')"
+        :title="t('nav.settings')"
+        @click="emit('settings')"
+      >
+        <span v-if="avatarInitial" class="font-bold leading-none" :class="collapsed ? 'text-sm' : 'text-base'">{{ avatarInitial }}</span>
+        <User v-else :size="collapsed ? 18 : 20" />
+      </button>
+    </header>
 
       <!-- Daily recommendation: square cover cards on a horizontal rail. -->
       <section v-if="recommended.length">
@@ -203,7 +228,6 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </article>
         </div>
       </section>
-    </template>
 
     <TrackContextMenu v-if="contextTrack" :track="contextTrack" :x="contextPosition.x" :y="contextPosition.y" :downloading="downloadingTrackId === contextTrack.id" @close="contextTrack = null" @download-metadata="downloadMetadata" @edit-lyrics="emit('editLyrics', $event)" @edit-info="emit('editInfo', $event)" @show-info="emit('showInfo', $event)" />
   </div>

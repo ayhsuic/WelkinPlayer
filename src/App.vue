@@ -578,7 +578,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
             <DownloadedView v-else-if="baseView === 'downloaded'" key="split-downloaded" @open-artist="openArtist" @open-album="openAlbum" />
             <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="split-playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
           </template>
-          <LibraryView v-else-if="sheetTab === 'home'" key="split-home" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
+          <LibraryView v-else-if="sheetTab === 'home'" key="split-home" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <LibraryListView v-else-if="sheetTab === 'library'" key="split-library" @navigate="navigate" @open-playlist="openUserPlaylist" @create-playlist="createPlaylist" />
           <SettingsView v-else-if="sheetTab === 'settings'" key="split-settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
           <SearchView v-else key="split-search" @open-artist="openArtist" @open-album="openAlbum" />
@@ -614,7 +614,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
       <main class="relative min-w-0 flex-1 overflow-y-auto" :style="{ paddingTop: 'env(safe-area-inset-top)' }">
         <Transition name="page" mode="out-in">
           <WallView v-if="baseView === 'wall'" key="wall" :focus-token="wallFocusToken" @open-lyrics="navigate('player')" />
-          <LibraryView v-else-if="baseView === 'library'" key="library" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
+          <LibraryView v-else-if="baseView === 'library'" key="library" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <TracksView v-else-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <SourcesView v-else-if="baseView === 'folders' || baseView === 'webdav' || (baseView === 'source-browser' && !browseSourceId)" :key="`sources-${sourcesPageKind}`" :kind="sourcesPageKind" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig(sourcesPageKind === 'webdav' ? 'webdav' : 'folders')" />
           <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate(browseSourceKind === 'webdav' ? 'webdav' : 'folders')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
@@ -646,7 +646,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
       </template>
 
       <!-- The main tab pages. -->
-      <LibraryView v-else-if="sheetTab === 'home'" key="sheet-home" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
+      <LibraryView v-else-if="sheetTab === 'home'" key="sheet-home" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
       <LibraryListView v-else-if="sheetTab === 'library'" key="sheet-library" @navigate="navigate" @open-playlist="openUserPlaylist" @create-playlist="createPlaylist" />
       <SettingsView v-else-if="sheetTab === 'settings'" key="sheet-settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @sources="openSourceConfig('settings')" @friendly-error="showError" />
       <SearchView v-else key="sheet-search" @open-artist="openArtist" @open-album="openAlbum" />
