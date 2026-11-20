@@ -44,7 +44,6 @@ import MobileTabBar from "./components/MobileTabBar.vue";
 import WallView from "./components/wall/WallView.vue";
 import AudioQualityModal from "./components/AudioQualityModal.vue";
 import MeteredPlaybackModal from "./components/MeteredPlaybackModal.vue";
-import SetupWizard from "./components/SetupWizard.vue";
 import ToastStack from "./components/ToastStack.vue";
 import LibraryView from "./views/LibraryView.vue";
 import PlayerView from "./views/PlayerView.vue";
@@ -238,29 +237,12 @@ watch(view, (next) => { if (!OVERLAY_VIEWS.has(next)) baseView.value = next; });
 // so configuring a source in Settings takes effect without a manual refresh.
 let sourceReloadTimer = 0;
 watch(() => sources.revision, () => {
-  if (!booted.value || profile.firstRun || !sources.hasSources) return;
+  if (!booted.value || !sources.hasSources) return;
   window.clearTimeout(sourceReloadTimer);
   sourceReloadTimer = window.setTimeout(() => void loadRemoteLibrary({ silent: true }), 400);
 });
 watchEffect(() => { document.documentElement.classList.toggle("dark", theme.value === "dark"); document.documentElement.dataset.accent = accent.value; localStorage.setItem("welkin-theme", theme.value); localStorage.setItem("welkin-accent", accent.value); });
 watchEffect(() => { document.documentElement.lang = locale.value; localStorage.setItem("welkin-locale", locale.value); });
-
-/** Minimum time (ms) the inline splash stays visible so its reveal can play and a fast boot doesn't flash it. */
-const SPLASH_MIN_MS = 3000;
-/** Dismisses the static splash screen inlined in index.html once the app is ready. */
-function dismissSplash() {
-  const splash = document.getElementById("splash");
-  if (!splash) return;
-  const elapsed = Date.now() - (window.__welkinSplashStart ?? Date.now());
-  window.setTimeout(() => {
-    splash.classList.add("splash-out");
-    // The fade is 420ms; remove the node after it ends, with a timeout as a fallback.
-    splash.addEventListener("transitionend", () => splash.remove(), { once: true });
-    window.setTimeout(() => splash.remove(), 800);
-  }, Math.max(0, SPLASH_MIN_MS - elapsed));
-}
-// Reveal the app and fade the splash out once bootstrap() has finished hydrating.
-watch(booted, (ready) => { if (ready) dismissSplash(); });
 
 watch(() => trackKey(player.currentTrack), (key) => { if (booted.value && key && player.isPlaying) profile.recordPlay(key); });
 
@@ -522,21 +504,13 @@ async function bootstrap() {
   await sources.hydrate();
   // Title readings are cheap to read back and make the first title sort instant.
   await loadReadings();
-  const firstRun = await profile.hydrate();
+  await profile.hydrate();
   const seeded = await playback.hydrate({ path: profile.profile.lastTrack, position: profile.profile.lastPosition });
   if (seeded) profile.clearLegacyPlayback();
   booted.value = true;
   void loadCachedLibrary();
-  if (!firstRun) {
-    // The wizard owns the first fetch; returning users refresh silently.
-    void profile.syncRemote();
-    if (sources.hasSources) void loadRemoteLibrary({ silent: true });
-  }
-}
-
-function onWizardFinish() {
-  if (sources.hasSources) void loadRemoteLibrary();
-  else void loadCachedLibrary();
+  void profile.syncRemote();
+  if (sources.hasSources) void loadRemoteLibrary({ silent: true });
 }
 
 function showError(error: unknown) { pushToast("error", friendlyError(error)); }
@@ -579,8 +553,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
   <Transition name="info"><TrackInfoView v-if="view === 'track-info' && viewingTrack" :path="viewingTrack.path ?? null" :source-id="viewingTrack.sourceId" @back="closeOverlay" /></Transition>
   <Transition name="info"><LyricsEditorView v-if="view === 'lyrics-edit' && editingLyricsTrack" :path="editingLyricsTrack.path ?? null" :source-id="editingLyricsTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
   <Transition name="info"><TrackEditorView v-if="view === 'track-edit' && editingTrack" :path="editingTrack.path ?? null" :source-id="editingTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
-  <SetupWizard v-if="booted && profile.firstRun" v-model:theme="theme" v-model:accent="accent" @finish="onWizardFinish" />
-  <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg" :class="booted ? '' : 'opacity-0'">
+  <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg">
     <!-- Landscape split: navigation rail on the left, cover wall on the right
          with the seek bar beside the wall. Width follows the viewport ratio,
          not a fixed breakpoint. -->

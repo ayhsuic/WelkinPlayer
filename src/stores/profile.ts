@@ -21,9 +21,6 @@ import type { Track } from "./player";
 /** Where the loaded profile came from. */
 export type ProfileSource = "remote" | "local" | "none";
 
-/** Outcome of probing the server for an existing profile document. */
-export type RemoteProbe = "found" | "missing" | "error";
-
 interface LoadedProfile {
   content: string | null;
   source: ProfileSource;
@@ -56,7 +53,6 @@ const RECENT_LIMIT = 12;
 export const useProfileStore = defineStore("profile", () => {
   const profile = ref<Profile>(createDefaultProfile());
   const ready = ref(false);
-  const firstRun = ref(false);
   const source = ref<ProfileSource>("none");
   const remoteError = ref<string | null>(null);
   const saving = ref(false);
@@ -113,14 +109,9 @@ export const useProfileStore = defineStore("profile", () => {
     profile.value.updatedAt = Date.now();
   }
 
-  /**
-   * Load the local cache immediately (no network). Returns `true` when the
-   * first-run wizard should show. The authoritative remote copy is fetched
-   * separately: [`syncRemote`] for returning users, or [`fetchRemote`] from the
-   * wizard once server credentials are known.
-   */
-  async function hydrate(): Promise<boolean> {
-    if (ready.value) return firstRun.value;
+  /** Load the local cache immediately (no network). The remote copy is fetched separately by [`syncRemote`]. */
+  async function hydrate(): Promise<void> {
+    if (ready.value) return;
     const fallback = createDefaultProfile();
     try {
       const local = await invoke<LoadedProfile>("load_local_profile");
@@ -129,17 +120,14 @@ export const useProfileStore = defineStore("profile", () => {
       const migrated = migrateKeys(parseProfile(local.content, fallback));
       profile.value = migrated.value;
       if (migrated.changed) scheduleSave();
-      firstRun.value = local.content === null || !profile.value.initialized;
       revision.value += 1;
     } catch (error) {
       remoteError.value = error instanceof Error ? error.message : String(error);
       profile.value = fallback;
-      firstRun.value = true;
     } finally {
       ready.value = true;
     }
     void resolveCovers();
-    return firstRun.value;
   }
 
   /** Fetch the authoritative remote copy and replace the cache when available. */
@@ -152,7 +140,6 @@ export const useProfileStore = defineStore("profile", () => {
         profile.value = migrated.value;
         if (migrated.changed) scheduleSave();
         source.value = "remote";
-        firstRun.value = !profile.value.initialized;
         revision.value += 1;
         void resolveCovers();
         void migrateLegacyCovers();
@@ -168,35 +155,6 @@ export const useProfileStore = defineStore("profile", () => {
       source.value = remote.source;
     } catch (error) {
       remoteError.value = error instanceof Error ? error.message : String(error);
-    }
-  }
-
-  /**
-   * Probe the server for an existing profile without any seeding side effects.
-   *
-   * Used by the first-run wizard *after* the user has saved WebDAV credentials:
-   * when an initialized document is found it is applied and the wizard skips
-   * the remaining configuration instead of overwriting the remote copy.
-   */
-  async function fetchRemote(): Promise<RemoteProbe> {
-    try {
-      const remote = await invoke<LoadedProfile>("load_remote_profile");
-      remoteError.value = remote.remoteError;
-      if (remote.source === "remote" && remote.content !== null) {
-        const migrated = migrateKeys(parseProfile(remote.content, profile.value));
-        profile.value = migrated.value;
-        if (migrated.changed) scheduleSave();
-        source.value = "remote";
-        revision.value += 1;
-        void resolveCovers();
-        void migrateLegacyCovers();
-        return profile.value.initialized ? "found" : "missing";
-      }
-      source.value = remote.source;
-      return remote.remoteError ? "error" : "missing";
-    } catch (error) {
-      remoteError.value = error instanceof Error ? error.message : String(error);
-      return "error";
     }
   }
 
@@ -232,21 +190,6 @@ export const useProfileStore = defineStore("profile", () => {
     profile.value.nickname = value;
     touch();
     scheduleSave();
-  }
-
-  function completeSetup() {
-    profile.value.initialized = true;
-    firstRun.value = false;
-    touch();
-    return flush();
-  }
-
-  /**
-   * Close the wizard after an existing remote profile was loaded, without
-   * writing anything back: the remote document is already authoritative.
-   */
-  function finishExisting() {
-    firstRun.value = false;
   }
 
   function recordPlay(path: string | undefined) {
@@ -490,7 +433,6 @@ export const useProfileStore = defineStore("profile", () => {
   return {
     profile,
     ready,
-    firstRun,
     source,
     remoteError,
     saving,
@@ -506,12 +448,9 @@ export const useProfileStore = defineStore("profile", () => {
     hasRemoteCopy,
     hydrate,
     syncRemote,
-    fetchRemote,
     flush,
     scheduleSave,
     setNickname,
-    completeSetup,
-    finishExisting,
     recordPlay,
     clearLegacyPlayback,
     isFavorite,

@@ -60,7 +60,7 @@ export interface SmartTransitionMeta {
  */
 export interface Profile {
   version: number;
-  /** Whether the first-run wizard has been completed. */
+  /** Whether the profile document has been initialized. */
   initialized: boolean;
   nickname: string;
   /** Remote track path -> number of times playback started. */
