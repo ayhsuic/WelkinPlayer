@@ -201,12 +201,12 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
                 <p class="truncate text-sm font-semibold" :class="isActive(track) ? 'text-accent' : ''">{{ track.title }}</p>
                 <p class="truncate text-xs text-muted">{{ track.artist }}</p>
               </div>
-              <span class="shrink-0 text-xs tabular-nums text-muted">{{ track.duration }}</span>
               <div class="ak-clip-tr relative h-12 w-12 shrink-0 overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
                 <LoaderCircle v-else-if="coverPending(track)" :size="18" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
                 <span v-else class="absolute inset-0 grid place-items-center text-xl font-black text-white/90">{{ initial(track) }}</span>
                 <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1 left-1 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                <span v-if="isHiRes(track)" class="absolute bottom-1 right-1 rounded bg-amber-400/95 px-1 py-0.5 text-[8px] font-bold leading-none tracking-wide text-black">HR</span>
               </div>
             </article>
           </div>
@@ -226,6 +226,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
               <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
               <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
               <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+              <span v-if="isHiRes(track)" class="absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide text-black">HR</span>
             </div>
             <p class="mt-2 truncate text-sm font-medium">{{ track.title }}</p>
             <p class="truncate text-xs text-muted">{{ track.artist }}</p>
