@@ -194,7 +194,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recommended"
             :key="`rec-${track.id}`"
-            class="ak-clip-tr group relative aspect-square w-1/2 max-w-[25vh] shrink-0 cursor-pointer overflow-hidden"
+            class="ak-clip-tr group relative aspect-square w-[10rem] max-w-[25vh] shrink-0 cursor-pointer overflow-hidden"
             :style="{ backgroundColor: track.color }"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
@@ -255,24 +255,28 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </div>
         </div>
 
-        <!-- Rail: whole card (square cover + caption) totals 1/4 of the viewport height. -->
-        <div v-else class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
+        <!-- Responsive card wall: columns auto-fill from the minimum cover edge; cover + caption stay within 1/4 height. -->
+        <div v-else class="album-wall grid gap-x-4 gap-y-6">
           <article
             v-for="track in recentTracks"
             :key="`hist-${track.id}`"
-            class="flex w-1/3 shrink-0 cursor-pointer flex-col"
+            class="flex h-[25vh] cursor-pointer flex-col"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="ak-clip-tr relative aspect-square w-full max-w-[25vh] mx-auto overflow-hidden" :style="{ backgroundColor: track.color }">
-              <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-              <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
-              <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
-              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-              <span v-if="isHiRes(track)" class="absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide text-black">HR</span>
+            <div class="flex min-h-0 w-full flex-1 items-center justify-center">
+              <div class="ak-clip-tr relative aspect-square w-full max-w-[calc(25vh-2.75rem)] overflow-hidden" :style="{ backgroundColor: track.color }">
+                <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
+                <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
+                <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                <span v-if="isHiRes(track)" class="absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide text-black">HR</span>
+              </div>
             </div>
-            <p class="mt-2 min-w-0 truncate text-sm font-medium">{{ track.title }}</p>
-            <p class="min-w-0 truncate text-xs text-muted">{{ track.artist }}</p>
+            <div class="mt-2 min-w-0 shrink-0">
+              <p class="truncate text-sm font-medium">{{ track.title }}</p>
+              <p class="truncate text-xs text-muted">{{ track.artist }}</p>
+            </div>
           </article>
         </div>
       </section>
@@ -293,45 +297,53 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </button>
         </div>
 
-        <!-- Two-column album grid: each card is half the rail width; the cover keeps a 1:1 square. -->
-        <div v-if="addedGridMode" class="grid grid-cols-2 gap-x-4 gap-y-6">
+        <!-- Responsive album grid: columns auto-fill from the minimum cover edge; cover keeps a 1:1 square. -->
+        <div v-if="addedGridMode" class="album-wall grid gap-x-4 gap-y-6">
           <article
             v-for="track in recentlyAdded"
             :key="`add-grid-${track.id}`"
-            class="cursor-pointer"
+            class="flex h-[25vh] flex-col cursor-pointer"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="ak-clip-tr relative aspect-square w-full max-w-[25vh] mx-auto overflow-hidden" :style="{ backgroundColor: track.color }">
-              <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-              <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
-              <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
-              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-              <span v-if="isHiRes(track)" class="absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide text-black">HR</span>
+            <div class="flex min-h-0 w-full flex-1 items-center justify-center">
+              <div class="ak-clip-tr relative aspect-square w-full max-w-[calc(25vh-2.75rem)] overflow-hidden" :style="{ backgroundColor: track.color }">
+                <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
+                <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
+                <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                <span v-if="isHiRes(track)" class="absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide text-black">HR</span>
+              </div>
             </div>
-            <p class="mt-2 min-w-0 truncate text-sm font-medium">{{ track.title }}</p>
-            <p class="min-w-0 truncate text-xs text-muted">{{ track.artist }}</p>
+            <div class="mt-2 min-w-0 shrink-0">
+              <p class="truncate text-sm font-medium">{{ track.title }}</p>
+              <p class="truncate text-xs text-muted">{{ track.artist }}</p>
+            </div>
           </article>
         </div>
 
-        <!-- Rail: whole card (square cover + caption) totals 1/4 of the viewport height. -->
-        <div v-else class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
+        <!-- Responsive card wall: columns auto-fill from the minimum cover edge; cover + caption stay within 1/4 height. -->
+        <div v-else class="album-wall grid gap-x-4 gap-y-6">
           <article
             v-for="track in recentlyAdded"
             :key="`add-${track.id}`"
-            class="flex w-1/3 shrink-0 cursor-pointer flex-col"
+            class="flex h-[25vh] cursor-pointer flex-col"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="ak-clip-tr relative aspect-square w-full max-w-[25vh] mx-auto overflow-hidden" :style="{ backgroundColor: track.color }">
-              <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-              <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
-              <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
-              <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-              <span v-if="isHiRes(track)" class="absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide text-black">HR</span>
+            <div class="flex min-h-0 w-full flex-1 items-center justify-center">
+              <div class="ak-clip-tr relative aspect-square w-full max-w-[calc(25vh-2.75rem)] overflow-hidden" :style="{ backgroundColor: track.color }">
+                <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
+                <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
+                <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                <span v-if="isHiRes(track)" class="absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide text-black">HR</span>
+              </div>
             </div>
-            <p class="mt-2 min-w-0 truncate text-sm font-medium">{{ track.title }}</p>
-            <p class="min-w-0 truncate text-xs text-muted">{{ track.artist }}</p>
+            <div class="mt-2 min-w-0 shrink-0">
+              <p class="truncate text-sm font-medium">{{ track.title }}</p>
+              <p class="truncate text-xs text-muted">{{ track.artist }}</p>
+            </div>
           </article>
         </div>
       </section>
