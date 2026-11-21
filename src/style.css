@@ -39,10 +39,6 @@
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
   /* Unified clipped-corner size shared by the seekbar, switcher, tab bar and card button. */
   --cut: 12px;
-  /* Minimum cover edge for the responsive album wall. The future global scale
-     should override this token (or the root font size it derives from) instead
-     of hardcoding lengths inside the views. */
-  --cover-min: 7.5rem;
   /* Height budget base: portrait = viewport height, landscape = long edge.
      Overridden per container from the injected --ch variable. */
   --ch: 100vh;
@@ -415,11 +411,24 @@ html[data-accent="blue"] {
 
   /* Responsive album/cover wall: gaps are locked to the three-limit budget;
      tracks split the row with 1fr so cards grow/shrink to fill the width.
-     cover-min is only the minimum card edge, not a fixed width. */
+     The minimum card edge comes straight from the width budget. */
   .album-wall {
-    --cover-min: calc(var(--cw) * 0.32 * var(--rail-scale, 1));
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(var(--cover-min, 7.5rem), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(calc(var(--cw) * 0.32 * var(--rail-scale, 1)), 1fr));
+  }
+
+  /* Home "recently added" grid shares the recommend big-card height cap; the
+     wall itself stays reusable by the library list view. */
+  .home-added-wall {
+    max-height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
+    overflow-y: auto;
+  }
+
+  /* Grid cover stays 1:1 with the card column; its edge cannot grow past the
+     recommend card height (max cap only, height follows the square). */
+  .home-added-wall .home-card-cover {
+    max-height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
+    max-width: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
   }
 
   /* Three-limit model: every element has a width budget (fraction of the page
@@ -427,33 +436,49 @@ html[data-accent="blue"] {
      height). The height cap presses back on the width, so widening cannot grow
      elements without bound. --rail-scale is the landscape factor; portrait 1. */
   .home-rec-card {
-    width: calc(var(--cw) * 0.444 * var(--rail-scale, 1));
+    height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
     aspect-ratio: 1 / 1;
-    max-width: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
+    max-width: 100%;
   }
 
   .home-rail-card {
-    width: calc(var(--cw) * 0.333 * var(--rail-scale, 1));
+    width: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
+    max-width: 100%;
+    align-items: flex-start;
+    min-width: 0;
+  }
+
+  .home-rail-card .home-card-cover {
+    width: auto;
+    height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
+    aspect-ratio: 1 / 1;
+    max-width: 100%;
   }
 
   .home-recent-columns {
-    /* Whole recent-play block shares the same height cap as the recommend card:
-       0.25ch. Actual column height follows the resolved row count so wrap
-       columns stay even when the box cannot fit three rows. */
-    max-height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
+    /* Column-first wrap: each column holds three rows, extra columns slide
+       sideways. One row cap is the recommend card edge / 3; the box height
+       budgets three rows plus two row gaps so a column never drops to two rows
+       and spills into a fourth column. */
     display: flex;
     flex-direction: column;
     flex-wrap: wrap;
-    align-content: flex-start;
-    align-items: flex-start;
-    column-gap: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.015 * var(--rail-scale, 1)));
+    max-height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1) + var(--ch, 100vh) * 0.016 * var(--rail-scale, 1) * 2);
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
     row-gap: calc(var(--ch, 100vh) * 0.016 * var(--rail-scale, 1));
+    column-gap: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.015 * var(--rail-scale, 1)));
   }
 
-  /* List row item: horizontal strip (caption left, cover right). Width anchored
-     to --cw; row height follows the cover/caption instead of a fixed budget. */
+  /* List row item: horizontal strip (caption left, cover right). Height anchors
+     to one third of the recommend card height; aspect 4:1 derives the width,
+     so the strip keeps its ratio and the height cannot be outgrown. */
   .home-list-item {
-    width: calc(var(--cw) * 0.6 * var(--rail-scale, 1));
+    height: calc(var(--ch, 100vh) * 0.25 / 3 * var(--rail-scale, 1));
+    aspect-ratio: 4 / 1;
+    align-self: flex-start;
+    max-width: 100%;
+    scroll-snap-align: start;
     gap: min(calc(var(--cw) * 0.02 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.02 * var(--rail-scale, 1)));
     min-width: 0;
     padding: 0;
@@ -464,13 +489,12 @@ html[data-accent="blue"] {
     min-width: 0;
   }
 
-  /* List row cover: independent three-limit budget; 1:1 square, width anchored
-     to --cw and pressed back by --ch so it cannot grow the row without bound. */
+  /* List row cover: 1:1 square anchored to the row height; width derives from
+     the same height so it cannot stick out above/below the strip. */
   .home-list-cover {
-    width: calc(var(--cw) * 0.13 * var(--rail-scale, 1));
+    height: calc(var(--ch, 100vh) * 0.25 / 3 * var(--rail-scale, 1));
     aspect-ratio: 1 / 1;
-    height: auto;
-    max-width: calc(var(--ch, 100vh) * 0.09 * var(--rail-scale, 1));
+    max-width: 100%;
   }
 
   /* Album grid card: a grid item defaults to min-width:auto, which lets a long

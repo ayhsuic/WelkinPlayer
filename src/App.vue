@@ -135,8 +135,9 @@ const isLandscape = ref(false);
  * 9:21 hide line; the upper bound only keeps the wall's minimum 9:21 width.
  * Below the hide line the rail collapses and the wall goes full-screen.
  */
-/** Default rail width as a fraction of the short edge: 1 = the full portrait width. */
-const RAIL_BASE_H_RATIO = 1;
+/** Default rail width as a fraction of the short edge: 16/9 gives a 16:9 rail;
+ *  the handle drag still resizes it within the lower/upper bounds. */
+const RAIL_BASE_H_RATIO = 16 / 9;
 const WALL_MIN_H_RATIO = 9 / 21;
 const RAIL_HIDE_H_RATIO = 9 / 21;
 const HANDLE_W = 18;
@@ -177,19 +178,10 @@ const contentWidth = ref(Math.max(1, window.innerWidth));
 const contentHeight = ref(Math.max(1, window.innerHeight));
 
 /**
- * Secondary scale k for the rail. The 9:21 rail line is the baseline where k = 1
- * (default, largest size); once the panel/viewport is pulled wider than that
- * aspect ratio, elements shrink proportionally with width/height. Narrower than
- * the baseline k stays clamped at 1, never enlarged. Width is the dragged rail
- * width in landscape, the viewport width otherwise; height follows the
- * container's own visible height.
+ * Secondary scale k, fixed at 1: elements follow only the --cw/--ch three-limit
+ * budgets with no secondary proportional scaling.
  */
-const BASE_ASPECT = 9 / 21;
-const railElementScale = computed(() => {
-  const w = isLandscape.value ? navWidth.value : contentWidth.value;
-  const h = Math.max(1, contentHeight.value);
-  return Math.min(1, BASE_ASPECT / (w / h));
-});
+const railElementScale = computed(() => 1);
 
 /**
  * Push the budget bases onto <html> so nodes teleported to <body> (the mobile

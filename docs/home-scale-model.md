@@ -1,14 +1,16 @@
 ---
 name: home-scale-model
-description: Welkin 首页（含底栏）三限制预算模型与二次缩放 k 的尺寸规范。新增首页/底栏元素、调整档位或排查横屏抽屉尺寸异常时遵循；封面墙、全屏播放页/歌词、墙面侧进度条不在本规范范围。
+description: Welkin 首页（含底栏）高度优先预算模型的尺寸规范。新增首页/底栏元素、调整档位或排查横屏抽屉尺寸异常时遵循；封面墙、全屏播放页/歌词、墙面侧进度条不在本规范范围。
 scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/LibraryView.vue
 ---
 
-# 首页三限制预算模型 + 二次缩放 k
+# 首页高度优先预算模型
 
 ## 1. 目标
 
-首页顶栏、底栏与正文的所有尺寸（宽、高、字号、间距）都由容器自身的宽高预算推导，不再写死像素，也不再叠加旧的「短边/长边」二次系数。横屏抽屉被拉长时，元素按宽高比二次缩小；9:21 窄抽屉是基准尺寸（最大）。
+首页顶栏、底栏与正文的所有尺寸（宽、高、字号、间距）都由容器自身的宽高预算推导，不写死像素。
+
+**尺寸口径：高度优先，比例反推宽度。** 每个方卡/横条先把 `height` 锚定到视口高 `--ch` 的固定比例，再用 `aspect-ratio` 由高度反推宽度；宽度不再作为起步预算，也不靠高度封顶去回压宽度。这样宽侧栏把容器拉宽时，条目不会被拉成超宽扁条，比例始终锁死。
 
 ### 范围
 
@@ -28,44 +30,42 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 
 ## 2. 基准变量
 
-注入位置见 `src/App.vue`：根 div 注入 `--cw/--ch`；横屏 aside 覆盖 `--cw` 并额外注入 `--rail-scale`。
+注入位置见 `src/App.vue`：根 div 注入 `--cw/--ch`；横屏 aside 覆盖 `--cw` 并额外注入 `--rail-scale`；`watchEffect` 把 `--cw/--ch/--rail-scale` 同步到 `documentElement`，保证 Teleport 到 body 的竖屏抽屉也能继承变量。
 
 | 变量 | 含义 | 取值 |
 |---|---|---|
 | `--cw` | 宽度预算基准 | 竖屏 = 视口宽 `innerWidth`；横屏 = 侧栏宽 `navWidth` |
 | `--ch` | 高度预算基准 | 横竖屏都 = 容器可视高 `innerHeight`；`:root` 兜底 `100vh` |
-| `--rail-scale` | 二次缩放系数 k（见第 4 节） | 仅横屏 aside 注入；竖屏缺省兜底 `1` |
+| `--rail-scale` | 预留缩放系数 k | 当前恒为 `1`（`railElementScale` 定稿返回 1）；样式侧统一 `var(--rail-scale, 1)` 兜底，变量位保留以备后用 |
 
-> 早期横屏抽屉曾用「短边/长边」把竖屏基准再缩一次，确认侧栏压窄时浏览器显示的是手机竖屏视图，该系数属于重复二次收缩，已移除。
+> 早期横屏抽屉曾用「短边/长边」把竖屏基准再缩一次，又试过按宽高比的反比二次缩放 k；两者都会在宽侧栏把封面压到不可用，现已定稿为 k=1，元素只走 `--cw/--ch` 预算，不再二次比例缩放。
 
-## 3. 三限制模型
+## 3. 高度优先模型
 
-每个元素同时受三条限制，宽度被高度上限反压，避免拉宽后元素无界长大：
+### 3.1 写法约定
 
-- 宽预算：`--cw × pW × k`
-- 高上限：`--ch × pH × k`（反压宽度）
-- 字号：`min(--cw × fW × k, --ch × fH × k)`
+- 方卡：`height: ch×比例×k` + `aspect-ratio: 1/1`，宽度由高度反推；`max-width: 100%` 兜底防窄屏溢出。
+- 横条（列表条目）：`height: ch×比例×k` + `aspect-ratio: 4/1`，宽度由高度反推；`align-self: flex-start` 防 flex 交叉轴拉伸。
+- 封面：`height` 锚定到所属条目/卡片高度，`aspect-ratio: 1/1`，宽度反推。
+- 所有元素 `max-width: 100%`，窄屏容器装不下时收窄而不是溢出。
+- 网格墙是唯一的列宽驱动：封面宽跟随 grid 列宽，高度由 `aspect-square` 反推，再用 `max-height/max-width` 封顶到推荐卡边。
 
-其中 `pW / pH / fW / fH` 是各元素的预算系数，`k` 是第 4 节的二次缩放系数。
+### 3.2 关键档位表
 
-### 3.1 关键档位表
+下列系数与 `src/style.css` 一一对应；`k` 即 `var(--rail-scale, 1)`，当前恒 1。
 
-下列系数与 `src/style.css` 一一对应；`k` 即 `var(--rail-scale, 1)`。
-
-| 元素 | 类名 | 宽度 | 高/上限 | 字号 |
+| 元素 | 类名 | 高度锚定 | 比例 / 宽度 | 备注 |
 |---|---|---|---|---|
-| 封面墙最小卡边 | `.album-wall` | `--cover-min = cw×0.32×k`，grid `auto-fill minmax(var(--cover-min), 1fr)` | — | — |
-| 每日推荐卡 | `.home-rec-card` | `cw×0.444×k` | aspect `1/1`；`max-width ch×0.25×k` | — |
-| 横滑小卡 | `.home-rail-card` | `cw×0.333×k` | — | — |
-| 最近播放列容器 | `.home-recent-columns` | — | `max-height ch×0.25×k`；flex column wrap | — |
-| 列表条目 | `.home-list-item` | `cw×0.6×k`；`min-width:0; padding:0`；不设固定高/aspect | 高跟随封面/文字 | — |
-| 条目封面 | `.home-list-cover` | `cw×0.13×k`；aspect `1/1`；`height:auto` | `max-width ch×0.09×k` | — |
-| 网格标题 | `.album-grid-card__title` | — | — | `min(cw×0.035, ch×0.026)×k` |
-| 网格歌手 | `.album-grid-card__artist` | — | — | `min(cw×0.029, ch×0.022)×k` |
-| 卡片标题 | `.home-card-title` | — | — | `min(cw×0.036, ch×0.026)×k` |
-| 卡片歌手 | `.home-card-artist` | — | — | `min(cw×0.030, ch×0.022)×k` |
+| 每日推荐卡 | `.home-rec-card` | `ch×0.25×k` | aspect `1/1`，宽=高 | `max-width:100%` |
+| 横滑小卡 | `.home-rail-card` | 封面 `ch×0.25×k` | 卡宽 `ch×0.25×k`；封面 aspect `1/1`、`width:auto` | `align-items:flex-start; min-width:0`；标题在卡宽内截断 |
+| 最近播放列容器 | `.home-recent-columns` | `max-height ch×0.25×k + 2×ch×0.016×k` | flex column wrap，超出列横向横滑 | `scroll-snap-type:x mandatory`；条目 `scroll-snap-align:start` |
+| 列表条目 | `.home-list-item` | `ch×0.25/3×k` | aspect `4/1`，宽=高×4 | `align-self:flex-start; min-width:0; padding:0` |
+| 条目封面 | `.home-list-cover` | `ch×0.25/3×k` | aspect `1/1`，宽=高 | — |
+| 网格墙 | `.album-wall` | — | grid `auto-fill minmax(cw×0.32×k, 1fr)` | 列宽驱动，最小卡边 `cw×0.32×k` |
+| 最近添加网格 | `.home-added-wall` | `max-height ch×0.25×k` | `overflow-y:auto` | 与推荐卡同高 |
+| 网格封面 | `.home-added-wall .home-card-cover` | 封顶 `ch×0.25×k` | 宽跟随列宽，aspect `1/1` | `max-height/max-width ch×0.25×k` |
 
-### 3.2 间距档位
+### 3.3 间距档位
 
 | 用途 | 类名 | 取值 |
 |---|---|---|
@@ -78,73 +78,86 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 | 标题下距 | `.home-mb-title` | `ch×0.015×k` |
 | 副标题上距 | `.home-mt-caption` | `ch×0.003×k` |
 | 列表底距 | `.home-pb-rail` | `ch×0.012×k` |
+| 折列行距 | `.home-recent-columns` row-gap | `ch×0.016×k` |
+| 折列列距 | `.home-recent-columns` column-gap | `min(cw×0.033, ch×0.015)×k` |
 
-### 3.3 底栏 MobileTabBar
+### 3.4 字号档位
+
+| 元素 | 类名 | 字号 |
+|---|---|---|
+| 网格标题 | `.album-grid-card__title` | `min(cw×0.035, ch×0.026)×k` |
+| 网格歌手 | `.album-grid-card__artist` | `min(cw×0.029, ch×0.022)×k` |
+| 卡片标题 | `.home-card-title` | `min(cw×0.036, ch×0.026)×k` |
+| 卡片歌手 | `.home-card-artist` | `min(cw×0.030, ch×0.022)×k` |
+
+### 3.5 底栏 MobileTabBar
 
 栏高 `ch×0.072×k`；图标宽 `cw×0.061×k`、`max-width ch×0.045×k`；标签字号 `min(cw×0.033, ch×0.025)×k`；底部偏移 `ch×0.012×k`；图标 gap `ch×0.005×k`。
 
-## 4. 二次缩放 k
+## 4. 二次缩放系数 k（已定稿为 1）
 
-### 4.1 规则
+- `railElementScale` computed 恒返回 `1`，元素只走 `--cw/--ch` 预算，不再按宽高比二次缩放。
+- `--rail-scale` 变量位与样式侧 `var(--rail-scale,1)` 兜底保留，后续若需要横屏整体缩放，改 `railElementScale` 一处即可，样式无需动。
+- 历史死路：纯反比缩放（去封顶）会把宽侧栏封面缩到十几像素不可用；按宽高比 k 反推同样在宽侧栏过度收缩，均已废弃。
 
-- 基准宽高比 `BASE_ASPECT = 9/21`，此时 `k = 1`（默认、最大尺寸）。
-- 抽屉/视口被拉宽、宽高比大于基准时，元素随宽高比二次缩小；窄于基准时 `k` 钳在 1，不放大。
-- 宽度取值：横屏用侧栏宽 `navWidth`，竖屏用视口宽 `contentWidth`；高度恒取容器可视高 `contentHeight`。
-
-### 4.2 公式
-
-```
-k = min(1, BASE_ASPECT / (w / h))
-```
-
-- `w`：横屏 `navWidth`，竖屏 `innerWidth`
-- `h`：`innerHeight`
-- `BASE_ASPECT = 9 / 21`
-
-实现见 `src/App.vue` 的 `railElementScale` computed；结果经 aside 的 `--rail-scale` 下发，样式侧统一用 `var(--rail-scale, 1)` 兜底。
-
-### 4.3 实测对照（ch = 823）
-
-| 抽屉档位 | 宽 w | 宽高比 w/h | k | 条目 | 条目封面 |
-|---|---|---|---|---|---|
-| 9:21 窄抽屉 | 353 | 0.429 | ≈ 1.000 | 212×46 | 46×46 |
-| 宽抽屉 | 823 | 1.000 | 0.429 | 212×32 | 32×32 |
-
-## 5. 最近播放：折列横滑与行反压
+## 5. 最近播放：折列横滑
 
 ### 5.1 排布
 
-- 外层容器 `overflow-x-auto` 横向滑动；
-- 内层 `.recent-columns`：`flex-direction: column; flex-wrap: wrap`，条目直挂列容器，自上而下填满一列后向右折列；
-- 不做显式 chunk 分页分组；不内联写死列高（固定列高在临界高度会把第二条挤出单列）。
+- 列表模式（`recentListMode=1`）：外层 `.home-recent-columns` 为 `flex-direction:column; flex-wrap:wrap`，条目自上而下填满一列后向右折列；超出列进入横向横滑。
+- 每列固定排满三行（`HOME_LIMIT=8`，分组 `[0,1,2][3,4,5][6,7]`），列数 ≤3；容器高度按三行加两行行距预算，临界高度不会把条目挤出单列。
+- 横滑带滚动吸附：`scroll-snap-type:x mandatory`，条目 `scroll-snap-align:start`，文字头随条目左缘对齐吸附起点。
+- rail 模式（`recentListMode=0`）：单行横滑小卡，封面 + 下方标题，卡宽锁到封面反推宽。
 
-### 5.2 行反压（高度不足减行）
+### 5.2 已移除的旧链路
 
-`src/views/LibraryView.vue`：
-
-- `rowsPerPage` 目标 3 行；
-- `syncRecentRows()` 按列容器可用高度、实测行高（文字 caption 高与封面 cover 高取大）、行距，从 3 递减到 2、1；
-- `ResizeObserver` 观察列容器，另挂 `resize` 监听；曲目/布局模式变化后 `nextTick` 重建；卸载时 disconnect 与移除监听。
+早期按列容器实测高度做「行反压减行」的 `syncRecentRows()` / `ResizeObserver` / `resize` 监听链路已删除；三行由固定高度预算保证，不再运行时反压。
 
 ## 6. 保留的固定像素
 
-下列属于跨页通用装饰或本轮排除范围，维持固定 px，不纳入三限制预算：
+下列属于跨页通用装饰或本轮排除范围，维持固定 px，不纳入预算：
 
 - 切角 `--cut: 12px`、L 形描边 `1/2px`、clip-path 切角、均衡器条（12px / gap 2px）、阴影；
 - 弹窗/开关/通用小部件：开关 `46×24`、底栏避让 `84px`、子面板 `min(340px, 100%-80px)`、弹层 `bottom 24px`、抽屉把手 `HANDLE_W = 18px`。
 
-## 7. 验收方法
+## 7. 实测对照
+
+### 7.1 21:9 横屏（1920×823，ch=823，cw≈1463）
+
+| 元素 | 实测宽×高 | 比例 |
+|---|---|---|
+| 推荐大卡 | 206×206 | 1:1 |
+| 列表条目 | 274×69 | 4:1 |
+| 条目封面 | 69×69 | 1:1 |
+| rail 卡 / 封面 | 206 / 206×206 | 1:1 |
+| 网格封面 | 206×206 | 1:1 |
+
+### 7.2 9:21 窄屏（360×840，ch=840，cw≈312）
+
+| 元素 | 实测宽×高 | 比例 |
+|---|---|---|
+| 推荐大卡 | 210×210 | 1:1 |
+| 列表条目 | 280×70 | 4:1 |
+| 条目封面 | 70×70 | 1:1 |
+| rail 卡 / 封面 | 210 / 210×210 | 1:1 |
+| 网格封面 | 150×150 | 1:1（列宽分配，未触 210 封顶） |
+
+> 窄屏推荐卡按高度走比旧封顶版偏大，是高度优先口径的必然结果；所有元素宽度均小于容器宽，无横向溢出。
+
+## 8. 验收方法
 
 1. 类型检查：`node node_modules/vue-tsc/bin/vue-tsc.js --noEmit`，退出码 0。
 2. 前端构建：`node node_modules/vite/bin/vite.js build`，退出码 0。
 3. 浏览器探针（dev 端口 1420）：
-   - 读 aside 计算样式的 `--rail-scale`、`--cw`、`--ch`；
-   - 9:21 窄抽屉 `k ≈ 1`；宽抽屉 `k < 1`；
-   - 抽查条目/封面宽高与第 4.3 节对照一致。
+   - 读 aside 计算样式的 `--cw`、`--ch`、`--rail-scale`；
+   - 21:9 与 9:21 两档抽查推荐卡/条目/封面/网格封面宽高，比例与第 7 节一致；
+   - 确认无横向溢出、封面不被拉成扁条。
 4. 过程截图归档到 `_ui_check/`（已在 `.gitignore`，不入库）。
 
-## 8. 变更记录
+## 9. 变更记录
 
-- `1219b19` 三限制预算模型收口：`--cw/--ch` 双基准，侧栏解除比例夹取；最近播放去分组折列横滑，按可用高度反压减行。
+- `1219b19` 三限制预算模型收口：`--cw/--ch` 双基准，侧栏解除比例夹取；最近播放去分组折列横滑。
 - `4610cb5` 最近播放条目宽度档位定为 `0.60cw`。
-- 本次：`railElementScale` 由常量 1 改为按宽高比的二次缩放 k（`min(1, (9/21)/(w/h))`），宽抽屉缩小、9:21 基准为 1。
+- `railElementScale` 二次缩放 k 定稿为 1，清理反比公式残留；放开根节点 `max-w-6xl` 限宽。
+- 最近播放固定三列、折列横滑吸附；条目比例锁 4:1，高度为推荐卡 1/3。
+- 尺寸口径由「宽度预算起步 + 高度封顶回压」改为「高度优先：height 锚定 `--ch` 比例，aspect-ratio 反推宽度」；rail 卡宽锁到封面反推宽，网格保留列宽驱动 + 高度封顶。

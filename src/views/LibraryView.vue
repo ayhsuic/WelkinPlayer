@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { History, ListMusic, LoaderCircle, RefreshCw, User } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
@@ -35,39 +35,6 @@ const recentlyAdded = computed(() => {
 });
 const recentTracks = computed(() => tracksForPaths(profile.recent, player.tracks).slice(0, HOME_LIMIT));
 
-/** Rows per column: target three; if the capped column box cannot fit that many
- *  rows at the current row height, drop to two, then one. The column height
- *  follows the resolved row count so wrap columns stay even. */
-const rowsPerPage = ref(3);
-let listObserver: ResizeObserver | null = null;
-
-function syncRecentRows() {
-  const box = rootEl.value?.querySelector<HTMLElement>(".recent-columns");
-  if (!box) return;
-  const avail = parseFloat(getComputedStyle(box).maxHeight) || box.clientHeight;
-  const caption = box.querySelector<HTMLElement>(".home-list-caption");
-  const cover = box.querySelector<HTMLElement>(".home-list-cover");
-  const textH = caption ? caption.clientHeight : 0;
-  const coverH = cover ? cover.getBoundingClientRect().height : 0;
-  const rowNeed = Math.max(textH, coverH, 1);
-  const rowGap = parseFloat(getComputedStyle(box).rowGap) || 0;
-  let rows = 3;
-  while (rows > 1 && avail < rows * rowNeed + (rows - 1) * rowGap) rows--;
-  rowsPerPage.value = Math.max(1, Math.min(3, rows));
-}
-
-/** (Re)attach the column ResizeObserver once the list DOM exists. */
-function ensureListObserver() {
-  listObserver?.disconnect();
-  listObserver = null;
-  const box = rootEl.value?.querySelector<HTMLElement>(".recent-columns");
-  if (box && typeof ResizeObserver !== "undefined") {
-    listObserver = new ResizeObserver(syncRecentRows);
-    listObserver.observe(box);
-  }
-  syncRecentRows();
-}
-
 /** Home section layout toggles: recent plays rail ↔ row list; recent adds rail ↔ album grid.
  *  Persisted locally so the chosen layout survives an app restart. */
 const RECENT_LIST_KEY = "welkin.home.recentListMode";
@@ -81,7 +48,6 @@ const recentListMode = ref(readStoredFlag(RECENT_LIST_KEY, false));
 const addedGridMode = ref(readStoredFlag(ADDED_GRID_KEY, false));
 watch(recentListMode, (value) => localStorage.setItem(RECENT_LIST_KEY, value ? "1" : "0"));
 watch(addedGridMode, (value) => localStorage.setItem(ADDED_GRID_KEY, value ? "1" : "0"));
-watch([recentTracks, recentListMode], () => { void nextTick(ensureListObserver); });
 
 /** First nickname glyph for the home avatar; falls back to the person icon when unnamed. */
 const avatarInitial = computed(() => {
@@ -109,13 +75,9 @@ onMounted(() => {
   }
   scroller?.addEventListener("scroll", syncCollapsed, { passive: true });
   syncCollapsed();
-  ensureListObserver();
-  window.addEventListener("resize", syncRecentRows, { passive: true });
 });
 onBeforeUnmount(() => {
   scroller?.removeEventListener("scroll", syncCollapsed);
-  listObserver?.disconnect();
-  window.removeEventListener("resize", syncRecentRows);
 });
 
 /** Hi-Res: above the 48 kHz ceiling, or 24-bit and up. */
@@ -161,7 +123,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
 </script>
 
 <template>
-  <div ref="rootEl" class="home-root-pad mx-auto w-full max-w-6xl">
+  <div ref="rootEl" class="home-root-pad mx-auto w-full">
     <!-- Home header: title on the left, avatar entry to settings on the right.
          Sticky: scrolling tucks the large title and avatar into a pinned top bar. -->
     <header
@@ -227,9 +189,9 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </button>
         </div>
 
-        <!-- List mode: rows stack top-to-bottom, wrap into columns, columns flip sideways. -->
-        <div v-if="recentListMode" class="home-scroll-pad home-pb-rail no-scrollbar overflow-x-auto">
-          <div class="recent-columns home-recent-columns">
+        <!-- List mode: one column in portrait, two equal columns in landscape. -->
+        <div v-if="recentListMode" class="home-scroll-pad home-pb-rail">
+          <div class="home-recent-columns">
             <article
               v-for="track in recentTracks"
               :key="`hist-list-${track.id}`"
@@ -261,8 +223,8 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="flex w-full justify-start">
-              <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: track.color }">
+            <div class="flex justify-start">
+              <div class="home-card-cover ak-clip-tr relative aspect-square overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
                 <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
                 <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
@@ -295,7 +257,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         </div>
 
         <!-- Responsive album grid: columns auto-fill from the minimum cover edge; cover keeps a 1:1 square. -->
-        <div v-if="addedGridMode" class="album-wall home-gap-y-grid">
+        <div v-if="addedGridMode" class="album-wall home-added-wall home-gap-y-grid">
           <article
             v-for="track in recentlyAdded"
             :key="`add-grid-${track.id}`"
@@ -328,8 +290,8 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="flex w-full justify-start">
-              <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: track.color }">
+            <div class="flex justify-start">
+              <div class="home-card-cover ak-clip-tr relative aspect-square overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
                 <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
                 <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
