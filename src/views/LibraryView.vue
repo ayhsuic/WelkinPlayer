@@ -260,11 +260,11 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recentTracks"
             :key="`hist-${track.id}`"
-            class="flex h-[25vh] cursor-pointer flex-col"
+            class="flex cursor-pointer flex-col"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="flex min-h-0 w-full flex-1 items-center justify-center">
+            <div class="flex w-full justify-center">
               <div class="ak-clip-tr relative aspect-square w-full max-w-[calc(25vh-2.75rem)] overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
                 <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
@@ -302,11 +302,11 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recentlyAdded"
             :key="`add-grid-${track.id}`"
-            class="flex h-[25vh] flex-col cursor-pointer"
+            class="flex flex-col cursor-pointer"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="flex min-h-0 w-full flex-1 items-center justify-center">
+            <div class="flex w-full justify-center">
               <div class="ak-clip-tr relative aspect-square w-full max-w-[calc(25vh-2.75rem)] overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
                 <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
@@ -327,11 +327,11 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recentlyAdded"
             :key="`add-${track.id}`"
-            class="flex h-[25vh] cursor-pointer flex-col"
+            class="flex cursor-pointer flex-col"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="flex min-h-0 w-full flex-1 items-center justify-center">
+            <div class="flex w-full justify-center">
               <div class="ak-clip-tr relative aspect-square w-full max-w-[calc(25vh-2.75rem)] overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
                 <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
