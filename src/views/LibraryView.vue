@@ -162,23 +162,21 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
     <!-- Home header: title on the left, avatar entry to settings on the right.
          Sticky: scrolling tucks the large title and avatar into a pinned top bar. -->
     <header
-      class="sticky top-0 z-20 -mx-6 flex items-center justify-between px-6 transition-[padding,background-color,border-color] duration-200"
-      :class="collapsed ? 'border-b border-line bg-bg/95 py-2 backdrop-blur' : 'border-b border-transparent bg-transparent py-1'"
+      class="home-header sticky top-0 z-20 -mx-6 flex items-center justify-between px-6 transition-[padding,background-color,border-color] duration-200"
+      :class="[collapsed ? 'is-collapsed border-b border-line bg-bg/95 py-2 backdrop-blur' : 'border-b border-transparent bg-transparent py-1']"
     >
       <h1
-        class="truncate font-black tracking-tight transition-[font-size] duration-200"
-        :class="collapsed ? 'text-base' : 'text-2xl'"
+        class="home-header__title truncate font-black tracking-tight transition-[font-size] duration-200"
       >{{ t("nav.home") }}</h1>
       <button
         type="button"
-        class="grid shrink-0 place-items-center rounded-full border border-line bg-surface text-accent transition-[width,height,font-size] duration-200 active:scale-95"
-        :class="collapsed ? 'h-9 w-9' : 'h-11 w-11'"
+        class="home-header__avatar grid shrink-0 place-items-center rounded-full border border-line bg-surface text-accent transition-[width,height,font-size] duration-200 active:scale-95"
         :aria-label="t('nav.settings')"
         :title="t('nav.settings')"
         @click="emit('settings')"
       >
-        <span v-if="avatarInitial" class="font-bold leading-none" :class="collapsed ? 'text-sm' : 'text-base'">{{ avatarInitial }}</span>
-        <User v-else :size="collapsed ? 18 : 20" />
+        <span v-if="avatarInitial" class="home-header__initial font-bold leading-none">{{ avatarInitial }}</span>
+        <User v-else class="home-header__icon" :size="collapsed ? 18 : 20" />
       </button>
     </header>
 

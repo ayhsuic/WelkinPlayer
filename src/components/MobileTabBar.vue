@@ -56,6 +56,8 @@ function onSelect(tab: MainTab) {
   flex-direction: row;
   align-items: stretch;
   height: 56px;
+  /* Rail/header cqw scaling: height shrinks on narrow rails, capped at base. */
+  height: clamp(46px, 15.56cqw, 56px);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   border: 1px solid var(--line);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
@@ -119,6 +121,10 @@ function onSelect(tab: MainTab) {
 }
 
 .tab-bar-icon {
+  width: 21px;
+  height: 21px;
+  width: clamp(18px, 5.83cqw, 21px);
+  height: clamp(18px, 5.83cqw, 21px);
   transition: transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -133,6 +139,7 @@ function onSelect(tab: MainTab) {
 
 .tab-bar-label {
   font-size: 12px;
+  font-size: clamp(11px, 3.33cqw, 12px);
   font-weight: 500;
   letter-spacing: 0.04em;
   line-height: 1;

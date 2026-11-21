@@ -663,6 +663,8 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
    so the category tabs glide up to the status bar instead of jumping. */
 main {
   transition: padding-top 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Container for the main pane's cqw-based header scaling. */
+  container-type: inline-size;
 }
 
 /* ------------------------------------------------ landscape split layout */
@@ -681,6 +683,8 @@ main {
   height: 100%;
   border-right: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
+  /* Container for the rail's own cqw-based header/tab-bar scaling. */
+  container-type: inline-size;
 }
 
 .split-nav-body {
