@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { History, ListMusic, LoaderCircle, RefreshCw, User } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
@@ -35,28 +35,53 @@ const recentlyAdded = computed(() => {
 });
 const recentTracks = computed(() => tracksForPaths(profile.recent, player.tracks).slice(0, HOME_LIMIT));
 
-/** List mode rows per page: three by default; drop to two, then one, as the
- *  viewport-anchored chunk box cannot fit that many rows against the natural
- *  caption height. Chunks then flip sideways. */
+/** List mode rows per column: three by default; drop to two, then one, as the
+ *  viewport-anchored chunk box cannot fit that many rows. Columns fill the
+ *  chunk width; chunks then flip sideways. */
 const rowsPerPage = ref(3);
+const colsPerPage = ref(1);
 let listObserver: ResizeObserver | null = null;
 
 function syncRecentRows() {
   const box = rootEl.value?.querySelector<HTMLElement>(".recent-chunk");
   if (!box) return;
   const avail = box.clientHeight;
-  const caption = box.querySelector("article .min-w-0.flex-1");
-  const rowH = caption ? caption.clientHeight : 0;
-  if (avail <= 0 || rowH <= 0) return;
+  const arts = [...box.querySelectorAll("article")];
+  const caption = box.querySelector<HTMLElement>("article .min-w-0.flex-1");
+  const cover = box.querySelector<HTMLElement>("article .home-list-cover");
+  const textH = caption ? caption.clientHeight : 0;
+  const coverH = cover ? cover.getBoundingClientRect().height : 0;
+  const rowNeed = Math.max(textH, coverH, 1);
+  const rowGap = parseFloat(getComputedStyle(box).rowGap) || 0;
   let rows = 3;
-  if (avail < rowH * 3) rows = 2;
-  if (avail < rowH * 2) rows = 1;
+  while (rows > 1 && avail < rows * rowNeed + (rows - 1) * rowGap) rows--;
   rowsPerPage.value = Math.max(1, Math.min(3, rows));
+
+  const colGap = parseFloat(getComputedStyle(box).columnGap) || 0;
+  const itemW = arts[0] ? arts[0].offsetWidth : 0;
+  const chunkW = box.clientWidth;
+  let cols = 1;
+  if (itemW > 0) cols = Math.max(1, Math.floor((chunkW + colGap) / (itemW + colGap)));
+  colsPerPage.value = cols;
+}
+
+/** (Re)attach the chunk ResizeObserver once the list DOM exists. The list only
+    renders in list mode with tracks, so the observer is often missing at mount;
+    rebuild it after the data or layout mode changes. */
+function ensureListObserver() {
+  listObserver?.disconnect();
+  listObserver = null;
+  const chunk = rootEl.value?.querySelector<HTMLElement>(".recent-chunk");
+  if (chunk && typeof ResizeObserver !== "undefined") {
+    listObserver = new ResizeObserver(syncRecentRows);
+    listObserver.observe(chunk);
+  }
+  syncRecentRows();
 }
 
 const recentChunks = computed(() => {
   const chunks: Track[][] = [];
-  const size = rowsPerPage.value;
+  const size = Math.max(1, colsPerPage.value * rowsPerPage.value);
   for (let i = 0; i < recentTracks.value.length; i += size) chunks.push(recentTracks.value.slice(i, i + size));
   return chunks;
 });
@@ -74,6 +99,7 @@ const recentListMode = ref(readStoredFlag(RECENT_LIST_KEY, false));
 const addedGridMode = ref(readStoredFlag(ADDED_GRID_KEY, false));
 watch(recentListMode, (value) => localStorage.setItem(RECENT_LIST_KEY, value ? "1" : "0"));
 watch(addedGridMode, (value) => localStorage.setItem(ADDED_GRID_KEY, value ? "1" : "0"));
+watch([recentTracks, recentListMode], () => { void nextTick(ensureListObserver); });
 
 /** First nickname glyph for the home avatar; falls back to the person icon when unnamed. */
 const avatarInitial = computed(() => {
@@ -101,12 +127,7 @@ onMounted(() => {
   }
   scroller?.addEventListener("scroll", syncCollapsed, { passive: true });
   syncCollapsed();
-  syncRecentRows();
-  const chunk = rootEl.value?.querySelector<HTMLElement>(".recent-chunk");
-  if (chunk && typeof ResizeObserver !== "undefined") {
-    listObserver = new ResizeObserver(syncRecentRows);
-    listObserver.observe(chunk);
-  }
+  ensureListObserver();
   window.addEventListener("resize", syncRecentRows, { passive: true });
 });
 onBeforeUnmount(() => {
@@ -158,12 +179,12 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
 </script>
 
 <template>
-  <div ref="rootEl" class="mx-auto w-full max-w-6xl px-6 py-6">
+  <div ref="rootEl" class="home-root-pad mx-auto w-full max-w-6xl">
     <!-- Home header: title on the left, avatar entry to settings on the right.
          Sticky: scrolling tucks the large title and avatar into a pinned top bar. -->
     <header
-      class="home-header sticky top-0 z-20 -mx-6 flex items-center justify-between px-6 transition-[padding,background-color,border-color] duration-200"
-      :class="[collapsed ? 'is-collapsed border-b border-line bg-bg/95 py-2 backdrop-blur' : 'border-b border-transparent bg-transparent py-1']"
+      class="home-header home-scroll-pad sticky top-0 z-20 flex items-center justify-between transition-[padding,background-color,border-color] duration-200"
+      :class="[collapsed ? 'is-collapsed border-b border-line bg-bg/95 backdrop-blur' : 'border-b border-transparent bg-transparent']"
     >
       <h1
         class="home-header__title truncate font-black tracking-tight transition-[font-size] duration-200"
@@ -182,13 +203,13 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
 
       <!-- Daily recommendation: square cover cards on a horizontal rail. -->
       <section v-if="recommended.length">
-        <div class="mb-3 mt-2 flex items-center justify-between">
+        <div class="home-mb-title home-mt-card flex items-center justify-between">
           <h2 class="home-section-title font-bold tracking-tight">{{ t("home.dailyRecommend") }}</h2>
-          <button type="button" class="home-chip ak-clip flex items-center gap-1.5 border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="refreshRecommended">
+          <button type="button" class="home-chip ak-clip flex items-center border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="refreshRecommended">
             <RefreshCw :size="13" class="home-chip__icon" />{{ t("home.refresh") }}
           </button>
         </div>
-        <div class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
+        <div class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto">
           <article
             v-for="track in recommended"
             :key="`rec-${track.id}`"
@@ -200,9 +221,9 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
             <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
             <LoaderCircle v-else-if="coverPending(track)" :size="26" :stroke-width="2" class="home-rec-spinner absolute inset-0 m-auto animate-spin text-white/90" />
             <span v-else class="home-rec-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
-            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent p-4">
+            <div class="home-pad-cover absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent">
               <p class="home-rec-title truncate font-semibold text-white">{{ track.title }}</p>
-              <p class="home-rec-artist mt-0.5 truncate text-white/75">{{ track.artist }}</p>
+              <p class="home-rec-artist home-mt-caption truncate text-white/75">{{ track.artist }}</p>
             </div>
           </article>
         </div>
@@ -210,7 +231,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
 
       <!-- Recently played: tap the title to toggle the three-column rail ↔ row list. -->
       <section v-if="recentTracks.length">
-        <div class="mb-3 mt-6 flex items-center justify-between">
+        <div class="home-mb-title home-mt-section flex items-center justify-between">
           <button
             type="button"
             class="home-section-title font-bold tracking-tight transition-colors hover:text-accent"
@@ -219,42 +240,42 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           >
             {{ t("home.recent") }}
           </button>
-          <button type="button" class="home-chip ak-clip flex items-center gap-1.5 border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="emit('openPlaylist', RECENT_PLAYS_ID)">
+          <button type="button" class="home-chip ak-clip flex items-center border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="emit('openPlaylist', RECENT_PLAYS_ID)">
             <History :size="13" class="home-chip__icon" />{{ t("home.history") }}
           </button>
         </div>
 
         <!-- List mode: three rows per page, pages flip sideways. -->
-        <div v-if="recentListMode" class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto pb-2 snap-x snap-proximity">
+        <div v-if="recentListMode" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto snap-x snap-proximity">
           <div
             v-for="(chunk, chunkIndex) in recentChunks"
             :key="`hist-chunk-${chunkIndex}`"
-            class="recent-chunk home-recent-chunk flex w-full shrink-0 snap-start flex-col px-6"
+            class="recent-chunk home-recent-chunk flex w-full shrink-0 snap-start"
           >
             <article
               v-for="track in chunk"
               :key="`hist-list-${track.id}`"
-              class="flex min-h-0 flex-1 cursor-pointer items-center gap-3"
+              class="home-list-item home-gap-row flex min-w-0 cursor-pointer items-center"
               @click="play(track)"
               @contextmenu.prevent="openContextMenu($event, track)"
             >
               <div class="min-w-0 flex-1">
                 <p class="home-card-title truncate font-semibold" :class="isActive(track) ? 'text-accent' : ''">{{ track.title }}</p>
-                <p class="home-card-artist min-w-0 truncate text-muted">{{ track.artist }}</p>
+                <p class="home-card-artist home-mt-caption min-w-0 truncate text-muted">{{ track.artist }}</p>
               </div>
-              <div class="ak-clip-tr relative aspect-square h-[80%] shrink-0 overflow-hidden" :style="{ backgroundColor: track.color }">
+              <div class="home-list-cover ak-clip-tr relative shrink-0 overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
                 <LoaderCircle v-else-if="coverPending(track)" :size="18" :stroke-width="2" class="home-list-spinner absolute inset-0 m-auto animate-spin text-white/90" />
                 <span v-else class="home-list-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
-                <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1 left-1 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                <span v-if="isHiRes(track)" class="home-list-hr absolute bottom-1 right-1 rounded bg-amber-400/95 px-1 py-0.5 font-bold leading-none tracking-wide text-black">HR</span>
+                <span v-if="isActive(track) && player.isPlaying" class="absolute home-eq-badge-list text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                <span v-if="isHiRes(track)" class="home-list-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
               </div>
             </article>
           </div>
         </div>
 
         <!-- Rail: single horizontal row of smaller square cards; cover + caption stay within 1/4 height. -->
-        <div v-else class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
+        <div v-else class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto">
           <article
             v-for="track in recentTracks"
             :key="`hist-${track.id}`"
@@ -262,16 +283,16 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="flex w-full justify-center">
+            <div class="flex w-full justify-start">
               <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
                 <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
                 <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
-                <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                <span v-if="isHiRes(track)" class="home-card-hr absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 font-bold leading-none tracking-wide text-black">HR</span>
+                <span v-if="isActive(track) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                <span v-if="isHiRes(track)" class="home-card-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
               </div>
             </div>
-            <div class="mt-2 min-w-0 shrink-0">
+            <div class="home-mt-card w-full min-w-0">
               <p class="home-card-title truncate font-medium">{{ track.title }}</p>
               <p class="home-card-artist truncate text-muted">{{ track.artist }}</p>
             </div>
@@ -281,7 +302,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
 
       <!-- Recently added: tap the title to toggle the horizontal rail ↔ two-column album grid. -->
       <section v-if="recentlyAdded.length">
-        <div class="mb-3 mt-6 flex items-center justify-between">
+        <div class="home-mb-title home-mt-section flex items-center justify-between">
           <button
             type="button"
             class="home-section-title font-bold tracking-tight transition-colors hover:text-accent"
@@ -290,13 +311,13 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           >
             {{ t("home.recentlyAdded") }}
           </button>
-          <button type="button" class="home-chip ak-clip flex items-center gap-1.5 border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="emit('navigate', 'tracks')">
+          <button type="button" class="home-chip ak-clip flex items-center border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="emit('navigate', 'tracks')">
             <ListMusic :size="13" class="home-chip__icon" />{{ t("home.allSongs") }}
           </button>
         </div>
 
         <!-- Responsive album grid: columns auto-fill from the minimum cover edge; cover keeps a 1:1 square. -->
-        <div v-if="addedGridMode" class="album-wall grid gap-x-4 gap-y-6">
+        <div v-if="addedGridMode" class="album-wall home-gap-y-grid">
           <article
             v-for="track in recentlyAdded"
             :key="`add-grid-${track.id}`"
@@ -304,16 +325,16 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="flex w-full justify-center">
+            <div class="flex w-full justify-start">
               <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
                 <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
                 <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
-                <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                <span v-if="isHiRes(track)" class="home-card-hr absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 font-bold leading-none tracking-wide text-black">HR</span>
+                <span v-if="isActive(track) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                <span v-if="isHiRes(track)" class="home-card-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
               </div>
             </div>
-            <div class="mt-2 min-w-0 shrink-0">
+            <div class="home-mt-card w-full min-w-0">
               <p class="album-grid-card__title truncate font-medium">{{ track.title }}</p>
               <p class="album-grid-card__artist truncate text-muted">{{ track.artist }}</p>
             </div>
@@ -321,7 +342,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         </div>
 
         <!-- Rail: single horizontal row of smaller square cards; cover + caption stay within 1/4 height. -->
-        <div v-else class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
+        <div v-else class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto">
           <article
             v-for="track in recentlyAdded"
             :key="`add-${track.id}`"
@@ -329,16 +350,16 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="flex w-full justify-center">
+            <div class="flex w-full justify-start">
               <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
                 <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
                 <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
-                <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                <span v-if="isHiRes(track)" class="home-card-hr absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 font-bold leading-none tracking-wide text-black">HR</span>
+                <span v-if="isActive(track) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                <span v-if="isHiRes(track)" class="home-card-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
               </div>
             </div>
-            <div class="mt-2 min-w-0 shrink-0">
+            <div class="home-mt-card w-full min-w-0">
               <p class="home-card-title truncate font-medium">{{ track.title }}</p>
               <p class="home-card-artist truncate text-muted">{{ track.artist }}</p>
             </div>

@@ -49,15 +49,13 @@ function onSelect(tab: MainTab) {
 <style scoped>
 .tab-bar {
   position: absolute;
-  left: 24px;
-  right: 24px;
-  bottom: calc(env(safe-area-inset-bottom) + 12px);
+  left: calc(var(--cw) * 0.067 * var(--rail-scale, 1));
+  right: calc(var(--cw) * 0.067 * var(--rail-scale, 1));
+  bottom: calc(env(safe-area-inset-bottom) + 100vh * 0.012 * var(--rail-scale, 1));
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  height: 56px;
-  /* Rail element scale: height follows --rail-scale, capped at base. */
-  height: calc(56px * var(--rail-scale, 1));
+  height: calc(100vh * 0.072 * var(--rail-scale, 1));
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   border: 1px solid var(--line);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
@@ -71,7 +69,7 @@ function onSelect(tab: MainTab) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: calc(100vh * 0.005 * var(--rail-scale, 1));
   border: none;
   background: transparent;
   cursor: pointer;
@@ -121,10 +119,11 @@ function onSelect(tab: MainTab) {
 }
 
 .tab-bar-icon {
-  width: 21px;
-  height: 21px;
-  width: calc(21px * var(--rail-scale, 1));
-  height: calc(21px * var(--rail-scale, 1));
+  width: calc(var(--cw) * 0.058 * var(--rail-scale, 1));
+  aspect-ratio: 1 / 1;
+  height: auto;
+  flex-shrink: 0;
+  max-width: calc(100vh * 0.045 * var(--rail-scale, 1));
   transition: transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -138,8 +137,7 @@ function onSelect(tab: MainTab) {
 }
 
 .tab-bar-label {
-  font-size: 12px;
-  font-size: calc(12px * var(--rail-scale, 1));
+  font-size: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(100vh * 0.025 * var(--rail-scale, 1)));
   font-weight: 500;
   letter-spacing: 0.04em;
   line-height: 1;

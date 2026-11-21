@@ -164,25 +164,23 @@ const baseW = ref(baseRailWidth());
 /** User width factor relative to the computed base; persisted across restarts. */
 const railScale = ref(Number(localStorage.getItem(NAV_SCALE_KEY)) || 1);
 const navWidth = ref(Math.round(clampRail(baseW.value * railScale.value)));
-
-/** Short-edge / long-edge ratio of the current viewport (≤1). */
-const railRatio = computed(() => {
-  const W = window.innerWidth;
-  const H = Math.max(1, window.innerHeight);
-  return Math.min(1, H / W);
-});
+/**
+ * Page container width in CSS px: the dragged rail width in landscape, the
+ * viewport width otherwise. Drives the --cw budget base for every element.
+ */
+const contentWidth = ref(Math.max(1, window.innerWidth));
 
 /**
- * Element scale for the landscape rail: follows the viewport ratio, nudges with
- * the dragged rail width, capped at 1 (never larger than the portrait base).
- * No floor: elements shrink proportionally with the viewport. Portrait is 1.
- * Driven by the viewport, not screen metrics.
+ * Element scale for the landscape rail: the short-edge/long-edge viewport
+ * ratio, capped at 1 (never larger than the portrait base). The dragged rail
+ * width already flows through --cw, so it is not folded into the factor again.
+ * No floor; portrait is 1. Driven by the viewport, not screen metrics.
  */
 const railElementScale = computed(() => {
   if (!isLandscape.value) return 1;
-  const base = Math.max(1, window.innerHeight);
-  const byWidth = Math.min(1, navWidth.value / base);
-  return Math.min(railRatio.value, byWidth);
+  const W = Math.max(1, window.innerWidth);
+  const H = Math.max(1, window.innerHeight);
+  return Math.min(1, H / W);
 });
 /** Whether the landscape rail is shown; hidden state lets the wall go full-screen. */
 const navVisible = ref(true);
@@ -191,6 +189,7 @@ let lastWidth = navWidth.value;
 let lastScale = railScale.value;
 
 function updateLandscape() {
+  contentWidth.value = Math.max(1, window.innerWidth);
   isLandscape.value = window.innerWidth / Math.max(1, window.innerHeight) >= 1.15;
   baseW.value = baseRailWidth();
   navWidth.value = Math.round(clampRail(baseW.value * railScale.value));
@@ -581,12 +580,12 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
   <Transition name="info"><TrackInfoView v-if="view === 'track-info' && viewingTrack" :path="viewingTrack.path ?? null" :source-id="viewingTrack.sourceId" @back="closeOverlay" /></Transition>
   <Transition name="info"><LyricsEditorView v-if="view === 'lyrics-edit' && editingLyricsTrack" :path="editingLyricsTrack.path ?? null" :source-id="editingLyricsTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
   <Transition name="info"><TrackEditorView v-if="view === 'track-edit' && editingTrack" :path="editingTrack.path ?? null" :source-id="editingTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
-  <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg">
+  <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg" :style="{ '--cw': `${contentWidth}px` }">
     <!-- Landscape split: navigation rail on the left, cover wall on the right
          with the seek bar beside the wall. Width follows the viewport ratio,
          not a fixed breakpoint. -->
     <div v-if="isLandscape" class="split flex min-h-0 flex-1">
-      <aside v-show="navVisible" class="split-nav" :style="{ width: `${navWidth}px`, '--rail-scale': railElementScale }">
+      <aside v-show="navVisible" class="split-nav" :style="{ width: `${navWidth}px`, '--cw': `${navWidth}px`, '--rail-scale': railElementScale }">
         <div class="split-nav-body">
           <template v-if="drawerSubView">
             <TracksView v-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="split-tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
