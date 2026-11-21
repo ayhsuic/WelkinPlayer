@@ -263,16 +263,16 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </button>
         </div>
 
-        <!-- Responsive album grid: columns reflow 1 → many with the available width. -->
+        <!-- Responsive album grid: columns reflow 1 → many; each card matches the rail card height (1/4 viewport). -->
         <div v-if="addedGridMode" class="grid album-wall gap-x-4 gap-y-6">
           <article
             v-for="track in recentlyAdded"
             :key="`add-grid-${track.id}`"
-            class="cursor-pointer"
+            class="grid h-[25vh] cursor-pointer grid-rows-[1fr_auto_auto]"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="ak-clip-tr relative aspect-square overflow-hidden" :style="{ backgroundColor: track.color }">
+            <div class="ak-clip-tr relative aspect-square h-full justify-self-start overflow-hidden" :style="{ backgroundColor: track.color }">
               <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
               <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
               <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
