@@ -302,7 +302,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recentlyAdded"
             :key="`add-grid-${track.id}`"
-            class="flex flex-col cursor-pointer"
+            class="album-grid-card flex flex-col cursor-pointer"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
@@ -316,8 +316,8 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
               </div>
             </div>
             <div class="mt-2 min-w-0 shrink-0">
-              <p class="truncate text-sm font-medium">{{ track.title }}</p>
-              <p class="truncate text-xs text-muted">{{ track.artist }}</p>
+              <p class="album-grid-card__title truncate font-medium">{{ track.title }}</p>
+              <p class="album-grid-card__artist truncate text-muted">{{ track.artist }}</p>
             </div>
           </article>
         </div>
