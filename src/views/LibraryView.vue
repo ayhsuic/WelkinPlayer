@@ -225,12 +225,12 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </div>
         </div>
 
-        <!-- Rail: square covers on the same cover-min token as the album wall; height follows the square, no fixed card height. -->
+        <!-- Rail: cover size matches the daily-recommendation card (square, 62% wide, capped 260px). -->
         <div v-else class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
           <article
             v-for="track in recentTracks"
             :key="`hist-${track.id}`"
-            class="w-[var(--cover-min)] shrink-0 cursor-pointer"
+            class="w-[62%] max-w-[260px] shrink-0 cursor-pointer"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
@@ -284,12 +284,12 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </article>
         </div>
 
-        <!-- Rail: square covers on the same cover-min token as the album wall; height follows the square, no fixed card height. -->
+        <!-- Rail: cover size matches the daily-recommendation card (square, 62% wide, capped 260px). -->
         <div v-else class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
           <article
             v-for="track in recentlyAdded"
             :key="`add-${track.id}`"
-            class="w-[var(--cover-min)] shrink-0 cursor-pointer"
+            class="w-[62%] max-w-[260px] shrink-0 cursor-pointer"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
