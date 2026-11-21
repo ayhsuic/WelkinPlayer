@@ -417,15 +417,15 @@ html[data-accent="blue"] {
     grid-template-columns: repeat(auto-fill, minmax(calc(var(--cw) * 0.32 * var(--rail-scale, 1)), 1fr));
   }
 
-  /* Home "recently added" grid shares the recommend big-card height cap; the
-     wall itself stays reusable by the library list view. */
+  /* Home "recently added" open album wall: no inner scroll box — the grid
+     spreads openly and scrolls with the page. The wall stays reusable by the
+     library list view. */
   .home-added-wall {
-    max-height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
-    overflow-y: auto;
+    overflow: visible;
   }
 
-  /* Grid cover stays 1:1 with the card column; its edge cannot grow past the
-     recommend card height (max cap only, height follows the square). */
+  /* Grid cover fills its column square, capped at the recommend-card edge so
+     an open wall cannot grow covers without bound on wide screens. */
   .home-added-wall .home-card-cover {
     max-height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
     max-width: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
@@ -441,8 +441,12 @@ html[data-accent="blue"] {
     max-width: 100%;
   }
 
+  /* Rail small card: square edge is the smaller of the width budget
+     (cw×0.28 ≈ 3.1 covers per row on a 9:21 phone) and the recommend-card
+     height cap. Portrait lets the width budget shrink the cover down;
+     landscape lets the height cap hold it at the big-card edge. */
   .home-rail-card {
-    width: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
+    width: min(calc(var(--cw) * 0.28 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1)));
     max-width: 100%;
     align-items: flex-start;
     min-width: 0;
@@ -450,33 +454,36 @@ html[data-accent="blue"] {
 
   .home-rail-card .home-card-cover {
     width: auto;
-    height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
+    height: min(calc(var(--cw) * 0.28 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1)));
     aspect-ratio: 1 / 1;
     max-width: 100%;
   }
 
   .home-recent-columns {
-    /* Column-first wrap: each column holds three rows, extra columns slide
-       sideways. One row cap is the recommend card edge / 3; the box height
-       budgets three rows plus two row gaps so a column never drops to two rows
-       and spills into a fourth column. */
-    display: flex;
-    flex-direction: column;
-    flex-wrap: wrap;
-    max-height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1) + var(--ch, 100vh) * 0.016 * var(--rail-scale, 1) * 2);
+    /* Equal-column grid: portrait one column (rows spread with the page),
+       landscape three equal columns capped at three rows. Each item fills its
+       column track, so no dead gap sits between columns. */
+    display: grid;
+    grid-template-columns: 1fr;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
     row-gap: calc(var(--ch, 100vh) * 0.016 * var(--rail-scale, 1));
     column-gap: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.015 * var(--rail-scale, 1)));
   }
 
+  @media (min-aspect-ratio: 115 / 100) {
+    .home-recent-columns {
+      grid-template-columns: repeat(3, 1fr);
+      max-height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1) + var(--ch, 100vh) * 0.016 * var(--rail-scale, 1) * 2);
+    }
+  }
+
   /* List row item: horizontal strip (caption left, cover right). Height anchors
-     to one third of the recommend card height; aspect 4:1 derives the width,
-     so the strip keeps its ratio and the height cannot be outgrown. */
+     to one third of the recommend card height; the strip fills its column
+     track width, so no dead gap sits between columns. Cover stays 1:1 off
+     the row height. */
   .home-list-item {
     height: calc(var(--ch, 100vh) * 0.25 / 3 * var(--rail-scale, 1));
-    aspect-ratio: 4 / 1;
-    align-self: flex-start;
     max-width: 100%;
     scroll-snap-align: start;
     gap: min(calc(var(--cw) * 0.02 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.02 * var(--rail-scale, 1)));
@@ -681,6 +688,12 @@ html[data-accent="blue"] {
     margin-right: calc(var(--cw) * -0.067 * var(--rail-scale, 1));
     padding-left: calc(var(--cw) * 0.067 * var(--rail-scale, 1));
     padding-right: calc(var(--cw) * 0.067 * var(--rail-scale, 1));
+  }
+
+  /* Horizontal rails keep the right padding as an exit gutter: the last card
+     does not slide flush against the screen edge. */
+  .home-scroll-pad.overflow-x-auto {
+    margin-right: 0;
   }
 
   .home-pad-x {

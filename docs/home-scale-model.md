@@ -57,12 +57,12 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 | 元素 | 类名 | 高度锚定 | 比例 / 宽度 | 备注 |
 |---|---|---|---|---|
 | 每日推荐卡 | `.home-rec-card` | `ch×0.25×k` | aspect `1/1`，宽=高 | `max-width:100%` |
-| 横滑小卡 | `.home-rail-card` | 封面 `ch×0.25×k` | 卡宽 `ch×0.25×k`；封面 aspect `1/1`、`width:auto` | `align-items:flex-start; min-width:0`；标题在卡宽内截断 |
-| 最近播放列容器 | `.home-recent-columns` | `max-height ch×0.25×k + 2×ch×0.016×k` | flex column wrap，超出列横向横滑 | `scroll-snap-type:x mandatory`；条目 `scroll-snap-align:start` |
-| 列表条目 | `.home-list-item` | `ch×0.25/3×k` | aspect `4/1`，宽=高×4 | `align-self:flex-start; min-width:0; padding:0` |
+| 横滑小卡 | `.home-rail-card` | 封面 `min(cw×0.28×k, ch×0.25×k)` | 卡宽=封面边；封面 aspect `1/1`、`width:auto` | `align-items:flex-start; min-width:0`；窄屏按宽预算缩到一屏约 3.1 张，宽屏被大卡高封顶 |
+| 最近播放列容器 | `.home-recent-columns` | 横屏 `max-height ch×0.25×k + 2×ch×0.016×k`；竖屏不限高 | grid 均分：竖屏 `1fr` 单列随页面铺开，横屏（`min-aspect-ratio:115/100`）`repeat(3,1fr)` | `scroll-snap-type:x mandatory` |
+| 列表条目 | `.home-list-item` | `ch×0.25/3×k` | 宽占满所在列槽（grid 单元格），不锁固定比例；`min-width:0; padding:0` | 标题在列宽内截断 |
 | 条目封面 | `.home-list-cover` | `ch×0.25/3×k` | aspect `1/1`，宽=高 | — |
 | 网格墙 | `.album-wall` | — | grid `auto-fill minmax(cw×0.32×k, 1fr)` | 列宽驱动，最小卡边 `cw×0.32×k` |
-| 最近添加网格 | `.home-added-wall` | `max-height ch×0.25×k` | `overflow-y:auto` | 与推荐卡同高 |
+| 最近添加网格 | `.home-added-wall` | 无高度上限 | `overflow:visible`，开放式随页面整体滚动，不在容器内滚 | — |
 | 网格封面 | `.home-added-wall .home-card-cover` | 封顶 `ch×0.25×k` | 宽跟随列宽，aspect `1/1` | `max-height/max-width ch×0.25×k` |
 
 ### 3.3 间距档位
@@ -100,14 +100,16 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 - `--rail-scale` 变量位与样式侧 `var(--rail-scale,1)` 兜底保留，后续若需要横屏整体缩放，改 `railElementScale` 一处即可，样式无需动。
 - 历史死路：纯反比缩放（去封顶）会把宽侧栏封面缩到十几像素不可用；按宽高比 k 反推同样在宽侧栏过度收缩，均已废弃。
 
-## 5. 最近播放：折列横滑
+## 5. 最近播放：均分多列
 
 ### 5.1 排布
 
-- 列表模式（`recentListMode=1`）：外层 `.home-recent-columns` 为 `flex-direction:column; flex-wrap:wrap`，条目自上而下填满一列后向右折列；超出列进入横向横滑。
-- 每列固定排满三行（`HOME_LIMIT=8`，分组 `[0,1,2][3,4,5][6,7]`），列数 ≤3；容器高度按三行加两行行距预算，临界高度不会把条目挤出单列。
-- 横滑带滚动吸附：`scroll-snap-type:x mandatory`，条目 `scroll-snap-align:start`，文字头随条目左缘对齐吸附起点。
-- rail 模式（`recentListMode=0`）：单行横滑小卡，封面 + 下方标题，卡宽锁到封面反推宽。
+- 列表模式（`recentListMode=1`）：外层 `.home-recent-columns` 为 grid 均分列。竖屏 `1fr` 单列；横屏（`@media min-aspect-ratio:115/100`，对齐 `isLandscape` 阈值）`repeat(3,1fr)` 三列等宽。
+- 最近播放取 `RECENT_LIMIT=9` 首；推荐与最近添加仍 `HOME_LIMIT=8`。
+- 条目占满所在列槽宽度，高度锚定行高（推荐卡高的 1/3），标题在列宽内截断；封面 1:1 随行高。不再用固定比例把条目宽锁死，避免条目挤在列槽左侧、列间堆出死空白。
+- 高度预算：竖屏单列不限高、随页面整体铺开；横屏三列按三行加两行行距预算封顶。横滑吸附 `scroll-snap-type:x mandatory` 保留。
+- 横滑 rail 容器（`.home-scroll-pad.overflow-x-auto`）右侧去掉负 margin，保留 `padding-right` 作为出口边距，末条不贴屏幕边。
+- rail 模式（`recentListMode=0`）：单行横滑小卡，封面 + 下方标题；封面边取 `min(cw×0.28, ch×0.25)`，窄屏一屏约 3.1 张，宽屏被大卡高封顶。
 
 ### 5.2 已移除的旧链路
 
@@ -127,7 +129,7 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 | 元素 | 实测宽×高 | 比例 |
 |---|---|---|
 | 推荐大卡 | 206×206 | 1:1 |
-| 列表条目 | 274×69 | 4:1 |
+| 列表条目 | 414×69 | 占满三列列槽，不锁比例 |
 | 条目封面 | 69×69 | 1:1 |
 | rail 卡 / 封面 | 206 / 206×206 | 1:1 |
 | 网格封面 | 206×206 | 1:1 |
@@ -137,9 +139,9 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 | 元素 | 实测宽×高 | 比例 |
 |---|---|---|
 | 推荐大卡 | 210×210 | 1:1 |
-| 列表条目 | 280×70 | 4:1 |
+| 列表条目 | 312×70 | 占满单列，不锁比例 |
 | 条目封面 | 70×70 | 1:1 |
-| rail 卡 / 封面 | 210 / 210×210 | 1:1 |
+| rail 卡 / 封面 | 101 / 101×101 | 1:1（宽预算 cw×0.28，一屏约 3.1 张） |
 | 网格封面 | 150×150 | 1:1（列宽分配，未触 210 封顶） |
 
 > 窄屏推荐卡按高度走比旧封顶版偏大，是高度优先口径的必然结果；所有元素宽度均小于容器宽，无横向溢出。
@@ -161,3 +163,6 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 - `railElementScale` 二次缩放 k 定稿为 1，清理反比公式残留；放开根节点 `max-w-6xl` 限宽。
 - 最近播放固定三列、折列横滑吸附；条目比例锁 4:1，高度为推荐卡 1/3。
 - 尺寸口径由「宽度预算起步 + 高度封顶回压」改为「高度优先：height 锚定 `--ch` 比例，aspect-ratio 反推宽度」；rail 卡宽锁到封面反推宽，网格保留列宽驱动 + 高度封顶。
+- 最近播放列表由 flex 折列改为 grid 均分：竖屏单列、横屏三列；条目占满列槽宽、不再锁 4:1，消除列间死空白。
+- 最近播放扩到 9 首（`RECENT_LIMIT=9`）；竖屏单列不限高随页面铺开，横屏三列保留三行高预算。
+- rail 小卡封面改宽预算 `min(cw×0.28, ch×0.25)`：窄屏一屏约 3.1 张，宽屏被大卡高封顶；最近添加改开放式网格（墙不内滚，封面仍封顶大卡边）；横滑容器右侧补出口边距。

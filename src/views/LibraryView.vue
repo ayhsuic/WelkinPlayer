@@ -24,6 +24,8 @@ const recommendedPaths = ref<string[]>([]);
 const recommended = computed(() => tracksForPaths(recommendedPaths.value, player.tracks));
 
 const HOME_LIMIT = 8;
+/** Recently played shows one extra row; the recommendation and added lists keep HOME_LIMIT. */
+const RECENT_LIMIT = 9;
 
 /** Tracks most recently added to the library, newest source modification first. */
 const recentlyAdded = computed(() => {
@@ -33,7 +35,7 @@ const recentlyAdded = computed(() => {
   indexed.sort((a, b) => (b.time - a.time) || (a.index - b.index));
   return indexed.slice(0, HOME_LIMIT).map((item) => item.track);
 });
-const recentTracks = computed(() => tracksForPaths(profile.recent, player.tracks).slice(0, HOME_LIMIT));
+const recentTracks = computed(() => tracksForPaths(profile.recent, player.tracks).slice(0, RECENT_LIMIT));
 
 /** Home section layout toggles: recent plays rail ↔ row list; recent adds rail ↔ album grid.
  *  Persisted locally so the chosen layout survives an app restart. */
