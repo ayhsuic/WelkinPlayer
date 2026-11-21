@@ -183,26 +183,26 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
       <!-- Daily recommendation: square cover cards on a horizontal rail. -->
       <section v-if="recommended.length">
         <div class="mb-3 mt-2 flex items-center justify-between">
-          <h2 class="text-lg font-bold tracking-tight">{{ t("home.dailyRecommend") }}</h2>
-          <button type="button" class="ak-clip flex h-7 items-center gap-1.5 border border-line bg-surface px-2.5 text-xs font-medium text-muted transition-colors hover:text-fg" @click="refreshRecommended">
-            <RefreshCw :size="13" />{{ t("home.refresh") }}
+          <h2 class="home-section-title font-bold tracking-tight">{{ t("home.dailyRecommend") }}</h2>
+          <button type="button" class="home-chip ak-clip flex items-center gap-1.5 border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="refreshRecommended">
+            <RefreshCw :size="13" class="home-chip__icon" />{{ t("home.refresh") }}
           </button>
         </div>
         <div class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
           <article
             v-for="track in recommended"
             :key="`rec-${track.id}`"
-            class="ak-clip-tr group relative aspect-square w-[10rem] max-w-[25vh] shrink-0 cursor-pointer overflow-hidden"
+            class="home-rec-card ak-clip-tr group relative aspect-square shrink-0 cursor-pointer overflow-hidden"
             :style="{ backgroundColor: track.color }"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
             <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-            <LoaderCircle v-else-if="coverPending(track)" :size="26" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
-            <span v-else class="absolute inset-0 grid place-items-center text-4xl font-black text-white/90">{{ initial(track) }}</span>
+            <LoaderCircle v-else-if="coverPending(track)" :size="26" :stroke-width="2" class="home-rec-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+            <span v-else class="home-rec-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
             <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent p-4">
-              <p class="truncate text-base font-semibold text-white">{{ track.title }}</p>
-              <p class="mt-0.5 truncate text-xs text-white/75">{{ track.artist }}</p>
+              <p class="home-rec-title truncate font-semibold text-white">{{ track.title }}</p>
+              <p class="home-rec-artist mt-0.5 truncate text-white/75">{{ track.artist }}</p>
             </div>
           </article>
         </div>
@@ -213,14 +213,14 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         <div class="mb-3 mt-6 flex items-center justify-between">
           <button
             type="button"
-            class="text-lg font-bold tracking-tight transition-colors hover:text-accent"
+            class="home-section-title font-bold tracking-tight transition-colors hover:text-accent"
             :title="t('home.recent')"
             @click="recentListMode = !recentListMode"
           >
             {{ t("home.recent") }}
           </button>
-          <button type="button" class="ak-clip flex h-7 items-center gap-1.5 border border-line bg-surface px-2.5 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('openPlaylist', RECENT_PLAYS_ID)">
-            <History :size="13" />{{ t("home.history") }}
+          <button type="button" class="home-chip ak-clip flex items-center gap-1.5 border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="emit('openPlaylist', RECENT_PLAYS_ID)">
+            <History :size="13" class="home-chip__icon" />{{ t("home.history") }}
           </button>
         </div>
 
@@ -229,7 +229,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <div
             v-for="(chunk, chunkIndex) in recentChunks"
             :key="`hist-chunk-${chunkIndex}`"
-            class="recent-chunk flex h-[25vh] w-full shrink-0 snap-start flex-col px-6"
+            class="recent-chunk home-recent-chunk flex w-full shrink-0 snap-start flex-col px-6"
           >
             <article
               v-for="track in chunk"
@@ -239,15 +239,15 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
               @contextmenu.prevent="openContextMenu($event, track)"
             >
               <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-semibold" :class="isActive(track) ? 'text-accent' : ''">{{ track.title }}</p>
-                <p class="min-w-0 truncate text-xs text-muted">{{ track.artist }}</p>
+                <p class="home-card-title truncate font-semibold" :class="isActive(track) ? 'text-accent' : ''">{{ track.title }}</p>
+                <p class="home-card-artist min-w-0 truncate text-muted">{{ track.artist }}</p>
               </div>
               <div class="ak-clip-tr relative aspect-square h-[80%] shrink-0 overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                <LoaderCircle v-else-if="coverPending(track)" :size="18" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
-                <span v-else class="absolute inset-0 grid place-items-center text-xl font-black text-white/90">{{ initial(track) }}</span>
+                <LoaderCircle v-else-if="coverPending(track)" :size="18" :stroke-width="2" class="home-list-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                <span v-else class="home-list-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
                 <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1 left-1 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                <span v-if="isHiRes(track)" class="absolute bottom-1 right-1 rounded bg-amber-400/95 px-1 py-0.5 text-[8px] font-bold leading-none tracking-wide text-black">HR</span>
+                <span v-if="isHiRes(track)" class="home-list-hr absolute bottom-1 right-1 rounded bg-amber-400/95 px-1 py-0.5 font-bold leading-none tracking-wide text-black">HR</span>
               </div>
             </article>
           </div>
@@ -258,22 +258,22 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recentTracks"
             :key="`hist-${track.id}`"
-            class="flex w-[7.5rem] shrink-0 cursor-pointer flex-col"
+            class="home-rail-card flex shrink-0 cursor-pointer flex-col"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
             <div class="flex w-full justify-center">
-              <div class="ak-clip-tr relative aspect-square w-full max-w-[calc(25vh-2.75rem)] overflow-hidden" :style="{ backgroundColor: track.color }">
+              <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
-                <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
+                <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
                 <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                <span v-if="isHiRes(track)" class="absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide text-black">HR</span>
+                <span v-if="isHiRes(track)" class="home-card-hr absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 font-bold leading-none tracking-wide text-black">HR</span>
               </div>
             </div>
             <div class="mt-2 min-w-0 shrink-0">
-              <p class="truncate text-sm font-medium">{{ track.title }}</p>
-              <p class="truncate text-xs text-muted">{{ track.artist }}</p>
+              <p class="home-card-title truncate font-medium">{{ track.title }}</p>
+              <p class="home-card-artist truncate text-muted">{{ track.artist }}</p>
             </div>
           </article>
         </div>
@@ -284,14 +284,14 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         <div class="mb-3 mt-6 flex items-center justify-between">
           <button
             type="button"
-            class="text-lg font-bold tracking-tight transition-colors hover:text-accent"
+            class="home-section-title font-bold tracking-tight transition-colors hover:text-accent"
             :title="t('home.recentlyAdded')"
             @click="addedGridMode = !addedGridMode"
           >
             {{ t("home.recentlyAdded") }}
           </button>
-          <button type="button" class="ak-clip flex h-7 items-center gap-1.5 border border-line bg-surface px-2.5 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('navigate', 'tracks')">
-            <ListMusic :size="13" />{{ t("home.allSongs") }}
+          <button type="button" class="home-chip ak-clip flex items-center gap-1.5 border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="emit('navigate', 'tracks')">
+            <ListMusic :size="13" class="home-chip__icon" />{{ t("home.allSongs") }}
           </button>
         </div>
 
@@ -305,12 +305,12 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
             @contextmenu.prevent="openContextMenu($event, track)"
           >
             <div class="flex w-full justify-center">
-              <div class="ak-clip-tr relative aspect-square w-full max-w-[calc(25vh-2.75rem)] overflow-hidden" :style="{ backgroundColor: track.color }">
+              <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
-                <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
+                <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
                 <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                <span v-if="isHiRes(track)" class="absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide text-black">HR</span>
+                <span v-if="isHiRes(track)" class="home-card-hr absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 font-bold leading-none tracking-wide text-black">HR</span>
               </div>
             </div>
             <div class="mt-2 min-w-0 shrink-0">
@@ -325,22 +325,22 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recentlyAdded"
             :key="`add-${track.id}`"
-            class="flex w-[7.5rem] shrink-0 cursor-pointer flex-col"
+            class="home-rail-card flex shrink-0 cursor-pointer flex-col"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
             <div class="flex w-full justify-center">
-              <div class="ak-clip-tr relative aspect-square w-full max-w-[calc(25vh-2.75rem)] overflow-hidden" :style="{ backgroundColor: track.color }">
+              <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
-                <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
+                <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
                 <span v-if="isActive(track) && player.isPlaying" class="absolute bottom-1.5 left-1.5 text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                <span v-if="isHiRes(track)" class="absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide text-black">HR</span>
+                <span v-if="isHiRes(track)" class="home-card-hr absolute bottom-2 right-2 rounded bg-amber-400/95 px-1.5 py-0.5 font-bold leading-none tracking-wide text-black">HR</span>
               </div>
             </div>
             <div class="mt-2 min-w-0 shrink-0">
-              <p class="truncate text-sm font-medium">{{ track.title }}</p>
-              <p class="truncate text-xs text-muted">{{ track.artist }}</p>
+              <p class="home-card-title truncate font-medium">{{ track.title }}</p>
+              <p class="home-card-artist truncate text-muted">{{ track.artist }}</p>
             </div>
           </article>
         </div>

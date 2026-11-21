@@ -411,25 +411,132 @@ html[data-accent="blue"] {
   /* Responsive album/cover wall: 1 column at the narrowest, adding columns as
      the width grows. Minimum cover edge comes from the --cover-min token. */
   .album-wall {
+    --cover-min: calc(33.3vw * var(--rail-scale, 1));
     grid-template-columns: repeat(auto-fill, minmax(var(--cover-min, 7.5rem), 1fr));
   }
 
-  /* Album grid card: the card is an inline-size container so caption type
-     scales with the card's own width, keeping cover and text in proportion as
-     columns widen or narrow. cqw falls back to the Tailwind px base when the
-     container query unit is unsupported. */
-  .album-grid-card {
-    container-type: inline-size;
+  /* Cover cards: width follows the viewport width as a fraction, height cap
+     follows the viewport height; both multiply the same --rail-scale factor, so
+     vw/vh are only the viewport-ratio base, not a separate scaling track.
+     Ratios derive from the 360px portrait base (rec 160px → 44.4%, rail/grid
+     120px → 33.3%). No floor. */
+  .home-rec-card {
+    width: calc(44.4vw * var(--rail-scale, 1));
+    max-width: calc(25vh * var(--rail-scale, 1));
   }
 
+  .home-rail-card {
+    width: calc(33.3vw * var(--rail-scale, 1));
+  }
+
+  .home-card-cover {
+    max-width: calc((25vh - 2.75rem) * var(--rail-scale, 1));
+  }
+
+  .home-recent-chunk {
+    height: calc(25vh * var(--rail-scale, 1));
+  }
+
+  /* Album grid card caption: title/artist follow the rail --rail-scale factor
+     like the rest of the home rail; portrait base sizes kept as px fallback. */
   .album-grid-card .album-grid-card__title {
     font-size: 14px;
-    font-size: max(12px, 11.67cqw);
+    font-size: calc(14px * var(--rail-scale, 1));
   }
 
   .album-grid-card .album-grid-card__artist {
     font-size: 12px;
-    font-size: max(10px, 10cqw);
+    font-size: calc(12px * var(--rail-scale, 1));
+  }
+
+  /* Home rail body: section titles, chips, card captions, glyphs, spinners and
+     HR badges all follow the same --rail-scale factor. Portrait base sizes are
+     kept as the px fallback; calc(...) covers it. No floor. */
+  .home-section-title {
+    font-size: 18px;
+    font-size: calc(18px * var(--rail-scale, 1));
+  }
+
+  .home-chip {
+    height: 28px;
+    height: calc(28px * var(--rail-scale, 1));
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-left: calc(10px * var(--rail-scale, 1));
+    padding-right: calc(10px * var(--rail-scale, 1));
+  }
+
+  .home-chip__icon {
+    width: 13px;
+    height: 13px;
+    width: calc(13px * var(--rail-scale, 1));
+    height: calc(13px * var(--rail-scale, 1));
+  }
+
+  .home-rec-title {
+    font-size: 16px;
+    font-size: calc(16px * var(--rail-scale, 1));
+  }
+
+  .home-rec-artist {
+    font-size: 12px;
+    font-size: calc(12px * var(--rail-scale, 1));
+  }
+
+  .home-rec-initial {
+    font-size: 36px;
+    font-size: calc(36px * var(--rail-scale, 1));
+  }
+
+  .home-rec-spinner {
+    width: 26px;
+    height: 26px;
+    width: calc(26px * var(--rail-scale, 1));
+    height: calc(26px * var(--rail-scale, 1));
+  }
+
+  .home-card-title {
+    font-size: 14px;
+    font-size: calc(14px * var(--rail-scale, 1));
+  }
+
+  .home-card-artist {
+    font-size: 12px;
+    font-size: calc(12px * var(--rail-scale, 1));
+  }
+
+  .home-card-initial {
+    font-size: 30px;
+    font-size: calc(30px * var(--rail-scale, 1));
+  }
+
+  .home-list-initial {
+    font-size: 20px;
+    font-size: calc(20px * var(--rail-scale, 1));
+  }
+
+  .home-card-spinner {
+    width: 22px;
+    height: 22px;
+    width: calc(22px * var(--rail-scale, 1));
+    height: calc(22px * var(--rail-scale, 1));
+  }
+
+  .home-list-spinner {
+    width: 18px;
+    height: 18px;
+    width: calc(18px * var(--rail-scale, 1));
+    height: calc(18px * var(--rail-scale, 1));
+  }
+
+  .home-card-hr {
+    font-size: 9px;
+    font-size: calc(9px * var(--rail-scale, 1));
+  }
+
+  .home-list-hr {
+    font-size: 8px;
+    font-size: calc(8px * var(--rail-scale, 1));
   }
 
   /* Home header: title, avatar, glyph and icon scale by the landscape rail's
