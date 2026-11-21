@@ -35,10 +35,29 @@ const recentlyAdded = computed(() => {
 });
 const recentTracks = computed(() => tracksForPaths(profile.recent, player.tracks).slice(0, HOME_LIMIT));
 
-/** List mode chunks three rows per page; the pages flip sideways. */
+/** List mode rows per page: three by default; drop to two, then one, as the
+ *  viewport-anchored chunk box cannot fit that many rows against the natural
+ *  caption height. Chunks then flip sideways. */
+const rowsPerPage = ref(3);
+let listObserver: ResizeObserver | null = null;
+
+function syncRecentRows() {
+  const box = rootEl.value?.querySelector<HTMLElement>(".recent-chunk");
+  if (!box) return;
+  const avail = box.clientHeight;
+  const caption = box.querySelector("article .min-w-0.flex-1");
+  const rowH = caption ? caption.clientHeight : 0;
+  if (avail <= 0 || rowH <= 0) return;
+  let rows = 3;
+  if (avail < rowH * 3) rows = 2;
+  if (avail < rowH * 2) rows = 1;
+  rowsPerPage.value = Math.max(1, Math.min(3, rows));
+}
+
 const recentChunks = computed(() => {
   const chunks: Track[][] = [];
-  for (let i = 0; i < recentTracks.value.length; i += 3) chunks.push(recentTracks.value.slice(i, i + 3));
+  const size = rowsPerPage.value;
+  for (let i = 0; i < recentTracks.value.length; i += size) chunks.push(recentTracks.value.slice(i, i + size));
   return chunks;
 });
 
@@ -82,8 +101,19 @@ onMounted(() => {
   }
   scroller?.addEventListener("scroll", syncCollapsed, { passive: true });
   syncCollapsed();
+  syncRecentRows();
+  const chunk = rootEl.value?.querySelector<HTMLElement>(".recent-chunk");
+  if (chunk && typeof ResizeObserver !== "undefined") {
+    listObserver = new ResizeObserver(syncRecentRows);
+    listObserver.observe(chunk);
+  }
+  window.addEventListener("resize", syncRecentRows, { passive: true });
 });
-onBeforeUnmount(() => scroller?.removeEventListener("scroll", syncCollapsed));
+onBeforeUnmount(() => {
+  scroller?.removeEventListener("scroll", syncCollapsed);
+  listObserver?.disconnect();
+  window.removeEventListener("resize", syncRecentRows);
+});
 
 /** Hi-Res: above the 48 kHz ceiling, or 24-bit and up. */
 function isHiRes(track: Track): boolean {
@@ -201,7 +231,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <div
             v-for="(chunk, chunkIndex) in recentChunks"
             :key="`hist-chunk-${chunkIndex}`"
-            class="flex h-[25vh] w-full shrink-0 snap-start flex-col px-6"
+            class="recent-chunk flex h-[25vh] w-full shrink-0 snap-start flex-col px-6"
           >
             <article
               v-for="track in chunk"
