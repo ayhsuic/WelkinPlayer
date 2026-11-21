@@ -164,7 +164,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recommended"
             :key="`rec-${track.id}`"
-            class="ak-clip-tr group relative aspect-square w-[62%] max-w-[260px] shrink-0 cursor-pointer overflow-hidden"
+            class="ak-clip-tr group relative aspect-square w-[62%] shrink-0 cursor-pointer overflow-hidden"
             :style="{ backgroundColor: track.color }"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
@@ -230,7 +230,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recentTracks"
             :key="`hist-${track.id}`"
-            class="w-[62%] max-w-[260px] shrink-0 cursor-pointer"
+            class="w-[62%] shrink-0 cursor-pointer"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
@@ -289,7 +289,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recentlyAdded"
             :key="`add-${track.id}`"
-            class="w-[62%] max-w-[260px] shrink-0 cursor-pointer"
+            class="w-[62%] shrink-0 cursor-pointer"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
