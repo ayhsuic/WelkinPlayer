@@ -255,12 +255,12 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </div>
         </div>
 
-        <!-- Responsive card wall: columns auto-fill from the minimum cover edge; cover + caption stay within 1/4 height. -->
-        <div v-else class="album-wall grid gap-x-4 gap-y-6">
+        <!-- Rail: single horizontal row of smaller square cards; cover + caption stay within 1/4 height. -->
+        <div v-else class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
           <article
             v-for="track in recentTracks"
             :key="`hist-${track.id}`"
-            class="flex cursor-pointer flex-col"
+            class="flex w-[7.5rem] shrink-0 cursor-pointer flex-col"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
@@ -322,12 +322,12 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </article>
         </div>
 
-        <!-- Responsive card wall: columns auto-fill from the minimum cover edge; cover + caption stay within 1/4 height. -->
-        <div v-else class="album-wall grid gap-x-4 gap-y-6">
+        <!-- Rail: single horizontal row of smaller square cards; cover + caption stay within 1/4 height. -->
+        <div v-else class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
           <article
             v-for="track in recentlyAdded"
             :key="`add-${track.id}`"
-            class="flex cursor-pointer flex-col"
+            class="flex w-[7.5rem] shrink-0 cursor-pointer flex-col"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
