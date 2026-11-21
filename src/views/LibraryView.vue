@@ -164,7 +164,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recommended"
             :key="`rec-${track.id}`"
-            class="ak-clip-tr group relative aspect-square h-[25vh] shrink-0 cursor-pointer overflow-hidden"
+            class="ak-clip-tr group relative aspect-square w-1/2 max-h-[25vh] shrink-0 cursor-pointer overflow-hidden"
             :style="{ backgroundColor: track.color }"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
@@ -230,7 +230,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recentTracks"
             :key="`hist-${track.id}`"
-            class="flex w-[22vh] shrink-0 cursor-pointer flex-col"
+            class="flex w-1/3 max-h-[25vh] shrink-0 cursor-pointer flex-col"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
@@ -263,12 +263,12 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </button>
         </div>
 
-        <!-- Responsive album grid: columns reflow 1 → many; each card matches the rail card height (1/4 viewport). -->
+        <!-- Responsive album grid: columns reflow 1 → many; card height follows content, rows separated by gap. -->
         <div v-if="addedGridMode" class="grid album-wall gap-x-4 gap-y-6">
           <article
             v-for="track in recentlyAdded"
             :key="`add-grid-${track.id}`"
-            class="grid h-[25vh] cursor-pointer grid-rows-[1fr_auto_auto]"
+            class="cursor-pointer"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
@@ -289,7 +289,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recentlyAdded"
             :key="`add-${track.id}`"
-            class="flex w-[22vh] shrink-0 cursor-pointer flex-col"
+            class="flex w-1/3 max-h-[25vh] shrink-0 cursor-pointer flex-col"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
