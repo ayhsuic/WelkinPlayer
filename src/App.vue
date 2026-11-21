@@ -177,11 +177,19 @@ const contentWidth = ref(Math.max(1, window.innerWidth));
 const contentHeight = ref(Math.max(1, window.innerHeight));
 
 /**
- * Element scale for the landscape rail. Width and height budgets are already
- * anchored to the rail panel's own width/height via --cw/--ch, so no extra
- * short/long-edge factor is folded in here; kept as a constant 1.
+ * Secondary scale k for the rail. The 9:21 rail line is the baseline where k = 1
+ * (default, largest size); once the panel/viewport is pulled wider than that
+ * aspect ratio, elements shrink proportionally with width/height. Narrower than
+ * the baseline k stays clamped at 1, never enlarged. Width is the dragged rail
+ * width in landscape, the viewport width otherwise; height follows the
+ * container's own visible height.
  */
-const railElementScale = computed(() => 1);
+const BASE_ASPECT = 9 / 21;
+const railElementScale = computed(() => {
+  const w = isLandscape.value ? navWidth.value : contentWidth.value;
+  const h = Math.max(1, contentHeight.value);
+  return Math.min(1, BASE_ASPECT / (w / h));
+});
 /** Whether the landscape rail is shown; hidden state lets the wall go full-screen. */
 const navVisible = ref(true);
 /** Last usable size, kept so reopening restores a comfortable width. */
