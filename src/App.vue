@@ -164,6 +164,26 @@ const baseW = ref(baseRailWidth());
 /** User width factor relative to the computed base; persisted across restarts. */
 const railScale = ref(Number(localStorage.getItem(NAV_SCALE_KEY)) || 1);
 const navWidth = ref(Math.round(clampRail(baseW.value * railScale.value)));
+
+/** Short-edge / long-edge ratio of the current viewport (≤1). */
+const railRatio = computed(() => {
+  const W = window.innerWidth;
+  const H = Math.max(1, window.innerHeight);
+  return Math.min(1, H / W);
+});
+
+/**
+ * Element scale for the landscape rail: follows the viewport ratio, nudges with
+ * the dragged rail width, capped at 1 (never larger than the portrait base).
+ * No floor: elements shrink proportionally with the viewport. Portrait is 1.
+ * Driven by the viewport, not screen metrics.
+ */
+const railElementScale = computed(() => {
+  if (!isLandscape.value) return 1;
+  const base = Math.max(1, window.innerHeight);
+  const byWidth = Math.min(1, navWidth.value / base);
+  return Math.min(railRatio.value, byWidth);
+});
 /** Whether the landscape rail is shown; hidden state lets the wall go full-screen. */
 const navVisible = ref(true);
 /** Last usable size, kept so reopening restores a comfortable width. */
@@ -566,7 +586,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
          with the seek bar beside the wall. Width follows the viewport ratio,
          not a fixed breakpoint. -->
     <div v-if="isLandscape" class="split flex min-h-0 flex-1">
-      <aside v-show="navVisible" class="split-nav" :style="{ width: `${navWidth}px` }">
+      <aside v-show="navVisible" class="split-nav" :style="{ width: `${navWidth}px`, '--rail-scale': railElementScale }">
         <div class="split-nav-body">
           <template v-if="drawerSubView">
             <TracksView v-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="split-tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
@@ -663,8 +683,6 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
    so the category tabs glide up to the status bar instead of jumping. */
 main {
   transition: padding-top 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  /* Container for the main pane's cqw-based header scaling. */
-  container-type: inline-size;
 }
 
 /* ------------------------------------------------ landscape split layout */
@@ -683,8 +701,6 @@ main {
   height: 100%;
   border-right: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
-  /* Container for the rail's own cqw-based header/tab-bar scaling. */
-  container-type: inline-size;
 }
 
 .split-nav-body {

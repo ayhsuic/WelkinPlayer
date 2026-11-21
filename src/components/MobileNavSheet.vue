@@ -251,11 +251,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Container for the sheet's cqw-based header/tab-bar scaling. */
-section {
-  container-type: inline-size;
-}
-
 .nav-sheet-enter-active,
 .nav-sheet-leave-active {
   transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
