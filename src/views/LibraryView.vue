@@ -164,7 +164,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <article
             v-for="track in recommended"
             :key="`rec-${track.id}`"
-            class="ak-clip-tr group relative aspect-square w-[62%] shrink-0 cursor-pointer overflow-hidden"
+            class="ak-clip-tr group relative aspect-square h-[25vh] shrink-0 cursor-pointer overflow-hidden"
             :style="{ backgroundColor: track.color }"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
@@ -201,12 +201,12 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <div
             v-for="(chunk, chunkIndex) in recentChunks"
             :key="`hist-chunk-${chunkIndex}`"
-            class="w-full shrink-0 snap-start px-6"
+            class="flex h-[25vh] w-full shrink-0 snap-start flex-col px-6"
           >
             <article
               v-for="track in chunk"
               :key="`hist-list-${track.id}`"
-              class="flex cursor-pointer items-center gap-3 py-2.5"
+              class="flex min-h-0 flex-1 cursor-pointer items-center gap-3"
               @click="play(track)"
               @contextmenu.prevent="openContextMenu($event, track)"
             >
@@ -214,7 +214,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
                 <p class="truncate text-sm font-semibold" :class="isActive(track) ? 'text-accent' : ''">{{ track.title }}</p>
                 <p class="truncate text-xs text-muted">{{ track.artist }}</p>
               </div>
-              <div class="ak-clip-tr relative h-12 w-12 shrink-0 overflow-hidden" :style="{ backgroundColor: track.color }">
+              <div class="ak-clip-tr relative aspect-square h-[80%] shrink-0 overflow-hidden" :style="{ backgroundColor: track.color }">
                 <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
                 <LoaderCircle v-else-if="coverPending(track)" :size="18" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
                 <span v-else class="absolute inset-0 grid place-items-center text-xl font-black text-white/90">{{ initial(track) }}</span>
@@ -225,16 +225,16 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </div>
         </div>
 
-        <!-- Rail: cover size matches the daily-recommendation card (square, 62% wide, capped 260px). -->
+        <!-- Rail: whole card (cover + caption) matches the daily-recommendation height, 1/4 of the viewport. -->
         <div v-else class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
           <article
             v-for="track in recentTracks"
             :key="`hist-${track.id}`"
-            class="w-[62%] shrink-0 cursor-pointer"
+            class="flex h-[25vh] w-[62%] shrink-0 cursor-pointer flex-col"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="ak-clip-tr relative aspect-square overflow-hidden" :style="{ backgroundColor: track.color }">
+            <div class="ak-clip-tr relative min-h-0 flex-1 overflow-hidden" :style="{ backgroundColor: track.color }">
               <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
               <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
               <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
@@ -284,16 +284,16 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </article>
         </div>
 
-        <!-- Rail: cover size matches the daily-recommendation card (square, 62% wide, capped 260px). -->
+        <!-- Rail: whole card (cover + caption) matches the daily-recommendation height, 1/4 of the viewport. -->
         <div v-else class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
           <article
             v-for="track in recentlyAdded"
             :key="`add-${track.id}`"
-            class="w-[62%] shrink-0 cursor-pointer"
+            class="flex h-[25vh] w-[62%] shrink-0 cursor-pointer flex-col"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
-            <div class="ak-clip-tr relative aspect-square overflow-hidden" :style="{ backgroundColor: track.color }">
+            <div class="ak-clip-tr relative min-h-0 flex-1 overflow-hidden" :style="{ backgroundColor: track.color }">
               <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
               <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="absolute inset-0 m-auto animate-spin text-white/90" />
               <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ initial(track) }}</span>
