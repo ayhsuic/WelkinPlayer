@@ -51,11 +51,11 @@ function onSelect(tab: MainTab) {
   position: absolute;
   left: calc(var(--cw) * 0.067 * var(--rail-scale, 1));
   right: calc(var(--cw) * 0.067 * var(--rail-scale, 1));
-  bottom: calc(env(safe-area-inset-bottom) + 100vh * 0.012 * var(--rail-scale, 1));
+  bottom: calc(env(safe-area-inset-bottom) + var(--ch, 100vh) * 0.012 * var(--rail-scale, 1));
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  height: calc(100vh * 0.072 * var(--rail-scale, 1));
+  height: calc(var(--ch, 100vh) * 0.072 * var(--rail-scale, 1));
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   border: 1px solid var(--line);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
@@ -69,7 +69,7 @@ function onSelect(tab: MainTab) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: calc(100vh * 0.005 * var(--rail-scale, 1));
+  gap: calc(var(--ch, 100vh) * 0.005 * var(--rail-scale, 1));
   border: none;
   background: transparent;
   cursor: pointer;
@@ -123,7 +123,7 @@ function onSelect(tab: MainTab) {
   aspect-ratio: 1 / 1;
   height: auto;
   flex-shrink: 0;
-  max-width: calc(100vh * 0.045 * var(--rail-scale, 1));
+  max-width: calc(var(--ch, 100vh) * 0.045 * var(--rail-scale, 1));
   transition: transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -137,7 +137,7 @@ function onSelect(tab: MainTab) {
 }
 
 .tab-bar-label {
-  font-size: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(100vh * 0.025 * var(--rail-scale, 1)));
+  font-size: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.025 * var(--rail-scale, 1)));
   font-weight: 500;
   letter-spacing: 0.04em;
   line-height: 1;

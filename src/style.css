@@ -43,6 +43,9 @@
      should override this token (or the root font size it derives from) instead
      of hardcoding lengths inside the views. */
   --cover-min: 7.5rem;
+  /* Height budget base: portrait = viewport height, landscape = long edge.
+     Overridden per container from the injected --ch variable. */
+  --ch: 100vh;
   color-scheme: light;
 }
 
@@ -424,38 +427,48 @@ html[data-accent="blue"] {
   .home-rec-card {
     width: calc(var(--cw) * 0.444 * var(--rail-scale, 1));
     aspect-ratio: 1 / 1;
-    max-width: calc(100vh * 0.25 * var(--rail-scale, 1));
+    max-width: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
   }
 
   .home-rail-card {
     width: calc(var(--cw) * 0.333 * var(--rail-scale, 1));
   }
 
-  .home-recent-chunk {
-    height: calc(100vh * 0.25 * var(--rail-scale, 1));
+  .home-recent-columns {
+    /* Whole recent-play block shares the same height cap as the recommend card:
+       0.25ch. Actual column height follows the resolved row count so wrap
+       columns stay even when the box cannot fit three rows. */
+    max-height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
     display: flex;
     flex-direction: column;
     flex-wrap: wrap;
     align-content: flex-start;
     align-items: flex-start;
-    column-gap: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(100vh * 0.015 * var(--rail-scale, 1)));
-    row-gap: calc(100vh * 0.016 * var(--rail-scale, 1));
+    column-gap: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.015 * var(--rail-scale, 1)));
+    row-gap: calc(var(--ch, 100vh) * 0.016 * var(--rail-scale, 1));
   }
 
-  /* List row item: horizontal strip (caption left, cover right) with its own
-     width budget; it does not stretch across the whole chunk width. */
+  /* List row item: horizontal strip (caption left, cover right). Width anchored
+     to --cw; row height follows the cover/caption instead of a fixed budget. */
   .home-list-item {
     width: calc(var(--cw) * 0.3 * var(--rail-scale, 1));
+    gap: min(calc(var(--cw) * 0.02 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.02 * var(--rail-scale, 1)));
+    min-width: 0;
+    padding: 0;
+  }
+
+  /* Caption column: takes the leftover row width; long titles truncate inside. */
+  .home-list-caption {
     min-width: 0;
   }
 
-  /* List row cover: independent three-limit budget instead of 80% of the row
-     height, so the caption and cover stay aligned when rows are squeezed. */
+  /* List row cover: independent three-limit budget; 1:1 square, width anchored
+     to --cw and pressed back by --ch so it cannot grow the row without bound. */
   .home-list-cover {
     width: calc(var(--cw) * 0.13 * var(--rail-scale, 1));
     aspect-ratio: 1 / 1;
     height: auto;
-    max-width: calc(100vh * 0.09 * var(--rail-scale, 1));
+    max-width: calc(var(--ch, 100vh) * 0.09 * var(--rail-scale, 1));
   }
 
   /* Album grid card: a grid item defaults to min-width:auto, which lets a long
@@ -470,22 +483,22 @@ html[data-accent="blue"] {
   }
 
   .album-grid-card .album-grid-card__title {
-    font-size: min(calc(var(--cw) * 0.039 * var(--rail-scale, 1)), calc(100vh * 0.028 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.035 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.026 * var(--rail-scale, 1)));
   }
 
   .album-grid-card .album-grid-card__artist {
-    font-size: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(100vh * 0.025 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.029 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.022 * var(--rail-scale, 1)));
   }
 
   /* Home rail body: section titles, chips, captions, glyphs, spinners and HR
      badges all follow width budget + aspect ratio + height cap. No floor. */
   .home-section-title {
-    font-size: min(calc(var(--cw) * 0.05 * var(--rail-scale, 1)), calc(100vh * 0.035 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.05 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.035 * var(--rail-scale, 1)));
   }
 
   .home-chip {
-    height: calc(100vh * 0.04 * var(--rail-scale, 1));
-    gap: min(calc(var(--cw) * 0.017 * var(--rail-scale, 1)), calc(100vh * 0.012 * var(--rail-scale, 1)));
+    height: calc(var(--ch, 100vh) * 0.04 * var(--rail-scale, 1));
+    gap: min(calc(var(--cw) * 0.017 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.012 * var(--rail-scale, 1)));
     padding-left: calc(var(--cw) * 0.028 * var(--rail-scale, 1));
     padding-right: calc(var(--cw) * 0.028 * var(--rail-scale, 1));
   }
@@ -494,86 +507,86 @@ html[data-accent="blue"] {
     width: calc(var(--cw) * 0.036 * var(--rail-scale, 1));
     aspect-ratio: 1 / 1;
     height: auto;
-    max-width: calc(100vh * 0.03 * var(--rail-scale, 1));
+    max-width: calc(var(--ch, 100vh) * 0.03 * var(--rail-scale, 1));
   }
 
   .home-rec-title {
-    font-size: min(calc(var(--cw) * 0.044 * var(--rail-scale, 1)), calc(100vh * 0.03 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.044 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.03 * var(--rail-scale, 1)));
   }
 
   .home-rec-artist {
-    font-size: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(100vh * 0.025 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.025 * var(--rail-scale, 1)));
   }
 
   .home-rec-initial {
-    font-size: min(calc(var(--cw) * 0.1 * var(--rail-scale, 1)), calc(100vh * 0.06 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.1 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.06 * var(--rail-scale, 1)));
   }
 
   .home-rec-spinner {
     width: calc(var(--cw) * 0.072 * var(--rail-scale, 1));
     aspect-ratio: 1 / 1;
     height: auto;
-    max-width: calc(100vh * 0.05 * var(--rail-scale, 1));
+    max-width: calc(var(--ch, 100vh) * 0.05 * var(--rail-scale, 1));
   }
 
   .home-card-title {
-    font-size: min(calc(var(--cw) * 0.039 * var(--rail-scale, 1)), calc(100vh * 0.028 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.036 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.026 * var(--rail-scale, 1)));
   }
 
   .home-card-artist {
-    font-size: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(100vh * 0.025 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.03 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.022 * var(--rail-scale, 1)));
   }
 
   .home-card-initial {
-    font-size: min(calc(var(--cw) * 0.083 * var(--rail-scale, 1)), calc(100vh * 0.05 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.083 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.05 * var(--rail-scale, 1)));
   }
 
   .home-list-initial {
-    font-size: min(calc(var(--cw) * 0.056 * var(--rail-scale, 1)), calc(100vh * 0.035 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.056 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.035 * var(--rail-scale, 1)));
   }
 
   .home-card-spinner {
     width: calc(var(--cw) * 0.061 * var(--rail-scale, 1));
     aspect-ratio: 1 / 1;
     height: auto;
-    max-width: calc(100vh * 0.045 * var(--rail-scale, 1));
+    max-width: calc(var(--ch, 100vh) * 0.045 * var(--rail-scale, 1));
   }
 
   .home-list-spinner {
     width: calc(var(--cw) * 0.05 * var(--rail-scale, 1));
     aspect-ratio: 1 / 1;
     height: auto;
-    max-width: calc(100vh * 0.035 * var(--rail-scale, 1));
+    max-width: calc(var(--ch, 100vh) * 0.035 * var(--rail-scale, 1));
   }
 
   .home-card-hr {
-    font-size: min(calc(var(--cw) * 0.025 * var(--rail-scale, 1)), calc(100vh * 0.015 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.025 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.015 * var(--rail-scale, 1)));
     padding-left: calc(var(--cw) * 0.015 * var(--rail-scale, 1));
     padding-right: calc(var(--cw) * 0.015 * var(--rail-scale, 1));
-    padding-top: calc(100vh * 0.005 * var(--rail-scale, 1));
-    padding-bottom: calc(100vh * 0.005 * var(--rail-scale, 1));
-    bottom: calc(100vh * 0.008 * var(--rail-scale, 1));
-    right: calc(100vh * 0.008 * var(--rail-scale, 1));
+    padding-top: calc(var(--ch, 100vh) * 0.005 * var(--rail-scale, 1));
+    padding-bottom: calc(var(--ch, 100vh) * 0.005 * var(--rail-scale, 1));
+    bottom: calc(var(--ch, 100vh) * 0.008 * var(--rail-scale, 1));
+    right: calc(var(--ch, 100vh) * 0.008 * var(--rail-scale, 1));
   }
 
   .home-list-hr {
-    font-size: min(calc(var(--cw) * 0.022 * var(--rail-scale, 1)), calc(100vh * 0.014 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.022 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.014 * var(--rail-scale, 1)));
     padding-left: calc(var(--cw) * 0.01 * var(--rail-scale, 1));
     padding-right: calc(var(--cw) * 0.01 * var(--rail-scale, 1));
-    padding-top: calc(100vh * 0.005 * var(--rail-scale, 1));
-    padding-bottom: calc(100vh * 0.005 * var(--rail-scale, 1));
-    bottom: calc(100vh * 0.006 * var(--rail-scale, 1));
-    right: calc(100vh * 0.006 * var(--rail-scale, 1));
+    padding-top: calc(var(--ch, 100vh) * 0.005 * var(--rail-scale, 1));
+    padding-bottom: calc(var(--ch, 100vh) * 0.005 * var(--rail-scale, 1));
+    bottom: calc(var(--ch, 100vh) * 0.006 * var(--rail-scale, 1));
+    right: calc(var(--ch, 100vh) * 0.006 * var(--rail-scale, 1));
   }
 
   .home-eq-badge {
-    bottom: calc(100vh * 0.008 * var(--rail-scale, 1));
-    left: calc(100vh * 0.008 * var(--rail-scale, 1));
+    bottom: calc(var(--ch, 100vh) * 0.008 * var(--rail-scale, 1));
+    left: calc(var(--ch, 100vh) * 0.008 * var(--rail-scale, 1));
   }
 
   .home-eq-badge-list {
-    bottom: calc(100vh * 0.006 * var(--rail-scale, 1));
-    left: calc(100vh * 0.006 * var(--rail-scale, 1));
+    bottom: calc(var(--ch, 100vh) * 0.006 * var(--rail-scale, 1));
+    left: calc(var(--ch, 100vh) * 0.006 * var(--rail-scale, 1));
   }
 
   /* Home header: title, avatar, glyph and icon scale by the landscape rail's
@@ -582,27 +595,27 @@ html[data-accent="blue"] {
      calc(...) declaration covers it. No floor; elements shrink proportionally.
      Portrait leaves the factor 1. */
   .home-header {
-    padding-top: calc(100vh * 0.014 * var(--rail-scale, 1));
-    padding-bottom: calc(100vh * 0.014 * var(--rail-scale, 1));
+    padding-top: calc(var(--ch, 100vh) * 0.014 * var(--rail-scale, 1));
+    padding-bottom: calc(var(--ch, 100vh) * 0.014 * var(--rail-scale, 1));
   }
 
   .home-header.is-collapsed {
-    padding-top: calc(100vh * 0.018 * var(--rail-scale, 1));
-    padding-bottom: calc(100vh * 0.018 * var(--rail-scale, 1));
+    padding-top: calc(var(--ch, 100vh) * 0.018 * var(--rail-scale, 1));
+    padding-bottom: calc(var(--ch, 100vh) * 0.018 * var(--rail-scale, 1));
   }
 
   .home-header__title {
-    font-size: min(calc(var(--cw) * 0.067 * var(--rail-scale, 1)), calc(100vh * 0.04 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.067 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.04 * var(--rail-scale, 1)));
   }
 
   .home-header.is-collapsed .home-header__title {
-    font-size: min(calc(var(--cw) * 0.044 * var(--rail-scale, 1)), calc(100vh * 0.03 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.044 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.03 * var(--rail-scale, 1)));
   }
 
   .home-header__avatar {
     width: calc(var(--cw) * 0.122 * var(--rail-scale, 1));
     aspect-ratio: 1 / 1;
-    max-width: calc(100vh * 0.06 * var(--rail-scale, 1));
+    max-width: calc(var(--ch, 100vh) * 0.06 * var(--rail-scale, 1));
   }
 
   .home-header.is-collapsed .home-header__avatar {
@@ -610,18 +623,18 @@ html[data-accent="blue"] {
   }
 
   .home-header__initial {
-    font-size: min(calc(var(--cw) * 0.044 * var(--rail-scale, 1)), calc(100vh * 0.03 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.044 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.03 * var(--rail-scale, 1)));
   }
 
   .home-header.is-collapsed .home-header__initial {
-    font-size: min(calc(var(--cw) * 0.039 * var(--rail-scale, 1)), calc(100vh * 0.028 * var(--rail-scale, 1)));
+    font-size: min(calc(var(--cw) * 0.039 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.028 * var(--rail-scale, 1)));
   }
 
   .home-header__icon {
     width: calc(var(--cw) * 0.056 * var(--rail-scale, 1));
     aspect-ratio: 1 / 1;
     height: auto;
-    max-width: calc(100vh * 0.035 * var(--rail-scale, 1));
+    max-width: calc(var(--ch, 100vh) * 0.035 * var(--rail-scale, 1));
   }
 
   .home-header.is-collapsed .home-header__icon {
@@ -633,8 +646,8 @@ html[data-accent="blue"] {
   .home-root-pad {
     padding-left: calc(var(--cw) * 0.067 * var(--rail-scale, 1));
     padding-right: calc(var(--cw) * 0.067 * var(--rail-scale, 1));
-    padding-top: calc(100vh * 0.031 * var(--rail-scale, 1));
-    padding-bottom: calc(100vh * 0.031 * var(--rail-scale, 1));
+    padding-top: calc(var(--ch, 100vh) * 0.031 * var(--rail-scale, 1));
+    padding-bottom: calc(var(--ch, 100vh) * 0.031 * var(--rail-scale, 1));
   }
 
   .home-scroll-pad {
@@ -650,24 +663,24 @@ html[data-accent="blue"] {
   }
 
   .home-gap-x {
-    gap: min(calc(var(--cw) * 0.044 * var(--rail-scale, 1)), calc(100vh * 0.02 * var(--rail-scale, 1)));
+    gap: min(calc(var(--cw) * 0.044 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.02 * var(--rail-scale, 1)));
   }
 
   .home-gap-row {
-    gap: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(100vh * 0.015 * var(--rail-scale, 1)));
+    gap: min(calc(var(--cw) * 0.05 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.05 * var(--rail-scale, 1)));
   }
 
   .home-gap-y-grid {
-    column-gap: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(100vh * 0.015 * var(--rail-scale, 1)));
-    row-gap: calc(100vh * 0.022 * var(--rail-scale, 1));
+    column-gap: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.015 * var(--rail-scale, 1)));
+    row-gap: calc(var(--ch, 100vh) * 0.022 * var(--rail-scale, 1));
   }
 
-  .home-mt-card { margin-top: calc(100vh * 0.01 * var(--rail-scale, 1)); }
-  .home-mt-section { margin-top: calc(100vh * 0.031 * var(--rail-scale, 1)); }
-  .home-mb-title { margin-bottom: calc(100vh * 0.015 * var(--rail-scale, 1)); }
-  .home-pad-cover { padding: calc(100vh * 0.02 * var(--rail-scale, 1)); }
-  .home-mt-caption { margin-top: calc(100vh * 0.003 * var(--rail-scale, 1)); }
-  .home-pb-rail { padding-bottom: calc(100vh * 0.018 * var(--rail-scale, 1)); }
+  .home-mt-card { margin-top: calc(var(--ch, 100vh) * 0.01 * var(--rail-scale, 1)); }
+  .home-mt-section { margin-top: calc(var(--ch, 100vh) * 0.014 * var(--rail-scale, 1)); }
+  .home-mb-title { margin-bottom: calc(var(--ch, 100vh) * 0.015 * var(--rail-scale, 1)); }
+  .home-pad-cover { padding: calc(var(--ch, 100vh) * 0.02 * var(--rail-scale, 1)); }
+  .home-mt-caption { margin-top: calc(var(--ch, 100vh) * 0.003 * var(--rail-scale, 1)); }
+  .home-pb-rail { padding-bottom: calc(var(--ch, 100vh) * 0.012 * var(--rail-scale, 1)); }
 
   .ak-eq {
     display: flex;

@@ -131,14 +131,12 @@ const navTab = computed<MainTab>(() => sheetTab.value);
 const isLandscape = ref(false);
 /**
  * Rail width follows the short edge (height in landscape), measured from the real
- * viewport rather than a fixed pixel value. Rail width:height is clamped between
- * 9:16 (narrowest) and 3:2 (widest); the wall keeps a minimum 9:21 width:height.
- * Below the 9:21 hide line the rail collapses and the wall goes full-screen.
+ * viewport rather than a fixed pixel value. The drag lower bound sits on the
+ * 9:21 hide line; the upper bound only keeps the wall's minimum 9:21 width.
+ * Below the hide line the rail collapses and the wall goes full-screen.
  */
 /** Default rail width as a fraction of the short edge: 1 = the full portrait width. */
 const RAIL_BASE_H_RATIO = 1;
-const RAIL_MIN_H_RATIO = 9 / 16;
-const RAIL_MAX_H_RATIO = 3 / 2;
 const WALL_MIN_H_RATIO = 9 / 21;
 const RAIL_HIDE_H_RATIO = 9 / 21;
 const HANDLE_W = 18;
@@ -146,16 +144,18 @@ const HANDLE_W = 18;
 function railMaxWidth(): number {
   const W = window.innerWidth;
   const H = Math.max(1, window.innerHeight);
-  const byRatio = H * RAIL_MAX_H_RATIO;
+  // Only keep a minimum wall width; the rail itself has no aspect-ratio cap.
   const byWall = W - H * WALL_MIN_H_RATIO - HANDLE_W;
-  return Math.max(H * RAIL_MIN_H_RATIO, Math.min(byRatio, byWall));
+  return Math.max(H * RAIL_HIDE_H_RATIO, byWall);
 }
 function baseRailWidth(): number {
   return Math.max(1, window.innerHeight) * RAIL_BASE_H_RATIO;
 }
 function clampRail(w: number): number {
   const H = Math.max(1, window.innerHeight);
-  const min = H * RAIL_MIN_H_RATIO;
+  // Drag lower bound sits on the hide line (9:21); below it the rail collapses
+  // on release. Upper bound only protects the wall's minimum width.
+  const min = H * RAIL_HIDE_H_RATIO;
   return Math.min(railMaxWidth(), Math.max(min, w));
 }
 
@@ -169,19 +169,19 @@ const navWidth = ref(Math.round(clampRail(baseW.value * railScale.value)));
  * viewport width otherwise. Drives the --cw budget base for every element.
  */
 const contentWidth = ref(Math.max(1, window.innerWidth));
+/**
+ * Height budget base in CSS px: the container's own visible height (viewport
+ * height in both orientations). Width anchors --cw, height anchors --ch;
+ * no extra short/long-edge factor is folded in.
+ */
+const contentHeight = ref(Math.max(1, window.innerHeight));
 
 /**
- * Element scale for the landscape rail: the short-edge/long-edge viewport
- * ratio, capped at 1 (never larger than the portrait base). The dragged rail
- * width already flows through --cw, so it is not folded into the factor again.
- * No floor; portrait is 1. Driven by the viewport, not screen metrics.
+ * Element scale for the landscape rail. Width and height budgets are already
+ * anchored to the rail panel's own width/height via --cw/--ch, so no extra
+ * short/long-edge factor is folded in here; kept as a constant 1.
  */
-const railElementScale = computed(() => {
-  if (!isLandscape.value) return 1;
-  const W = Math.max(1, window.innerWidth);
-  const H = Math.max(1, window.innerHeight);
-  return Math.min(1, H / W);
-});
+const railElementScale = computed(() => 1);
 /** Whether the landscape rail is shown; hidden state lets the wall go full-screen. */
 const navVisible = ref(true);
 /** Last usable size, kept so reopening restores a comfortable width. */
@@ -189,8 +189,12 @@ let lastWidth = navWidth.value;
 let lastScale = railScale.value;
 
 function updateLandscape() {
-  contentWidth.value = Math.max(1, window.innerWidth);
-  isLandscape.value = window.innerWidth / Math.max(1, window.innerHeight) >= 1.15;
+  const W = Math.max(1, window.innerWidth);
+  const H = Math.max(1, window.innerHeight);
+  contentWidth.value = W;
+  isLandscape.value = W / H >= 1.15;
+  // Height budget follows the container's own visible height in both modes.
+  contentHeight.value = H;
   baseW.value = baseRailWidth();
   navWidth.value = Math.round(clampRail(baseW.value * railScale.value));
 }
@@ -580,12 +584,12 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
   <Transition name="info"><TrackInfoView v-if="view === 'track-info' && viewingTrack" :path="viewingTrack.path ?? null" :source-id="viewingTrack.sourceId" @back="closeOverlay" /></Transition>
   <Transition name="info"><LyricsEditorView v-if="view === 'lyrics-edit' && editingLyricsTrack" :path="editingLyricsTrack.path ?? null" :source-id="editingLyricsTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
   <Transition name="info"><TrackEditorView v-if="view === 'track-edit' && editingTrack" :path="editingTrack.path ?? null" :source-id="editingTrack.sourceId" @back="closeOverlay" @friendly-error="showError" /></Transition>
-  <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg" :style="{ '--cw': `${contentWidth}px` }">
+  <div class="flex h-screen flex-col overflow-hidden bg-bg text-fg" :style="{ '--cw': `${contentWidth}px`, '--ch': `${contentHeight}px` }">
     <!-- Landscape split: navigation rail on the left, cover wall on the right
          with the seek bar beside the wall. Width follows the viewport ratio,
          not a fixed breakpoint. -->
     <div v-if="isLandscape" class="split flex min-h-0 flex-1">
-      <aside v-show="navVisible" class="split-nav" :style="{ width: `${navWidth}px`, '--cw': `${navWidth}px`, '--rail-scale': railElementScale }">
+      <aside v-show="navVisible" class="split-nav" :style="{ width: `${navWidth}px`, '--cw': `${navWidth}px`, '--ch': `${contentHeight}px`, '--rail-scale': railElementScale }">
         <div class="split-nav-body">
           <template v-if="drawerSubView">
             <TracksView v-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="split-tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />

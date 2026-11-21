@@ -35,20 +35,18 @@ const recentlyAdded = computed(() => {
 });
 const recentTracks = computed(() => tracksForPaths(profile.recent, player.tracks).slice(0, HOME_LIMIT));
 
-/** List mode rows per column: three by default; drop to two, then one, as the
- *  viewport-anchored chunk box cannot fit that many rows. Columns fill the
- *  chunk width; chunks then flip sideways. */
+/** Rows per column: target three; if the capped column box cannot fit that many
+ *  rows at the current row height, drop to two, then one. The column height
+ *  follows the resolved row count so wrap columns stay even. */
 const rowsPerPage = ref(3);
-const colsPerPage = ref(1);
 let listObserver: ResizeObserver | null = null;
 
 function syncRecentRows() {
-  const box = rootEl.value?.querySelector<HTMLElement>(".recent-chunk");
+  const box = rootEl.value?.querySelector<HTMLElement>(".recent-columns");
   if (!box) return;
-  const avail = box.clientHeight;
-  const arts = [...box.querySelectorAll("article")];
-  const caption = box.querySelector<HTMLElement>("article .min-w-0.flex-1");
-  const cover = box.querySelector<HTMLElement>("article .home-list-cover");
+  const avail = parseFloat(getComputedStyle(box).maxHeight) || box.clientHeight;
+  const caption = box.querySelector<HTMLElement>(".home-list-caption");
+  const cover = box.querySelector<HTMLElement>(".home-list-cover");
   const textH = caption ? caption.clientHeight : 0;
   const coverH = cover ? cover.getBoundingClientRect().height : 0;
   const rowNeed = Math.max(textH, coverH, 1);
@@ -56,35 +54,19 @@ function syncRecentRows() {
   let rows = 3;
   while (rows > 1 && avail < rows * rowNeed + (rows - 1) * rowGap) rows--;
   rowsPerPage.value = Math.max(1, Math.min(3, rows));
-
-  const colGap = parseFloat(getComputedStyle(box).columnGap) || 0;
-  const itemW = arts[0] ? arts[0].offsetWidth : 0;
-  const chunkW = box.clientWidth;
-  let cols = 1;
-  if (itemW > 0) cols = Math.max(1, Math.floor((chunkW + colGap) / (itemW + colGap)));
-  colsPerPage.value = cols;
 }
 
-/** (Re)attach the chunk ResizeObserver once the list DOM exists. The list only
-    renders in list mode with tracks, so the observer is often missing at mount;
-    rebuild it after the data or layout mode changes. */
+/** (Re)attach the column ResizeObserver once the list DOM exists. */
 function ensureListObserver() {
   listObserver?.disconnect();
   listObserver = null;
-  const chunk = rootEl.value?.querySelector<HTMLElement>(".recent-chunk");
-  if (chunk && typeof ResizeObserver !== "undefined") {
+  const box = rootEl.value?.querySelector<HTMLElement>(".recent-columns");
+  if (box && typeof ResizeObserver !== "undefined") {
     listObserver = new ResizeObserver(syncRecentRows);
-    listObserver.observe(chunk);
+    listObserver.observe(box);
   }
   syncRecentRows();
 }
-
-const recentChunks = computed(() => {
-  const chunks: Track[][] = [];
-  const size = Math.max(1, colsPerPage.value * rowsPerPage.value);
-  for (let i = 0; i < recentTracks.value.length; i += size) chunks.push(recentTracks.value.slice(i, i + size));
-  return chunks;
-});
 
 /** Home section layout toggles: recent plays rail ↔ row list; recent adds rail ↔ album grid.
  *  Persisted locally so the chosen layout survives an app restart. */
@@ -245,21 +227,17 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </button>
         </div>
 
-        <!-- List mode: three rows per page, pages flip sideways. -->
-        <div v-if="recentListMode" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto snap-x snap-proximity">
-          <div
-            v-for="(chunk, chunkIndex) in recentChunks"
-            :key="`hist-chunk-${chunkIndex}`"
-            class="recent-chunk home-recent-chunk flex w-full shrink-0 snap-start"
-          >
+        <!-- List mode: rows stack top-to-bottom, wrap into columns, columns flip sideways. -->
+        <div v-if="recentListMode" class="home-scroll-pad home-pb-rail no-scrollbar overflow-x-auto">
+          <div class="recent-columns home-recent-columns">
             <article
-              v-for="track in chunk"
+              v-for="track in recentTracks"
               :key="`hist-list-${track.id}`"
-              class="home-list-item home-gap-row flex min-w-0 cursor-pointer items-center"
+              class="home-list-item flex min-w-0 cursor-pointer items-center"
               @click="play(track)"
               @contextmenu.prevent="openContextMenu($event, track)"
             >
-              <div class="min-w-0 flex-1">
+              <div class="home-list-caption min-w-0 flex-1">
                 <p class="home-card-title truncate font-semibold" :class="isActive(track) ? 'text-accent' : ''">{{ track.title }}</p>
                 <p class="home-card-artist home-mt-caption min-w-0 truncate text-muted">{{ track.artist }}</p>
               </div>
