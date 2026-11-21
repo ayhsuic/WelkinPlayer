@@ -190,6 +190,19 @@ const railElementScale = computed(() => {
   const h = Math.max(1, contentHeight.value);
   return Math.min(1, BASE_ASPECT / (w / h));
 });
+
+/**
+ * Push the budget bases onto <html> so nodes teleported to <body> (the mobile
+ * nav sheet, overlays) still inherit --cw/--ch/--rail-scale instead of losing
+ * them at the Teleport boundary. The landscape aside re-overrides --cw with the
+ * dragged rail width; non-teleported children still read the root div copies.
+ */
+watchEffect(() => {
+  const root = document.documentElement.style;
+  root.setProperty('--cw', `${contentWidth.value}px`);
+  root.setProperty('--ch', `${contentHeight.value}px`);
+  root.setProperty('--rail-scale', String(railElementScale.value));
+});
 /** Whether the landscape rail is shown; hidden state lets the wall go full-screen. */
 const navVisible = ref(true);
 /** Last usable size, kept so reopening restores a comfortable width. */

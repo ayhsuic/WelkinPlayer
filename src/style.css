@@ -46,6 +46,8 @@
   /* Height budget base: portrait = viewport height, landscape = long edge.
      Overridden per container from the injected --ch variable. */
   --ch: 100vh;
+  /* Width budget base; overridden per container from the injected --cw variable. */
+  --cw: 100vw;
   color-scheme: light;
 }
 
