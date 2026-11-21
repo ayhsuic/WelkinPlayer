@@ -38,7 +38,6 @@ interface GroupCard {
   count: number;
   coverTrack?: Track;
   secondary: string;
-  artist?: string;
 }
 
 const cards = computed<GroupCard[]>(() => {
@@ -47,8 +46,7 @@ const cards = computed<GroupCard[]>(() => {
     const coverTrack = group.tracks.find((track) => track.cover) ?? group.tracks[0];
     const count = group.tracks.length;
     const label = t("library.collections.trackCount", { count });
-    const artist = props.kind === "albums" ? coverTrack?.artist ?? undefined : undefined;
-    return { key: group.key, name, count, coverTrack, secondary: label, artist };
+    return { key: group.key, name, count, coverTrack, secondary: label };
   });
   return sortGroups(list, sortKey.value, sortDir.value);
 });
@@ -83,12 +81,14 @@ const isAlbumGrid = computed(() => props.kind === "albums");
       <!-- Albums: square cover cards on a two/three column grid. -->
       <section v-else-if="isAlbumGrid" class="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3">
         <button v-for="card in cards" :key="card.key" type="button" class="group text-left" @click="emit('open', card.key)">
-          <div class="ak-clip-tr relative aspect-square overflow-hidden" :style="{ backgroundColor: card.coverTrack?.color ?? 'var(--accent)' }">
-            <img v-if="card.coverTrack?.cover" :src="card.coverTrack.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-            <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ card.name.charAt(0) }}</span>
+          <div class="relative aspect-square">
+            <div class="ak-clip absolute inset-0 -translate-x-1.5 -translate-y-1.5 bg-accent-soft"></div>
+            <div class="ak-clip-tr relative aspect-square overflow-hidden" :style="{ backgroundColor: card.coverTrack?.color ?? 'var(--accent)' }">
+              <img v-if="card.coverTrack?.cover" :src="card.coverTrack.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+              <span v-else class="absolute inset-0 grid place-items-center text-3xl font-black text-white/90">{{ card.name.charAt(0) }}</span>
+            </div>
           </div>
           <p class="mt-2 truncate text-sm font-medium">{{ card.name }}</p>
-          <p v-if="card.artist" class="truncate text-xs text-muted">{{ card.artist }}</p>
         </button>
       </section>
 

@@ -48,23 +48,17 @@ const rows: CategoryRow[] = [
 
 const RECENT_LIMIT = 8;
 
-/** Tracks most recently added to the library, newest source modification first. */
-const recentlyAdded = computed(() => {
-  const indexed = player.tracks
-    .map((track, index) => ({ track, index, time: Date.parse(track.modified ?? "") || 0 }))
-    .filter((item) => item.track.path);
-  indexed.sort((a, b) => (b.time - a.time) || (a.index - b.index));
-  return indexed.slice(0, RECENT_LIMIT).map((item) => item.track);
-});
-
-/** Recent additions grouped by album, kept as a vertical two-column album grid. */
+/** Recent additions grouped by album: the whole library is grouped, each album
+ *  keeps its newest track, and albums are ordered by that track's modification time. */
 const recentAlbums = computed(() => {
-  const map = new Map<string, Track>();
-  for (const track of recentlyAdded.value) {
-    const key = (track.album ?? "").trim() || track.title;
-    if (!map.has(key)) map.set(key, track);
-  }
-  return [...map.values()].slice(0, RECENT_LIMIT);
+  const albums = groupTracks(player.tracks, "albums").map((group) => {
+    const latest = group.tracks.slice().sort(
+      (a, b) => (Date.parse(b.modified ?? "") || 0) - (Date.parse(a.modified ?? "") || 0),
+    )[0];
+    return { track: latest, time: Date.parse(latest.modified ?? "") || 0 };
+  });
+  albums.sort((a, b) => b.time - a.time);
+  return albums.slice(0, RECENT_LIMIT).map((item) => item.track);
 });
 
 /** Total number of albums in the library, matching the albums drill-down count. */

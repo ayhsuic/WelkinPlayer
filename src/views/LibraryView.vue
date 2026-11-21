@@ -42,9 +42,19 @@ const recentChunks = computed(() => {
   return chunks;
 });
 
-/** Home section layout toggles: recent plays rail ↔ row list; recent adds rail ↔ album grid. */
-const recentListMode = ref(false);
-const addedGridMode = ref(false);
+/** Home section layout toggles: recent plays rail ↔ row list; recent adds rail ↔ album grid.
+ *  Persisted locally so the chosen layout survives an app restart. */
+const RECENT_LIST_KEY = "welkin.home.recentListMode";
+const ADDED_GRID_KEY = "welkin.home.addedGridMode";
+function readStoredFlag(key: string, fallback: boolean): boolean {
+  const raw = localStorage.getItem(key);
+  if (raw === null) return fallback;
+  return raw === "1";
+}
+const recentListMode = ref(readStoredFlag(RECENT_LIST_KEY, false));
+const addedGridMode = ref(readStoredFlag(ADDED_GRID_KEY, false));
+watch(recentListMode, (value) => localStorage.setItem(RECENT_LIST_KEY, value ? "1" : "0"));
+watch(addedGridMode, (value) => localStorage.setItem(ADDED_GRID_KEY, value ? "1" : "0"));
 
 /** First nickname glyph for the home avatar; falls back to the person icon when unnamed. */
 const avatarInitial = computed(() => {
@@ -187,11 +197,11 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         </div>
 
         <!-- List mode: three rows per page, pages flip sideways. -->
-        <div v-if="recentListMode" class="no-scrollbar -mx-6 flex overflow-x-auto px-6 pb-2 snap-x snap-mandatory">
+        <div v-if="recentListMode" class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto pb-2 snap-x snap-proximity">
           <div
             v-for="(chunk, chunkIndex) in recentChunks"
             :key="`hist-chunk-${chunkIndex}`"
-            class="w-full shrink-0 snap-start"
+            class="w-full shrink-0 snap-start px-6"
           >
             <article
               v-for="track in chunk"
@@ -274,12 +284,12 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </article>
         </div>
 
-        <!-- Compact responsive wall: columns reflow 1 → many with the available width. -->
-        <div v-else class="grid album-wall-sm gap-x-4 gap-y-4">
+        <!-- Compact rail: small square covers on a single sideways-scrolling row. -->
+        <div v-else class="no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
           <article
             v-for="track in recentlyAdded"
             :key="`add-${track.id}`"
-            class="cursor-pointer"
+            class="w-[7rem] shrink-0 cursor-pointer"
             @click="play(track)"
             @contextmenu.prevent="openContextMenu($event, track)"
           >
