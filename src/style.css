@@ -451,7 +451,7 @@ html[data-accent="blue"] {
   /* List row item: horizontal strip (caption left, cover right). Width anchored
      to --cw; row height follows the cover/caption instead of a fixed budget. */
   .home-list-item {
-    width: calc(var(--cw) * 0.3 * var(--rail-scale, 1));
+    width: calc(var(--cw) * 0.6 * var(--rail-scale, 1));
     gap: min(calc(var(--cw) * 0.02 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.02 * var(--rail-scale, 1)));
     min-width: 0;
     padding: 0;
