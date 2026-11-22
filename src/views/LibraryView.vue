@@ -92,6 +92,7 @@ function measureRecentList() {
  *  Persisted locally so the chosen layout survives an app restart. */
 const RECENT_LIST_KEY = "welkin.home.recentListMode";
 const ADDED_GRID_KEY = "welkin.home.addedGridMode";
+const REC_CONTAINER_KEY = "welkin.home.recContainerMode";
 function readStoredFlag(key: string, fallback: boolean): boolean {
   const raw = localStorage.getItem(key);
   if (raw === null) return fallback;
@@ -99,8 +100,12 @@ function readStoredFlag(key: string, fallback: boolean): boolean {
 }
 const recentListMode = ref(readStoredFlag(RECENT_LIST_KEY, false));
 const addedGridMode = ref(readStoredFlag(ADDED_GRID_KEY, false));
+// Daily recommendation: false = open rail (natural horizontal row),
+// true = clipped horizontal container; both keep the horizontal virtualizer.
+const recContainerMode = ref(readStoredFlag(REC_CONTAINER_KEY, false));
 watch(recentListMode, (value) => localStorage.setItem(RECENT_LIST_KEY, value ? "1" : "0"));
 watch(addedGridMode, (value) => localStorage.setItem(ADDED_GRID_KEY, value ? "1" : "0"));
+watch(recContainerMode, (value) => localStorage.setItem(REC_CONTAINER_KEY, value ? "1" : "0"));
 
 /** First nickname glyph for the home avatar; falls back to the person icon when unnamed. */
 const avatarInitial = computed(() => {
@@ -140,6 +145,7 @@ onBeforeUnmount(() => {
 
 /* --- Daily recommendation: horizontal virtualized rail over its own clip host. --- */
 const recHost = ref<HTMLElement | null>(null);
+const recOpenHost = ref<HTMLElement | null>(null);
 const recCh = ref(0);
 const recCw = ref(0);
 let recResizeObs: ResizeObserver | undefined;
@@ -153,7 +159,7 @@ function recTrackAt(index: number): Track | undefined {
   return recommended.value[index];
 }
 function measureRecRail() {
-  const host = recHost.value;
+  const host = recHost.value ?? recOpenHost.value;
   if (!host) return;
   const ch = parseFloat(getComputedStyle(host).getPropertyValue("--ch"));
   const cw = parseFloat(getComputedStyle(host).getPropertyValue("--cw"));
@@ -266,7 +272,18 @@ function observeHost(hostRef: Ref<HTMLElement | null>, measure: () => void, obs:
 
 watch(recentListMode, () => void nextTick(measureRecentList));
 observeHost(recentHost, measureRecentList, { current: recentResizeObs });
-observeHost(recHost, measureRecRail, { current: recResizeObs });
+watch([recHost, recOpenHost], ([h1, h2]) => {
+  const target = h1 ?? h2 ?? null;
+  measureRecRail();
+  if (typeof ResizeObserver === "undefined") return;
+  recResizeObs?.disconnect();
+  recResizeObs = new ResizeObserver(measureRecRail);
+  if (target) {
+    recResizeObs.observe(target);
+    if (target.parentElement) recResizeObs.observe(target.parentElement);
+  }
+}, { immediate: true });
+watch(recContainerMode, () => void nextTick(measureRecRail));
 watch([recentRailHost, addedRailHost], ([h1, h2]) => {
   const target = h1 ?? h2 ?? null;
   measureRailBudget(target);
@@ -329,12 +346,46 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
       <!-- Daily recommendation: square cover cards on a horizontal rail. -->
       <section v-if="recommended.length">
         <div class="home-mb-title home-mt-card flex items-center justify-between">
-          <h2 class="home-section-title font-bold tracking-tight">{{ t("home.dailyRecommend") }}</h2>
+          <button
+            type="button"
+            class="home-section-title font-bold tracking-tight transition-colors hover:text-accent"
+            :title="t('home.dailyRecommend')"
+            @click="recContainerMode = !recContainerMode"
+          >
+            {{ t("home.dailyRecommend") }}
+          </button>
           <button type="button" class="home-chip ak-clip flex items-center border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="refreshRecommended">
             <RefreshCw :size="13" class="home-chip__icon" />{{ t("home.refresh") }}
           </button>
         </div>
-        <div ref="recHost" class="home-scroll-pad home-rec-container home-pb-rail no-scrollbar overflow-x-auto">
+
+        <!-- Open rail: natural horizontal row on a baseline scroll host; virtualized horizontally. -->
+        <div v-if="!recContainerMode" ref="recOpenHost" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto" :style="{ height: `${recCardW}px` }">
+          <Virtualizer horizontal :data="recIndexes" :item-size="recSlotW">
+            <template #default="{ item: i }">
+              <div v-if="recTrackAt(i)" :style="{ width: `${recSlotW}px` }">
+                <article
+                  :key="`rec-open-${recTrackAt(i)!.id}`"
+                  class="home-rec-card ak-clip-tr group relative aspect-square shrink-0 cursor-pointer overflow-hidden"
+                  :style="{ width: `${recCardW}px`, backgroundColor: recTrackAt(i)!.color }"
+                  @click="play(recTrackAt(i)!)"
+                  @contextmenu.prevent="openContextMenu($event, recTrackAt(i)!)"
+                >
+                  <img v-if="recTrackAt(i)!.cover" :src="recTrackAt(i)!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                  <LoaderCircle v-else-if="coverPending(recTrackAt(i)!)" :size="26" :stroke-width="2" class="home-rec-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                  <span v-else class="home-rec-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recTrackAt(i)!) }}</span>
+                  <div class="home-pad-cover absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent">
+                    <p class="home-rec-title truncate font-semibold text-white">{{ recTrackAt(i)!.title }}</p>
+                    <p class="home-rec-artist home-mt-caption truncate text-white/75">{{ recTrackAt(i)!.artist }}</p>
+                  </div>
+                </article>
+              </div>
+            </template>
+          </Virtualizer>
+        </div>
+
+        <!-- Clipped container: right edge truncated; columns virtualized horizontally. -->
+        <div v-else ref="recHost" class="home-scroll-pad home-rec-container home-pb-rail no-scrollbar overflow-x-auto">
           <Virtualizer horizontal :data="recIndexes" :item-size="recSlotW">
             <template #default="{ item: i }">
               <div v-if="recTrackAt(i)" :style="{ width: `${recSlotW}px` }">
@@ -410,7 +461,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         </div>
 
         <!-- Rail: single horizontal row of smaller square cards; virtualized horizontally. -->
-        <div v-else ref="recentRailHost" class="home-scroll-pad home-pb-rail no-scrollbar overflow-x-auto" :style="{ height: `${railCardH}px` }">
+        <div v-else ref="recentRailHost" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto" :style="{ height: `${railCardH}px` }">
           <Virtualizer horizontal :data="recentRailIndexes" :item-size="railSlotW">
             <template #default="{ item: i }">
               <div v-if="recentTracks[i]" :style="{ width: `${railSlotW}px` }">
@@ -496,7 +547,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         </div>
 
         <!-- Rail: single horizontal row of smaller square cards; virtualized horizontally. -->
-        <div v-else ref="addedRailHost" class="home-scroll-pad home-pb-rail no-scrollbar overflow-x-auto" :style="{ height: `${railCardH}px` }">
+        <div v-else ref="addedRailHost" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto" :style="{ height: `${railCardH}px` }">
           <Virtualizer horizontal :data="addedRailIndexes" :item-size="railSlotW">
             <template #default="{ item: i }">
               <div v-if="recentlyAdded[i]" :style="{ width: `${railSlotW}px` }">

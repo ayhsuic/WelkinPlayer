@@ -109,7 +109,8 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 - 条目占满所在列宽度，高度锚定行高（推荐卡高的 1/3），标题在列宽内截断；封面 1:1 随行高。不用固定比例把条目宽锁死，避免条目挤在列左侧、列间堆出死空白。
 - 高度预算：固定三行加两行行距（`ch×0.25×k + 2×ch×0.016×k`）封顶容器高度，横向虚拟化宿主须定高否则交叉轴塌缩；列距并入条目槽宽（列宽 + 列距），由虚拟化按槽宽排布。
 - 横滑 rail 容器（`.home-scroll-pad.overflow-x-auto`）右侧去掉负 margin，保留 `padding-right` 作为出口边距，末条不贴屏幕边。
-- rail 模式（`recentListMode=0`）：单行横滑小卡，封面 + 下方标题；封面边取 `min(cw×0.28, ch×0.25)`，窄屏一屏约 3.1 张，宽屏被大卡高封顶。
+- rail 模式（`recentListMode=0`）：单行横滑小卡，封面 + 下方标题；封面边取 `min(cw×0.28, ch×0.25)`，窄屏一屏约 3.1 张，宽屏被大卡高封顶；宿主对齐基线露头横滑盒类（`home-gap-x flex overflow-x-auto`），保留横向虚拟化。
+- 推荐双模式（`recContainerMode`，键 `welkin.home.recContainerMode`，默认露头）：点分区标题切换。`0` 露头——基线横滑盒自然一行；`1` 截断容器——`.home-rec-container` 定高截断盒。两态均挂横向虚拟化，宿主定高 `ch×0.25×k` 防交叉轴塌缩，状态本地持久化。
 
 ### 5.2 已移除的旧链路
 
@@ -168,3 +169,4 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 - rail 小卡封面改宽预算 `min(cw×0.28, ch×0.25)`：窄屏一屏约 3.1 张，宽屏被大卡高封顶；最近添加改开放式网格（墙不内滚，封面仍封顶大卡边）；横滑容器右侧补出口边距。
 - 基线解耦移植：数据源重构（历史/最近添加/推荐全量不截断，推荐从最近添加洗牌）；网格墙列槽锚定屏高 `ch×0.16×k`、封面与文字槽封顶 `ch×0.25×k`；最近播放折列每列三行、列宽 `rowH×4.7` 反推封顶内容宽。
 - 首页五列表接 virtua 虚拟化：推荐大卡、最近播放折列、最近播放 rail、最近添加 rail 四条横向列表走各自自滚宿主并定高（交叉轴不塌缩）；最近添加网格按行纵向虚拟化，复用共享 scroller 并带 `start-margin`。横向条目间距并入槽宽，宿主不再用容器 gap。
+- 推荐段恢复「露头 ↔ 截断容器」双模式：`recContainerMode` 本地持久化（默认露头），点标题切换，两态均保留横向虚拟化；露头宿主为基线横滑盒（`home-gap-x flex overflow-x-auto`）内联定高 `ch×0.25×k`，容器宿主 `.home-rec-container` 定高截断盒。最近播放/最近添加 rail 宿主对齐基线露头横滑盒类，保留横向虚拟化。
