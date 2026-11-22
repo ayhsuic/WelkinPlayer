@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from "vue";
+import { Virtualizer } from "virtua/vue";
 import { History, ListMusic, LoaderCircle, RefreshCw, User } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
@@ -50,15 +51,41 @@ const addedSignature = computed(() => recentlyAdded.value.map((track) => trackKe
 watch(addedSignature, refreshRecommended, { immediate: true });
 const recentTracks = computed(() => tracksForPaths(profile.recent, player.tracks));
 
-/** Folded list: three rows per column; extra entries flow into new columns to
-   the right. Column width derives from the row height and a fixed entry ratio,
-   capped to the content width so a 9:21 portrait fills the area in one column. */
+/** Recently played folded list: three rows per column, columns virtualized
+   horizontally over the shared scroller. Column width derives from the row
+   height and a fixed entry ratio, capped to the content width. */
 const RECENT_ROWS = 3;
+const recentHost = ref<HTMLElement | null>(null);
+const recentCh = ref(0);
+const recentCw = ref(0);
+const recentWallW = ref(0);
+let recentResizeObs: ResizeObserver | undefined;
+
 const recentColIndexes = computed(() =>
   Array.from({ length: Math.ceil(recentTracks.value.length / RECENT_ROWS) }, (_, i) => i),
 );
+const recentRowH = computed(() => Math.round((recentCh.value || window.innerHeight) * 0.25 / 3));
+const recentColBaseW = computed(() => Math.round(recentRowH.value * 4.7));
+const recentColW = computed(() =>
+  recentWallW.value ? Math.min(recentColBaseW.value, recentWallW.value) : recentColBaseW.value,
+);
+const recentColGap = computed(() => Math.min(Math.round((recentCw.value || 312) * 0.067), Math.round((recentCh.value || 840) * 0.029)));
+const recentRowGap = computed(() => Math.round((recentCh.value || 840) * 0.016));
+// The virtualizer measures each item's content box, so the column gap is reserved
+// inside the item width (entry capped to colW, trailing slot = gap).
+const recentColSlotW = computed(() => recentColW.value + recentColGap.value);
+const recentColSize = computed(() => recentColSlotW.value);
 function recentTrackAt(col: number, row: number): Track | undefined {
   return recentTracks.value[col * RECENT_ROWS + row];
+}
+function measureRecentList() {
+  const host = recentHost.value;
+  if (!host) return;
+  const ch = parseFloat(getComputedStyle(host).getPropertyValue("--ch"));
+  const cw = parseFloat(getComputedStyle(host).getPropertyValue("--cw"));
+  if (!Number.isNaN(ch)) recentCh.value = ch;
+  if (!Number.isNaN(cw)) recentCw.value = cw;
+  recentWallW.value = host.clientWidth || Math.round(host.getBoundingClientRect().width);
 }
 
 /** Home section layout toggles: recent plays rail ↔ row list; recent adds rail ↔ album grid.
@@ -85,6 +112,7 @@ const avatarInitial = computed(() => {
  *  and avatar tuck into a pinned top bar (mirrors Mornye's pinned SliverAppBar). */
 const rootEl = ref<HTMLElement | null>(null);
 const collapsed = ref(false);
+const scrollerEl = ref<HTMLElement | null>(null);
 let scroller: HTMLElement | null = null;
 const HEADER_PEEK_PX = 12;
 
@@ -99,11 +127,165 @@ onMounted(() => {
     if (overflowY === "auto" || overflowY === "scroll") { scroller = el; break; }
     el = el.parentElement;
   }
+  scrollerEl.value = scroller;
   scroller?.addEventListener("scroll", syncCollapsed, { passive: true });
   syncCollapsed();
+  // The shared scroller is resolved above; re-measure the wall so its
+  // virtualizer start-margin is computed against the real scroll host.
+  measureAddWall();
 });
 onBeforeUnmount(() => {
   scroller?.removeEventListener("scroll", syncCollapsed);
+});
+
+/* --- Daily recommendation: horizontal virtualized rail over its own clip host. --- */
+const recHost = ref<HTMLElement | null>(null);
+const recCh = ref(0);
+const recCw = ref(0);
+let recResizeObs: ResizeObserver | undefined;
+const recIndexes = computed(() => recommended.value.map((_, i) => i));
+// Big card edge follows the recommend-card height cap (ch×0.25); the slot
+// reserves the rail gap inside the item so the virtualizer measures it correctly.
+const recCardW = computed(() => Math.round((recCh.value || window.innerHeight) * 0.25));
+const recGap = computed(() => Math.min(Math.round((recCw.value || 312) * 0.044), Math.round((recCh.value || 840) * 0.02)));
+const recSlotW = computed(() => recCardW.value + recGap.value);
+function recTrackAt(index: number): Track | undefined {
+  return recommended.value[index];
+}
+function measureRecRail() {
+  const host = recHost.value;
+  if (!host) return;
+  const ch = parseFloat(getComputedStyle(host).getPropertyValue("--ch"));
+  const cw = parseFloat(getComputedStyle(host).getPropertyValue("--cw"));
+  if (!Number.isNaN(ch)) recCh.value = ch;
+  if (!Number.isNaN(cw)) recCw.value = cw;
+}
+
+/* --- Rail small cards (recent plays / recently added): horizontal virtualized. --- */
+const recentRailHost = ref<HTMLElement | null>(null);
+const addedRailHost = ref<HTMLElement | null>(null);
+const railCh = ref(0);
+const railCw = ref(0);
+let railResizeObs: ResizeObserver | undefined;
+const recentRailIndexes = computed(() => recentTracks.value.map((_, i) => i));
+const addedRailIndexes = computed(() => recentlyAdded.value.map((_, i) => i));
+const railCardW = computed(() => Math.round(Math.min((railCw.value || 312) * 0.28, (railCh.value || window.innerHeight) * 0.25)));
+const railGap = computed(() => Math.min(Math.round((railCw.value || 312) * 0.044), Math.round((railCh.value || 840) * 0.02)));
+const railSlotW = computed(() => railCardW.value + railGap.value);
+// Full card height for the horizontal virtualizer host: square cover + caption
+// slot. The host needs a fixed height so the virtualizer's 100%-height root
+// does not collapse the cross-axis.
+const railTextSlot = computed(() => {
+  const ch = railCh.value || window.innerHeight;
+  const cw = railCw.value || window.innerWidth;
+  const titleFs = Math.min(cw * 0.036, ch * 0.026);
+  const artistFs = Math.min(cw * 0.03, ch * 0.022);
+  return Math.round(titleFs * 1.5 + ch * 0.01 + artistFs * 1.5);
+});
+const railCardH = computed(() => railCardW.value + railTextSlot.value);
+function measureRailBudget(host: HTMLElement | null) {
+  if (!host) return;
+  const ch = parseFloat(getComputedStyle(host).getPropertyValue("--ch"));
+  const cw = parseFloat(getComputedStyle(host).getPropertyValue("--cw"));
+  if (!Number.isNaN(ch)) railCh.value = ch;
+  if (!Number.isNaN(cw)) railCw.value = cw;
+}
+
+/* --- Recently added open wall: row-based vertical virtualization over the shared scroller. --- */
+const addWallHost = ref<HTMLElement | null>(null);
+const addWallWidth = ref(0);
+const addCh = ref(0);
+const addCw = ref(0);
+const addStartMargin = ref(0);
+let addResizeObs: ResizeObserver | undefined;
+
+const addColGap = computed(() =>
+  Math.min(Math.round((addCw.value || 312) * 0.033), Math.round((addCh.value || window.innerHeight) * 0.015)),
+);
+const addCols = computed(() => {
+  const ch = addCh.value || window.innerHeight;
+  const cap = ch * 0.25;
+  // The minimum column edge must not exceed the cover cap; otherwise the slot
+  // stays wider than the capped cover and leaves dead space on its right.
+  const minCol = Math.min(Math.max(110, ch * 0.16), cap);
+  const w = addWallWidth.value || 312;
+  return Math.max(1, Math.floor((w + addColGap.value) / (minCol + addColGap.value)));
+});
+const addRowIndexes = computed(() =>
+  Array.from({ length: Math.ceil(recentlyAdded.value.length / addCols.value) }, (_, i) => i),
+);
+const addRowGap = computed(() => Math.round((addCh.value || window.innerHeight) * 0.022));
+// Text slot under the cover: title line + top margin + artist line, derived from
+// the same font-size budget as the CSS instead of a fixed px.
+const addTextSlot = computed(() => {
+  const ch = addCh.value || window.innerHeight;
+  const cw = addCw.value || window.innerWidth;
+  const titleFs = Math.min(cw * 0.036, ch * 0.026);
+  const artistFs = Math.min(cw * 0.03, ch * 0.022);
+  return Math.round(titleFs * 1.5 + ch * 0.01 + artistFs * 1.5);
+});
+const addRowHeight = computed(() => {
+  const slot = (addWallWidth.value - addColGap.value * (addCols.value - 1)) / addCols.value;
+  // Cover edge capped at the recommend-card edge (ch×0.25); the caption
+  // column shares the same cap so it cannot run past the cover's right edge.
+  const cover = Math.min(slot, (addCh.value || window.innerHeight) * 0.25);
+  return Math.round(cover + addTextSlot.value + addRowGap.value);
+});
+function addTrack(row: number, col: number): Track | undefined {
+  return recentlyAdded.value[row * addCols.value + col];
+}
+function measureAddWall() {
+  const host = addWallHost.value;
+  if (!host) return;
+  const rect = host.getBoundingClientRect();
+  addWallWidth.value = host.clientWidth || Math.round(rect.width);
+  const ch = parseFloat(getComputedStyle(host).getPropertyValue("--ch"));
+  const cw = parseFloat(getComputedStyle(host).getPropertyValue("--cw"));
+  if (!Number.isNaN(ch)) addCh.value = ch;
+  if (!Number.isNaN(cw)) addCw.value = cw;
+  if (scroller) {
+    const top = host.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    addStartMargin.value = Math.max(0, top);
+  }
+}
+
+// Observe a host (and its parent, whose box can change without the host resizing)
+// and re-measure the budget whenever either changes.
+function observeHost(hostRef: Ref<HTMLElement | null>, measure: () => void, obs: { current?: ResizeObserver | undefined }) {
+  watch(hostRef, (host: HTMLElement | null) => {
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    obs.current?.disconnect();
+    obs.current = new ResizeObserver(measure);
+    if (host) {
+      obs.current.observe(host);
+      if (host.parentElement) obs.current.observe(host.parentElement);
+    }
+  }, { immediate: true });
+}
+
+watch(recentListMode, () => void nextTick(measureRecentList));
+observeHost(recentHost, measureRecentList, { current: recentResizeObs });
+observeHost(recHost, measureRecRail, { current: recResizeObs });
+watch([recentRailHost, addedRailHost], ([h1, h2]) => {
+  const target = h1 ?? h2 ?? null;
+  measureRailBudget(target);
+  if (typeof ResizeObserver === "undefined") return;
+  railResizeObs?.disconnect();
+  railResizeObs = new ResizeObserver(() => measureRailBudget(recentRailHost.value ?? addedRailHost.value));
+  if (target) {
+    railResizeObs.observe(target);
+    if (target.parentElement) railResizeObs.observe(target.parentElement);
+  }
+}, { immediate: true });
+watch(addedGridMode, () => void nextTick(measureAddWall));
+observeHost(addWallHost, measureAddWall, { current: addResizeObs });
+
+onBeforeUnmount(() => {
+  recentResizeObs?.disconnect();
+  recResizeObs?.disconnect();
+  railResizeObs?.disconnect();
+  addResizeObs?.disconnect();
 });
 
 /** Hi-Res: above the 48 kHz ceiling, or 24-bit and up. */
@@ -152,23 +334,28 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
             <RefreshCw :size="13" class="home-chip__icon" />{{ t("home.refresh") }}
           </button>
         </div>
-        <div class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto">
-          <article
-            v-for="track in recommended"
-            :key="`rec-${track.id}`"
-            class="home-rec-card ak-clip-tr group relative aspect-square shrink-0 cursor-pointer overflow-hidden"
-            :style="{ backgroundColor: track.color }"
-            @click="play(track)"
-            @contextmenu.prevent="openContextMenu($event, track)"
-          >
-            <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-            <LoaderCircle v-else-if="coverPending(track)" :size="26" :stroke-width="2" class="home-rec-spinner absolute inset-0 m-auto animate-spin text-white/90" />
-            <span v-else class="home-rec-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
-            <div class="home-pad-cover absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent">
-              <p class="home-rec-title truncate font-semibold text-white">{{ track.title }}</p>
-              <p class="home-rec-artist home-mt-caption truncate text-white/75">{{ track.artist }}</p>
-            </div>
-          </article>
+        <div ref="recHost" class="home-scroll-pad home-rec-container home-pb-rail no-scrollbar overflow-x-auto">
+          <Virtualizer horizontal :data="recIndexes" :item-size="recSlotW">
+            <template #default="{ item: i }">
+              <div v-if="recTrackAt(i)" :style="{ width: `${recSlotW}px` }">
+                <article
+                  :key="`rec-v-${recTrackAt(i)!.id}`"
+                  class="home-rec-card ak-clip-tr group relative aspect-square shrink-0 cursor-pointer overflow-hidden"
+                  :style="{ width: `${recCardW}px`, backgroundColor: recTrackAt(i)!.color }"
+                  @click="play(recTrackAt(i)!)"
+                  @contextmenu.prevent="openContextMenu($event, recTrackAt(i)!)"
+                >
+                  <img v-if="recTrackAt(i)!.cover" :src="recTrackAt(i)!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                  <LoaderCircle v-else-if="coverPending(recTrackAt(i)!)" :size="26" :stroke-width="2" class="home-rec-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                  <span v-else class="home-rec-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recTrackAt(i)!) }}</span>
+                  <div class="home-pad-cover absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent">
+                    <p class="home-rec-title truncate font-semibold text-white">{{ recTrackAt(i)!.title }}</p>
+                    <p class="home-rec-artist home-mt-caption truncate text-white/75">{{ recTrackAt(i)!.artist }}</p>
+                  </div>
+                </article>
+              </div>
+            </template>
+          </Virtualizer>
         </div>
       </section>
 
@@ -188,58 +375,69 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </button>
         </div>
 
-        <!-- List mode: three rows per column; extra entries fold into columns to the right. -->
+        <!-- List mode: three rows per column; columns virtualized horizontally. -->
         <div v-if="recentListMode" class="home-scroll-pad home-pb-rail">
-          <div class="home-recent-columns">
-            <div v-for="col in recentColIndexes" :key="`hist-col-${col}`" class="home-recent-col">
-              <template v-for="row in RECENT_ROWS" :key="row">
-                <article
-                  v-if="recentTrackAt(col, row - 1)"
-                  :key="`hist-list-${recentTrackAt(col, row - 1)!.id}`"
-                  class="home-list-item flex min-w-0 cursor-pointer items-center"
-                  @click="play(recentTrackAt(col, row - 1)!)"
-                  @contextmenu.prevent="openContextMenu($event, recentTrackAt(col, row - 1)!)"
-                >
-                  <div class="home-list-caption min-w-0 flex-1">
-                    <p class="home-card-title truncate font-semibold" :class="isActive(recentTrackAt(col, row - 1)!) ? 'text-accent' : ''">{{ recentTrackAt(col, row - 1)!.title }}</p>
-                    <p class="home-card-artist home-mt-caption min-w-0 truncate text-muted">{{ recentTrackAt(col, row - 1)!.artist }}</p>
-                  </div>
-                  <div class="home-list-cover ak-clip-tr relative shrink-0 overflow-hidden" :style="{ backgroundColor: recentTrackAt(col, row - 1)!.color }">
-                    <img v-if="recentTrackAt(col, row - 1)!.cover" :src="recentTrackAt(col, row - 1)!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                    <LoaderCircle v-else-if="coverPending(recentTrackAt(col, row - 1)!)" :size="18" :stroke-width="2" class="home-list-spinner absolute inset-0 m-auto animate-spin text-white/90" />
-                    <span v-else class="home-list-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recentTrackAt(col, row - 1)!) }}</span>
-                    <span v-if="isActive(recentTrackAt(col, row - 1)!) && player.isPlaying" class="absolute home-eq-badge-list text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                    <span v-if="isHiRes(recentTrackAt(col, row - 1)!)" class="home-list-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
-                  </div>
-                </article>
+          <div ref="recentHost" class="home-recent-columns">
+            <Virtualizer horizontal :data="recentColIndexes" :item-size="recentColSize">
+              <template #default="{ item: col }">
+                <div class="home-recent-col" :style="{ width: `${recentColSlotW}px`, rowGap: `${recentRowGap}px` }">
+                  <template v-for="row in RECENT_ROWS" :key="row">
+                    <article
+                      v-if="recentTrackAt(col, row - 1)"
+                      :key="`hist-list-${recentTrackAt(col, row - 1)!.id}`"
+                      class="home-list-item flex min-w-0 cursor-pointer items-center"
+                      :style="{ maxWidth: `${recentColW}px` }"
+                      @click="play(recentTrackAt(col, row - 1)!)"
+                      @contextmenu.prevent="openContextMenu($event, recentTrackAt(col, row - 1)!)"
+                    >
+                      <div class="home-list-caption min-w-0 flex-1">
+                        <p class="home-card-title truncate font-semibold" :class="isActive(recentTrackAt(col, row - 1)!) ? 'text-accent' : ''">{{ recentTrackAt(col, row - 1)!.title }}</p>
+                        <p class="home-card-artist home-mt-caption min-w-0 truncate text-muted">{{ recentTrackAt(col, row - 1)!.artist }}</p>
+                      </div>
+                      <div class="home-list-cover ak-clip-tr relative shrink-0 overflow-hidden" :style="{ backgroundColor: recentTrackAt(col, row - 1)!.color }">
+                        <img v-if="recentTrackAt(col, row - 1)!.cover" :src="recentTrackAt(col, row - 1)!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                        <LoaderCircle v-else-if="coverPending(recentTrackAt(col, row - 1)!)" :size="18" :stroke-width="2" class="home-list-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                        <span v-else class="home-list-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recentTrackAt(col, row - 1)!) }}</span>
+                        <span v-if="isActive(recentTrackAt(col, row - 1)!) && player.isPlaying" class="absolute home-eq-badge-list text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                        <span v-if="isHiRes(recentTrackAt(col, row - 1)!)" class="home-list-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+                      </div>
+                    </article>
+                  </template>
+                </div>
               </template>
-            </div>
+            </Virtualizer>
           </div>
         </div>
 
-        <!-- Rail: single horizontal row of smaller square cards; cover + caption stay within 1/4 height. -->
-        <div v-else class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto">
-          <article
-            v-for="track in recentTracks"
-            :key="`hist-${track.id}`"
-            class="home-rail-card flex shrink-0 cursor-pointer flex-col"
-            @click="play(track)"
-            @contextmenu.prevent="openContextMenu($event, track)"
-          >
-            <div class="flex justify-start">
-              <div class="home-card-cover ak-clip-tr relative aspect-square overflow-hidden" :style="{ backgroundColor: track.color }">
-                <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
-                <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
-                <span v-if="isActive(track) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                <span v-if="isHiRes(track)" class="home-card-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+        <!-- Rail: single horizontal row of smaller square cards; virtualized horizontally. -->
+        <div v-else ref="recentRailHost" class="home-scroll-pad home-pb-rail no-scrollbar overflow-x-auto" :style="{ height: `${railCardH}px` }">
+          <Virtualizer horizontal :data="recentRailIndexes" :item-size="railSlotW">
+            <template #default="{ item: i }">
+              <div v-if="recentTracks[i]" :style="{ width: `${railSlotW}px` }">
+                <article
+                  :key="`hist-v-${recentTracks[i]!.id}`"
+                  class="home-rail-card flex shrink-0 cursor-pointer flex-col"
+                  :style="{ width: `${railCardW}px` }"
+                  @click="play(recentTracks[i]!)"
+                  @contextmenu.prevent="openContextMenu($event, recentTracks[i]!)"
+                >
+                  <div class="flex justify-start">
+                    <div class="home-card-cover ak-clip-tr relative aspect-square overflow-hidden" :style="{ backgroundColor: recentTracks[i]!.color }">
+                      <img v-if="recentTracks[i]!.cover" :src="recentTracks[i]!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                      <LoaderCircle v-else-if="coverPending(recentTracks[i]!)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                      <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recentTracks[i]!) }}</span>
+                      <span v-if="isActive(recentTracks[i]!) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                      <span v-if="isHiRes(recentTracks[i]!)" class="home-card-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+                    </div>
+                  </div>
+                  <div class="home-mt-card w-full min-w-0">
+                    <p class="home-card-title truncate font-medium">{{ recentTracks[i]!.title }}</p>
+                    <p class="home-card-artist truncate text-muted">{{ recentTracks[i]!.artist }}</p>
+                  </div>
+                </article>
               </div>
-            </div>
-            <div class="home-mt-card w-full min-w-0">
-              <p class="home-card-title truncate font-medium">{{ track.title }}</p>
-              <p class="home-card-artist truncate text-muted">{{ track.artist }}</p>
-            </div>
-          </article>
+            </template>
+          </Virtualizer>
         </div>
       </section>
 
@@ -259,54 +457,73 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </button>
         </div>
 
-        <!-- Responsive album grid: columns auto-fill from the minimum cover edge; cover keeps a 1:1 square. -->
-        <div v-if="addedGridMode" class="album-wall home-added-wall home-gap-y-grid">
-          <article
-            v-for="track in recentlyAdded"
-            :key="`add-grid-${track.id}`"
-            class="album-grid-card flex flex-col cursor-pointer"
-            @click="play(track)"
-            @contextmenu.prevent="openContextMenu($event, track)"
+        <!-- Responsive album grid: rows virtualized vertically over the shared scroller. -->
+        <div v-if="addedGridMode" ref="addWallHost" class="home-added-wall home-gap-y-grid">
+          <Virtualizer
+            :data="addRowIndexes"
+            :item-size="addRowHeight"
+            :scroll-ref="scrollerEl ?? undefined"
+            :start-margin="addStartMargin"
           >
-            <div class="flex w-full justify-start">
-              <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: track.color }">
-                <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
-                <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
-                <span v-if="isActive(track) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                <span v-if="isHiRes(track)" class="home-card-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+            <template #default="{ item: row }">
+              <div class="grid" :style="{ gridTemplateColumns: `repeat(${addCols}, minmax(0, 1fr))`, columnGap: `${addColGap}px`, paddingBottom: `${addRowGap}px` }">
+                <template v-for="col in addCols" :key="col">
+                  <article
+                    v-if="addTrack(row, col)"
+                    :key="`add-grid-${addTrack(row, col)!.id}`"
+                    class="album-grid-card flex flex-col cursor-pointer"
+                    @click="play(addTrack(row, col)!)"
+                    @contextmenu.prevent="openContextMenu($event, addTrack(row, col)!)"
+                  >
+                    <div class="flex w-full justify-start">
+                      <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: addTrack(row, col)!.color }">
+                        <img v-if="addTrack(row, col)!.cover" :src="addTrack(row, col)!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                        <LoaderCircle v-else-if="coverPending(addTrack(row, col)!)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                        <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(addTrack(row, col)!) }}</span>
+                        <span v-if="isActive(addTrack(row, col)!) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                        <span v-if="isHiRes(addTrack(row, col)!)" class="home-card-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+                      </div>
+                    </div>
+                    <div class="home-mt-card w-full min-w-0">
+                      <p class="album-grid-card__title truncate font-medium">{{ addTrack(row, col)!.title }}</p>
+                      <p class="album-grid-card__artist truncate text-muted">{{ addTrack(row, col)!.artist }}</p>
+                    </div>
+                  </article>
+                </template>
               </div>
-            </div>
-            <div class="home-mt-card w-full min-w-0">
-              <p class="album-grid-card__title truncate font-medium">{{ track.title }}</p>
-              <p class="album-grid-card__artist truncate text-muted">{{ track.artist }}</p>
-            </div>
-          </article>
+            </template>
+          </Virtualizer>
         </div>
 
-        <!-- Rail: single horizontal row of smaller square cards; cover + caption stay within 1/4 height. -->
-        <div v-else class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto">
-          <article
-            v-for="track in recentlyAdded"
-            :key="`add-${track.id}`"
-            class="home-rail-card flex shrink-0 cursor-pointer flex-col"
-            @click="play(track)"
-            @contextmenu.prevent="openContextMenu($event, track)"
-          >
-            <div class="flex justify-start">
-              <div class="home-card-cover ak-clip-tr relative aspect-square overflow-hidden" :style="{ backgroundColor: track.color }">
-                <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
-                <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
-                <span v-if="isActive(track) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                <span v-if="isHiRes(track)" class="home-card-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+        <!-- Rail: single horizontal row of smaller square cards; virtualized horizontally. -->
+        <div v-else ref="addedRailHost" class="home-scroll-pad home-pb-rail no-scrollbar overflow-x-auto" :style="{ height: `${railCardH}px` }">
+          <Virtualizer horizontal :data="addedRailIndexes" :item-size="railSlotW">
+            <template #default="{ item: i }">
+              <div v-if="recentlyAdded[i]" :style="{ width: `${railSlotW}px` }">
+                <article
+                  :key="`add-v-${recentlyAdded[i]!.id}`"
+                  class="home-rail-card flex shrink-0 cursor-pointer flex-col"
+                  :style="{ width: `${railCardW}px` }"
+                  @click="play(recentlyAdded[i]!)"
+                  @contextmenu.prevent="openContextMenu($event, recentlyAdded[i]!)"
+                >
+                  <div class="flex justify-start">
+                    <div class="home-card-cover ak-clip-tr relative aspect-square overflow-hidden" :style="{ backgroundColor: recentlyAdded[i]!.color }">
+                      <img v-if="recentlyAdded[i]!.cover" :src="recentlyAdded[i]!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                      <LoaderCircle v-else-if="coverPending(recentlyAdded[i]!)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                      <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recentlyAdded[i]!) }}</span>
+                      <span v-if="isActive(recentlyAdded[i]!) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                      <span v-if="isHiRes(recentlyAdded[i]!)" class="home-card-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+                    </div>
+                  </div>
+                  <div class="home-mt-card w-full min-w-0">
+                    <p class="home-card-title truncate font-medium">{{ recentlyAdded[i]!.title }}</p>
+                    <p class="home-card-artist truncate text-muted">{{ recentlyAdded[i]!.artist }}</p>
+                  </div>
+                </article>
               </div>
-            </div>
-            <div class="home-mt-card w-full min-w-0">
-              <p class="home-card-title truncate font-medium">{{ track.title }}</p>
-              <p class="home-card-artist truncate text-muted">{{ track.artist }}</p>
-            </div>
-          </article>
+            </template>
+          </Virtualizer>
         </div>
       </section>
 
