@@ -193,10 +193,6 @@ function frameLabel(f: DetailFrame): string {
   return isUnknownGroup(f.key) ? t(unknownKey[frameGroupKind(f.kind)]) : f.key;
 }
 
-const detailGroupKind = computed<GroupKind>(() =>
-  detail.value ? frameGroupKind(detail.value.kind) : "artists",
-);
-
 /** Localized frame title; unknown sentinels resolve to the library label. */
 const detailTitle = computed(() => (detail.value ? frameLabel(detail.value) : ""));
 
@@ -296,11 +292,24 @@ function playlistTracksByKey(key: string): Track[] {
   return pl ? tracksForPaths(pl.tracks, player.tracks) : [];
 }
 
-/** Tracks under the current stack frame; whole library when the stack is empty. */
+/**
+ * Tracks under the drill-down stack: each frame narrows the pool in turn, so
+ * parent and child frames are AND-combined (e.g. an artist then an album keeps
+ * only tracks under that artist in that album). A playlist frame resets the
+ * pool to its own tracks; an empty stack is the whole library.
+ */
 const contextTracks = computed<Track[]>(() => {
-  if (!detail.value) return player.tracks;
-  if (detail.value.kind === "playlist") return playlistTracksByKey(detail.value.key);
-  return player.tracks.filter((x) => groupKeys(x, detailGroupKind.value).includes(detail.value!.key));
+  if (detailStack.value.length === 0) return player.tracks;
+  let pool = player.tracks;
+  for (const frame of detailStack.value) {
+    if (frame.kind === "playlist") {
+      pool = playlistTracksByKey(frame.key);
+    } else {
+      const kind = frameGroupKind(frame.kind);
+      pool = pool.filter((x) => groupKeys(x, kind).includes(frame.key));
+    }
+  }
+  return pool;
 });
 
 /** Virtual hero card for the framed object: shown in slot A, not tappable. */
