@@ -448,33 +448,27 @@ html[data-accent="blue"] {
     scroll-snap-align: start;
   }
 
-  /* Clipped recommendation rail: the horizontal virtualizer needs a fixed
-     viewport height (the big-card edge); otherwise its items collapse to 0. */
-  .home-rec-container {
-    height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
-    overflow-y: hidden;
-    touch-action: pan-x;
-    scroll-snap-type: x proximity;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  /* Rail small card: square edge is the smaller of the width budget
-     (cw×0.22 ≈ three covers plus a quarter of the fourth on a 9:21 phone)
-     and the recommend-card height cap. Portrait lets the width budget shrink
-     the cover down; landscape lets the height cap hold it at the big-card edge. */
+  /* Rail small row: left square cover + right caption. The cover edge matches
+     the folded-list row cover (one third of the recommend-card height); the
+     caption owns its own right-hand slot so a narrow landscape does not squeeze
+     the text onto the cover edge. Card height anchors to the cover edge. */
   .home-rail-card {
-    width: min(calc(var(--cw) * 0.22 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1)));
     max-width: 100%;
-    align-items: flex-start;
+    align-items: center;
     min-width: 0;
+    height: calc(var(--ch, 100vh) * 0.25 / 3 * var(--rail-scale, 1));
     scroll-snap-align: start;
   }
 
   .home-rail-card .home-card-cover {
     width: auto;
-    height: min(calc(var(--cw) * 0.22 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1)));
+    height: 100%;
     aspect-ratio: 1 / 1;
     max-width: 100%;
+  }
+
+  .home-rail-caption {
+    min-width: 0;
   }
 
   /* Folded recent list: three rows per column, columns laid out left to right
@@ -487,7 +481,10 @@ html[data-accent="blue"] {
     overflow-y: hidden;
     height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1) + var(--ch, 100vh) * 0.016 * var(--rail-scale, 1) * 2);
     touch-action: pan-x;
-    scroll-snap-type: x mandatory;
+    /* Proximity (not mandatory): loose snap to the nearest column start. A
+       mandatory scroller yanks to dead slots between virtualized columns and
+       pulls the rest position off when off-screen columns are not mounted. */
+    scroll-snap-type: x proximity;
     -webkit-overflow-scrolling: touch;
   }
 
@@ -504,7 +501,7 @@ html[data-accent="blue"] {
     scroll-snap-align: start;
   }
 
-  /* List row item: horizontal strip (caption left, cover right). Height anchors
+  /* List row item: horizontal strip (cover left, caption right). Height anchors
      to one third of the recommend card height; the strip fills its column
      track width, so no dead gap sits between columns. Cover stays 1:1 off
      the row height. */
@@ -729,13 +726,14 @@ html[data-accent="blue"] {
   }
 
   /* Horizontal rails: the left edge aligns to the content title (no negative
-     margin, no left padding, no left bleed). The right keeps a negative
-     margin so the host bleeds out to the screen edge; the right padding stays
-     as an exit gutter so the last card does not flush against the edge. */
+     margin, no left padding, no left bleed). The right keeps the negative
+     margin so the host bleeds out to the screen edge; the trailing exit
+     padding is removed so no gap is left after the last card. */
   .home-scroll-pad.overflow-x-auto {
     margin-left: 0;
     margin-right: calc(var(--cw) * -0.067 * var(--rail-scale, 1));
     padding-left: 0;
+    padding-right: 0;
     /* Horizontal rail: allow the browser to own the sideways gesture so the
        native momentum/inertia kicks in; snap loosely to card starts. */
     overflow-y: hidden;
