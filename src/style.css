@@ -500,7 +500,7 @@ html[data-accent="blue"] {
     height: calc(var(--ch, 100vh) * 0.25 / 3 * var(--rail-scale, 1));
     max-width: 100%;
     scroll-snap-align: start;
-    gap: min(calc(var(--cw) * 0.02 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.02 * var(--rail-scale, 1)));
+    gap: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.022 * var(--rail-scale, 1)));
     min-width: 0;
     padding: 0;
   }
@@ -544,6 +544,7 @@ html[data-accent="blue"] {
   }
 
   .home-chip {
+    font-size: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.024 * var(--rail-scale, 1)));
     height: calc(var(--ch, 100vh) * 0.04 * var(--rail-scale, 1));
     gap: min(calc(var(--cw) * 0.017 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.012 * var(--rail-scale, 1)));
     padding-left: calc(var(--cw) * 0.028 * var(--rail-scale, 1));

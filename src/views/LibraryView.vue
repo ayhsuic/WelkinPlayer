@@ -316,7 +316,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
       >{{ t("nav.home") }}</h1>
       <button
         type="button"
-        class="home-header__avatar grid shrink-0 place-items-center rounded-full border border-line bg-surface text-accent transition-[width,height,font-size] duration-200 active:scale-95"
+        class="home-header__avatar ak-clip-tr grid shrink-0 place-items-center border border-line bg-surface text-accent transition-[width,height,font-size] duration-200 active:scale-95"
         :aria-label="t('nav.settings')"
         :title="t('nav.settings')"
         @click="emit('settings')"
