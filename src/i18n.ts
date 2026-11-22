@@ -413,6 +413,7 @@ const messages = {
         label: "设置分类",
         general: "常规",
         playback: "播放",
+        sources: "来源",
         lyrics: "歌词",
       },
       about: {
@@ -1173,6 +1174,7 @@ const messages = {
         label: "Settings sections",
         general: "General",
         playback: "Playback",
+        sources: "Sources",
         lyrics: "Lyrics",
       },
       about: {

@@ -5,7 +5,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { CircleCheck, HardDriveDownload, Mic2, Moon, Music2, Play, SlidersHorizontal, Sun } from "@lucide/vue";
+import { CircleCheck, HardDriveDownload, Mic2, Moon, Music2, Play, Server, SlidersHorizontal, Sun } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { invoke } from "../api";
 import { formatBytes } from "../lib/format";
@@ -17,6 +17,7 @@ import { useProfileStore } from "../stores/profile";
 import { useSourcesStore } from "../stores/sources";
 import { useCacheStore } from "../stores/cache";
 import LyricsSettings from "../components/LyricsSettings.vue";
+import SourcesSettings from "../components/SourcesSettings.vue";
 import pkg from "../../package.json";
 
 const theme = defineModel<Theme>("theme", { required: true });
@@ -30,6 +31,7 @@ const appCodename = pkg.codename ?? pkg.version;
 const tabItems = [
   { key: "general", labelKey: "settings.tabs.general", icon: SlidersHorizontal },
   { key: "playback", labelKey: "settings.tabs.playback", icon: Play },
+  { key: "sources", labelKey: "settings.tabs.sources", icon: Server },
   { key: "lyrics", labelKey: "settings.tabs.lyrics", icon: Mic2 },
 ] as const;
 type SettingsTab = (typeof tabItems)[number]["key"];
@@ -162,7 +164,7 @@ button.text-dim:hover:not(:disabled) {
     </header>
 
     <nav class="sticky top-0 z-20 -mx-4 border-b border-line bg-bg/95 px-4 py-1.5 backdrop-blur lg:-mx-6 lg:px-6" role="tablist" :aria-label="t('settings.tabs.label')">
-      <div class="grid grid-cols-3 gap-1">
+      <div class="grid grid-cols-4 gap-1">
         <button
           v-for="(item, index) in tabItems"
           :id="`settings-tab-${item.key}`"
@@ -269,6 +271,10 @@ button.text-dim:hover:not(:disabled) {
           </div>
         </section>
 
+      </div>
+
+      <div v-show="activeTab === 'sources'" id="settings-panel-sources" role="tabpanel" aria-labelledby="settings-tab-sources" class="space-y-4">
+        <SourcesSettings />
       </div>
 
       <div v-show="activeTab === 'lyrics'" id="settings-panel-lyrics" role="tabpanel" aria-labelledby="settings-tab-lyrics" class="space-y-4">
