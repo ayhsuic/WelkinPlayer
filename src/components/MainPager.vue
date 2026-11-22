@@ -4,7 +4,7 @@
 -->
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { mainPagerTabs, type MainTab } from "../lib/app";
 
 /**
@@ -22,16 +22,27 @@ const props = defineProps<{ active: MainTab }>();
 const emit = defineEmits<{ select: [tab: MainTab] }>();
 
 const rootEl = ref<HTMLElement | null>(null);
+/** Slide direction for the page transition: 1 enters from the right, -1 from the left. */
+const dir = ref<1 | -1>(1);
 
 function indexOf(tab: MainTab) {
   return Math.max(0, mainPagerTabs.indexOf(tab));
 }
 
+/** Horizontal swipe taps the neighbor tab; no follow-along drag. */
 function goNeighbor(delta: 1 | -1) {
   const next = Math.max(0, Math.min(mainPagerTabs.length - 1, indexOf(props.active) + delta));
   const tab = mainPagerTabs[next];
-  if (tab && tab !== props.active) emit("select", tab);
+  if (tab && tab !== props.active) {
+    dir.value = delta;
+    emit("select", tab);
+  }
 }
+
+const slideVars = computed(() => ({
+  "--enter-x": dir.value >= 0 ? "48px" : "-48px",
+  "--leave-x": dir.value >= 0 ? "-48px" : "48px",
+}));
 
 // --- Horizontal swipe: taps the neighbor tab, no follow-along drag. ---
 let dragging = false;
@@ -173,13 +184,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="rootEl" class="main-pager h-full w-full" style="touch-action: pan-x pan-y">
-    <div class="relative min-h-0 flex-1">
-      <Transition name="page-fade" mode="out-in">
+  <div ref="rootEl" class="main-pager flex h-full w-full flex-col" :style="slideVars" style="touch-action: pan-x pan-y">
+    <div class="relative min-h-0 flex-1 overflow-x-clip">
+      <Transition name="page-slide" mode="out-in">
         <section :key="props.active" class="h-full min-h-0 overflow-y-auto overscroll-contain">
-          <slot v-if="props.active === 'home'" name="home" />
-          <slot v-else-if="props.active === 'library'" name="library" />
-          <slot v-else name="search" />
+          <slot name="home" />
         </section>
       </Transition>
     </div>

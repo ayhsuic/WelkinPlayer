@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from "vue";
 import { Virtualizer } from "virtua/vue";
-import { History, ListMusic, LoaderCircle, RefreshCw, User } from "@lucide/vue";
+import { ChevronLeft, History, ListMusic, LoaderCircle, Plus, RefreshCw, Search, User } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
 import { tracksForPaths, useProfileStore } from "../stores/profile";
+import type { Playlist } from "../lib/profile";
+import { groupTracks, groupKeys, isUnknownGroup, type GroupKind } from "../lib/grouping";
 import { coverPending, initial } from "../lib/format";
 import { trackKey } from "../lib/sources";
 import type { View, MainTab } from "../lib/app";
@@ -117,6 +119,217 @@ const avatarInitial = computed(() => {
   const name = profile.nickname.trim();
   return name ? Array.from(name)[0]?.toUpperCase() ?? "" : "";
 });
+
+/** Search box text; drives the in-home search/detail shell. */
+const query = ref("");
+
+/** Time-of-day greeting shown beside the avatar, beside the optional nickname. */
+const greeting = computed(() => {
+  const h = new Date().getHours();
+  if (h < 5) return t("home.greetingNight");
+  if (h < 11) return t("home.greetingMorning");
+  if (h < 13) return t("home.greetingNoon");
+  if (h < 18) return t("home.greetingAfternoon");
+  if (h < 23) return t("home.greetingEvening");
+  return t("home.greetingNight");
+});
+
+/* ------------------------- shell state machine ------------------------- */
+
+type DetailFrame = { kind: "artist" | "album" | "genre" | "year" | "playlist"; key: string };
+
+/** Drill-down stack: opening an album from an artist detail pushes a frame;
+ *  back pops the top frame. The shell stays in one view, no route change. */
+const detailStack = ref<DetailFrame[]>([]);
+const searching = computed(() => query.value.trim().length > 0);
+const detail = computed<DetailFrame | null>(() => detailStack.value[detailStack.value.length - 1] ?? null);
+const mode = computed<"overview" | "index">(() =>
+  detail.value || searching.value ? "index" : "overview",
+);
+
+/** Three index slots, each with its own in-place segment toggle. */
+type SegA = "playlists" | "artists";
+type SegB = "albums" | "years";
+type SegC = "genres" | "tracks";
+const segA = ref<SegA>("playlists");
+const segB = ref<SegB>("albums");
+const segC = ref<SegC>("tracks");
+
+/** Standalone track detail (long-press), separate from the index stack. */
+const trackDetail = ref<Track | null>(null);
+
+const q = computed(() => query.value.trim().toLowerCase());
+/** Match within a record's own text fields; each category filters itself. */
+function matchesSelf(...fields: (string | undefined)[]) {
+  if (!q.value) return true;
+  return fields.some((f) => (f ?? "").toLowerCase().includes(q.value));
+}
+
+const unknownKey: Record<GroupKind, string> = {
+  artists: "library.collections.unknownArtist",
+  albums: "library.collections.unknownAlbum",
+  years: "library.collections.unknownYear",
+  genres: "library.collections.unknownGenre",
+};
+
+/** Map a detail frame back to its grouping kind. */
+function frameGroupKind(kind: DetailFrame["kind"]): GroupKind {
+  switch (kind) {
+    case "album": return "albums";
+    case "genre": return "genres";
+    case "year": return "years";
+    default: return "artists";
+  }
+}
+
+/** Localized label for a stack frame, playlist frames resolved by name. */
+function frameLabel(f: DetailFrame): string {
+  if (f.kind === "playlist") {
+    if (f.key === "favorites") return t("nav.favorites");
+    if (f.key === "recent") return t("home.recent");
+    if (f.key === "added") return t("home.recentlyAdded");
+    return profile.playlists.find((p) => p.id === f.key)?.name ?? f.key;
+  }
+  return isUnknownGroup(f.key) ? t(unknownKey[frameGroupKind(f.kind)]) : f.key;
+}
+
+const detailGroupKind = computed<GroupKind>(() =>
+  detail.value ? frameGroupKind(detail.value.kind) : "artists",
+);
+
+/** Localized frame title; unknown sentinels resolve to the library label. */
+const detailTitle = computed(() => (detail.value ? frameLabel(detail.value) : ""));
+
+interface Crumb { kind: DetailFrame["kind"]; key: string; label: string; }
+
+/** Breadcrumb trail mirroring the drill-down stack; one segment per frame. */
+const detailCrumbs = computed<Crumb[]>(() =>
+  detailStack.value.map((f) => ({ kind: f.kind, key: f.key, label: frameLabel(f) })),
+);
+
+/** Separator between index levels shown inside the search box text. */
+const CRUMB_SEP = " > ";
+
+/** Search box text: live query in overview, index path once a frame is pushed. */
+const searchBoxText = computed(() =>
+  detail.value ? detailCrumbs.value.map((c) => c.label).join(CRUMB_SEP) : query.value,
+);
+function onSearchInput(event: Event) {
+  if (detail.value) return;
+  query.value = (event.target as HTMLInputElement).value;
+}
+
+function openDetail(kind: DetailFrame["kind"], key: string) {
+  const top = detailStack.value[detailStack.value.length - 1];
+  if (top && top.kind === kind && top.key === key) return;
+  detailStack.value = [...detailStack.value, { kind, key }];
+}
+function popDetail() {
+  detailStack.value = detailStack.value.slice(0, -1);
+}
+function closeDetail() {
+  detailStack.value = [];
+  query.value = "";
+}
+function backDetail() {
+  if (detailStack.value.length > 1) popDetail();
+  else closeDetail();
+}
+
+/* ------------------------- grouped / playlist cards ------------------------- */
+
+interface ShellCard {
+  key: string;
+  title: string;
+  subtitle?: string;
+  cover?: string | null;
+  color?: string;
+  initial?: string;
+  playlist?: Playlist;
+}
+
+function cardsFrom(tracks: Track[], kind: GroupKind): ShellCard[] {
+  // Each category filters itself: artists match the artist name, albums the album
+  // name, genres the genre, years the year number — no cross-field mixing.
+  return groupTracks(tracks, kind)
+    .filter((g) => matchesSelf(g.key))
+    .map((g) => {
+      const coverTrack = g.tracks.find((x) => x.cover) ?? g.tracks[0];
+      const name = isUnknownGroup(g.key) ? t(unknownKey[kind]) : g.key;
+      return {
+        key: g.key,
+        title: name,
+        subtitle: t("library.collections.trackCount", { count: g.tracks.length }),
+        cover: coverTrack?.cover,
+        color: coverTrack?.color,
+        initial: name.charAt(0),
+      };
+    });
+}
+
+const favoritesTracks = computed(() => tracksForPaths(profile.favorites, player.tracks));
+
+/** Playlist wall: the three built-in collections, then user playlists, then a
+ *  create-new card. */
+const playlistCards = computed<ShellCard[]>(() => {
+  const fixed: ShellCard[] = [
+    { key: "favorites", title: t("nav.favorites"), subtitle: t("library.collections.trackCount", { count: favoritesTracks.value.length }), initial: "♥", color: "#e63946" },
+    { key: "recent", title: t("home.recent"), subtitle: t("library.collections.trackCount", { count: recentTracks.value.length }), initial: "⏱", color: "#ff6a00" },
+    { key: "added", title: t("home.recentlyAdded"), subtitle: t("library.collections.trackCount", { count: recentlyAdded.value.length }), initial: "+", color: "#16c79a" },
+  ];
+  const custom: ShellCard[] = profile.playlists.map((playlist) => ({
+    key: playlist.id,
+    title: playlist.name,
+    subtitle: t("library.collections.trackCount", { count: playlist.tracks.length }),
+    playlist,
+  }));
+  const create: ShellCard = { key: "__new__", title: t("home.newPlaylist"), initial: "+", color: "var(--accent)" };
+  return [...fixed, ...custom, create];
+});
+
+/** Resolve a built-in or user playlist to its tracks. */
+function playlistTracksByKey(key: string): Track[] {
+  if (key === "favorites") return favoritesTracks.value;
+  if (key === "recent") return recentTracks.value;
+  if (key === "added") return recentlyAdded.value;
+  const pl = profile.playlists.find((p) => p.id === key);
+  return pl ? tracksForPaths(pl.tracks, player.tracks) : [];
+}
+
+/** Tracks under the current stack frame; whole library when the stack is empty. */
+const contextTracks = computed<Track[]>(() => {
+  if (!detail.value) return player.tracks;
+  if (detail.value.kind === "playlist") return playlistTracksByKey(detail.value.key);
+  return player.tracks.filter((x) => groupKeys(x, detailGroupKind.value).includes(detail.value!.key));
+});
+
+/** Virtual hero card for the framed object: shown in slot A, not tappable. */
+const heroCard = computed<ShellCard | null>(() => {
+  if (!detail.value) return null;
+  const tracks = contextTracks.value;
+  const cover = tracks.find((x) => x.cover) ?? tracks[0];
+  return {
+    key: detail.value.key,
+    title: detailTitle.value,
+    subtitle: t("library.collections.trackCount", { count: tracks.length }),
+    cover: cover?.cover,
+    color: cover?.color,
+    initial: detailTitle.value.charAt(0),
+  };
+});
+
+/** Slot A: playlist/artist wall when empty, one virtual hero card when framed. */
+const slotACards = computed<ShellCard[]>(() => {
+  if (detail.value) return heroCard.value ? [heroCard.value] : [];
+  return segA.value === "playlists" ? playlistCards.value : cardsFrom(contextTracks.value, "artists");
+});
+/** Slot B: albums ↔ years, filtered by the current context. */
+const slotBCards = computed<ShellCard[]>(() =>
+  segB.value === "albums" ? cardsFrom(contextTracks.value, "albums") : cardsFrom(contextTracks.value, "years"),
+);
+/** Slot C: genres ↔ tracks, filtered by the current context. */
+const slotCCards = computed<ShellCard[]>(() => cardsFrom(contextTracks.value, "genres"));
+const slotCTracks = computed<Track[]>(() => contextTracks.value);
 
 /** Collapsing sticky header: once the list scrolls past a short peek, the large title
  *  and avatar tuck into a pinned top bar (mirrors Mornye's pinned SliverAppBar). */
@@ -294,16 +507,63 @@ function play(track: Track) {
   void player.playInQueue(player.tracks, track);
 }
 function openContextMenu(event: MouseEvent, track: Track) { contextTrack.value = track; contextPosition.value = { x: event.clientX, y: event.clientY }; }
+
+/** Long-press opens the standalone track detail; a plain tap plays. The fired
+ *  flag suppresses the synthetic click that follows a committed long-press. */
+const LONG_PRESS_MS = 500;
+let pressTimer: ReturnType<typeof setTimeout> | undefined;
+let pressFired = false;
+function clearPress() {
+  if (pressTimer) { clearTimeout(pressTimer); pressTimer = undefined; }
+}
+function openTrackDetail(track: Track) { trackDetail.value = track; }
+function closeTrackDetail() { trackDetail.value = null; }
+function onPressDown(track: Track) {
+  pressFired = false;
+  clearPress();
+  pressTimer = setTimeout(() => {
+    pressFired = true;
+    openTrackDetail(track);
+  }, LONG_PRESS_MS);
+}
+function onPressEnd() { clearPress(); }
+function onTrackTap(track: Track) {
+  if (pressFired) { pressFired = false; return; }
+  play(track);
+}
 function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
 
 function isActive(track: Track) { return track.id === player.currentTrack?.id; }
+
+/* ------------------------- card tap handlers ------------------------- */
+
+function onPlaylistCard(card: ShellCard) {
+  if (card.key === "__new__") { emit("navigate", "playlist-new"); return; }
+  openDetail("playlist", card.key);
+}
+function onArtistCard(card: ShellCard) { openDetail("artist", card.key); }
+function onAlbumCard(card: ShellCard) { openDetail("album", card.key); }
+function onGenreCard(card: ShellCard) { openDetail("genre", card.key); }
+function onYearCard(card: ShellCard) { openDetail("year", card.key); }
+
+/** Slot A tap: the framed hero card is a virtual display only, not tappable. */
+function onSlotACard(card: ShellCard) {
+  if (detail.value) return;
+  if (segA.value === "artists") onArtistCard(card);
+  else onPlaylistCard(card);
+}
+/** Slot B tap routes to the active segment's kind. */
+function onSlotBCard(card: ShellCard) {
+  if (segB.value === "albums") onAlbumCard(card);
+  else onYearCard(card);
+}
 </script>
 
 <template>
   <div ref="rootEl" class="home-root-pad mx-auto w-full">
     <!-- Home content header: avatar/settings entry lives in the content page,
          not the shared top bar. -->
-    <div class="home-mt-card flex items-center justify-end">
+    <div class="home-mt-card flex items-center gap-3">
       <button
         type="button"
         class="home-header__avatar ak-clip-tr grid shrink-0 place-items-center border border-line bg-surface text-accent transition-[width,height,font-size] duration-200 active:scale-95"
@@ -314,8 +574,66 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         <span v-if="avatarInitial" class="home-header__initial font-bold leading-none">{{ avatarInitial }}</span>
         <User v-else class="home-header__icon" :size="20" />
       </button>
+      <div class="min-w-0 flex-1">
+        <p class="home-section-title truncate font-bold tracking-tight">
+          {{ greeting }}<span v-if="profile.nickname" class="home-card-artist home-mt-caption"> · {{ profile.nickname }}</span>
+        </p>
+      </div>
+      <label class="lib-search flex min-w-0 items-center gap-3 border border-line bg-surface px-3 ak-clip-tr">
+        <Search :size="17" :stroke-width="2" class="shrink-0 text-dim" />
+        <input
+          :value="searchBoxText"
+          :readonly="!!detail"
+          type="search"
+          class="min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-dim"
+          :placeholder="t('nav.searchPlaceholder')"
+          :aria-label="t('nav.searchPlaceholder')"
+          @input="onSearchInput"
+        />
+      </label>
     </div>
 
+      <!-- Standalone track detail (long-press): a secondary page over the shell. -->
+      <template v-if="trackDetail">
+        <div class="home-mb-title home-mt-card flex items-center gap-3">
+          <button type="button" class="grid h-9 w-9 shrink-0 place-items-center text-dim hover:text-fg" :aria-label="t('controls.collapse')" @click="closeTrackDetail">
+            <ChevronLeft :size="20" :stroke-width="2" />
+          </button>
+          <div class="min-w-0 flex-1">
+            <p class="home-section-title truncate font-bold tracking-tight">{{ trackDetail.title }}</p>
+            <p class="home-card-artist home-mt-caption truncate text-muted">{{ trackDetail.artist }}</p>
+          </div>
+        </div>
+
+        <div class="home-mt-card">
+          <div class="home-rec-card ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: trackDetail.color }">
+            <img v-if="trackDetail.cover" :src="trackDetail.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+            <span v-else class="home-rec-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(trackDetail) }}</span>
+          </div>
+        </div>
+
+        <section class="home-mt-section">
+          <div class="home-pb-rail">
+            <article
+              class="lib-list-item flex min-w-0 cursor-pointer items-center"
+              @click="play(trackDetail)"
+              @contextmenu.prevent="openContextMenu($event, trackDetail)"
+            >
+              <div class="min-w-0 flex-1">
+                <p class="home-card-title truncate font-semibold" :class="isActive(trackDetail) ? 'text-accent' : ''">{{ trackDetail.title }}</p>
+                <p class="home-card-artist home-mt-caption min-w-0 truncate text-muted">{{ trackDetail.artist }}<span v-if="trackDetail.album"> · {{ trackDetail.album }}</span></p>
+              </div>
+              <div class="lib-list-cover ak-clip-tr relative shrink-0 overflow-hidden" :style="{ backgroundColor: trackDetail.color }">
+                <img v-if="trackDetail.cover" :src="trackDetail.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                <LoaderCircle v-else-if="coverPending(trackDetail)" :size="18" :stroke-width="2" class="home-list-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                <span v-else class="home-list-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(trackDetail) }}</span>
+              </div>
+            </article>
+          </div>
+        </section>
+      </template>
+
+      <template v-else-if="mode === 'overview'">
       <!-- Daily recommendation: square cover cards on a horizontal rail. -->
       <section v-if="recommended.length">
         <div class="home-mb-title home-mt-card flex items-center justify-between">
@@ -344,7 +662,11 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
                   :key="`rec-open-${recTrackAt(i)!.id}`"
                   class="home-rec-card ak-clip-tr group relative aspect-square shrink-0 cursor-pointer overflow-hidden"
                   :style="{ width: `${recCardW}px`, backgroundColor: recTrackAt(i)!.color }"
-                  @click="play(recTrackAt(i)!)"
+                  @click="onTrackTap(recTrackAt(i)!)"
+                  @pointerdown="onPressDown(recTrackAt(i)!)"
+                  @pointerup="onPressEnd"
+                  @pointercancel="onPressEnd"
+                  @pointerleave="onPressEnd"
                   @contextmenu.prevent="openContextMenu($event, recTrackAt(i)!)"
                 >
                   <img v-if="recTrackAt(i)!.cover" :src="recTrackAt(i)!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
@@ -387,21 +709,25 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
                     <article
                       v-if="recentTrackAt(col, row - 1)"
                       :key="`hist-list-${recentTrackAt(col, row - 1)!.id}`"
-                      class="home-list-item flex min-w-0 cursor-pointer items-center"
+                      class="lib-list-item flex min-w-0 cursor-pointer items-center"
                       :style="{ maxWidth: `${recentColW}px` }"
-                      @click="play(recentTrackAt(col, row - 1)!)"
+                      @click="onTrackTap(recentTrackAt(col, row - 1)!)"
+                      @pointerdown="onPressDown(recentTrackAt(col, row - 1)!)"
+                      @pointerup="onPressEnd"
+                      @pointercancel="onPressEnd"
+                      @pointerleave="onPressEnd"
                       @contextmenu.prevent="openContextMenu($event, recentTrackAt(col, row - 1)!)"
                     >
-                      <div class="home-list-cover ak-clip-tr relative shrink-0 overflow-hidden" :style="{ backgroundColor: recentTrackAt(col, row - 1)!.color }">
+                      <div class="home-list-caption min-w-0 flex-1">
+                        <p class="home-card-title truncate font-semibold" :class="isActive(recentTrackAt(col, row - 1)!) ? 'text-accent' : ''">{{ recentTrackAt(col, row - 1)!.title }}</p>
+                        <p class="home-card-artist home-mt-caption min-w-0 truncate text-muted">{{ recentTrackAt(col, row - 1)!.artist }}</p>
+                      </div>
+                      <div class="lib-list-cover ak-clip-tr relative shrink-0 overflow-hidden" :style="{ backgroundColor: recentTrackAt(col, row - 1)!.color }">
                         <img v-if="recentTrackAt(col, row - 1)!.cover" :src="recentTrackAt(col, row - 1)!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
                         <LoaderCircle v-else-if="coverPending(recentTrackAt(col, row - 1)!)" :size="18" :stroke-width="2" class="home-list-spinner absolute inset-0 m-auto animate-spin text-white/90" />
                         <span v-else class="home-list-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recentTrackAt(col, row - 1)!) }}</span>
                         <span v-if="isActive(recentTrackAt(col, row - 1)!) && player.isPlaying" class="absolute home-eq-badge-list text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
                         <span v-if="isHiRes(recentTrackAt(col, row - 1)!)" class="home-list-hr absolute bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
-                      </div>
-                      <div class="home-list-caption min-w-0 flex-1">
-                        <p class="home-card-title truncate font-semibold" :class="isActive(recentTrackAt(col, row - 1)!) ? 'text-accent' : ''">{{ recentTrackAt(col, row - 1)!.title }}</p>
-                        <p class="home-card-artist home-mt-caption min-w-0 truncate text-muted">{{ recentTrackAt(col, row - 1)!.artist }}</p>
                       </div>
                     </article>
                   </template>
@@ -420,7 +746,11 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
                   :key="`hist-v-${recentTracks[i]!.id}`"
                   class="home-rail-card flex shrink-0 cursor-pointer flex-col"
                   :style="{ width: `${railCardW}px` }"
-                  @click="play(recentTracks[i]!)"
+                  @click="onTrackTap(recentTracks[i]!)"
+                  @pointerdown="onPressDown(recentTracks[i]!)"
+                  @pointerup="onPressEnd"
+                  @pointercancel="onPressEnd"
+                  @pointerleave="onPressEnd"
                   @contextmenu.prevent="openContextMenu($event, recentTracks[i]!)"
                 >
                   <div class="flex justify-start">
@@ -474,7 +804,11 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
                     v-if="addTrack(row, col)"
                     :key="`add-grid-${addTrack(row, col)!.id}`"
                     class="album-grid-card flex flex-col cursor-pointer"
-                    @click="play(addTrack(row, col)!)"
+                    @click="onTrackTap(addTrack(row, col)!)"
+                    @pointerdown="onPressDown(addTrack(row, col)!)"
+                    @pointerup="onPressEnd"
+                    @pointercancel="onPressEnd"
+                    @pointerleave="onPressEnd"
                     @contextmenu.prevent="openContextMenu($event, addTrack(row, col)!)"
                   >
                     <div class="flex w-full justify-start">
@@ -506,7 +840,11 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
                   :key="`add-v-${recentlyAdded[i]!.id}`"
                   class="home-rail-card flex shrink-0 cursor-pointer flex-col"
                   :style="{ width: `${railCardW}px` }"
-                  @click="play(recentlyAdded[i]!)"
+                  @click="onTrackTap(recentlyAdded[i]!)"
+                  @pointerdown="onPressDown(recentlyAdded[i]!)"
+                  @pointerup="onPressEnd"
+                  @pointercancel="onPressEnd"
+                  @pointerleave="onPressEnd"
                   @contextmenu.prevent="openContextMenu($event, recentlyAdded[i]!)"
                 >
                   <div class="flex justify-start">
@@ -528,6 +866,122 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </Virtualizer>
         </div>
       </section>
+      </template>
+
+      <!-- Index mode: three in-place slots (A wall / B albums-years / C genres-tracks). -->
+      <template v-else>
+        <!-- Slot A: playlist/artist wall, or the framed virtual hero card. -->
+        <section class="home-mt-section">
+          <div class="home-mb-title home-mt-card flex items-center justify-between">
+            <div v-if="!detail" class="flex gap-2">
+              <button type="button" class="home-chip ak-clip border border-line bg-surface font-medium transition-colors" :class="segA === 'playlists' ? 'text-accent' : 'text-muted hover:text-fg'" @click="segA = 'playlists'">{{ t("nav.playlists") }}</button>
+              <button type="button" class="home-chip ak-clip border border-line bg-surface font-medium transition-colors" :class="segA === 'artists' ? 'text-accent' : 'text-muted hover:text-fg'" @click="segA = 'artists'">{{ t("nav.artists") }}</button>
+            </div>
+            <div v-else class="flex min-w-0 items-center gap-3">
+              <button type="button" class="grid h-9 w-9 shrink-0 place-items-center text-dim hover:text-fg" :aria-label="t('controls.collapse')" @click="backDetail">
+                <ChevronLeft :size="20" :stroke-width="2" />
+              </button>
+              <span class="home-section-title truncate font-bold tracking-tight">{{ detailTitle }}</span>
+            </div>
+            <button v-if="!detail && segA === 'playlists'" type="button" class="home-chip ak-clip flex items-center border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="emit('navigate', 'playlist-new')">
+              <Plus :size="13" class="home-chip__icon" />{{ t("home.newPlaylist") }}
+            </button>
+          </div>
+          <div class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto">
+            <button
+              v-for="card in slotACards"
+              :key="card.key"
+              type="button"
+              :disabled="!!detail"
+              class="home-rec-card ak-clip-tr group relative aspect-square shrink-0 overflow-hidden text-left"
+              :style="{ backgroundColor: card.color ?? 'var(--accent)' }"
+              @click="onSlotACard(card)"
+            >
+              <img v-if="card.cover" :src="card.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+              <span v-else class="home-rec-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ card.initial ?? card.title.charAt(0) }}</span>
+              <div class="home-pad-cover absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent">
+                <p class="home-rec-title truncate font-semibold text-white">{{ card.title }}</p>
+                <p v-if="card.subtitle" class="home-rec-artist home-mt-caption truncate text-white/75">{{ card.subtitle }}</p>
+              </div>
+            </button>
+          </div>
+        </section>
+
+        <!-- Slot B: albums ↔ years, filtered by context. -->
+        <section class="home-mt-section">
+          <div class="home-mb-title home-mt-card flex items-center justify-between">
+            <span class="home-section-title font-bold tracking-tight">{{ segB === 'albums' ? t('nav.albums') : t('nav.years') }}</span>
+            <div class="flex gap-2">
+              <button type="button" class="home-chip ak-clip border border-line bg-surface font-medium transition-colors" :class="segB === 'albums' ? 'text-accent' : 'text-muted hover:text-fg'" @click="segB = 'albums'">{{ t("nav.albums") }}</button>
+              <button type="button" class="home-chip ak-clip border border-line bg-surface font-medium transition-colors" :class="segB === 'years' ? 'text-accent' : 'text-muted hover:text-fg'" @click="segB = 'years'">{{ t("nav.years") }}</button>
+            </div>
+          </div>
+          <div class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto">
+            <button v-for="card in slotBCards" :key="card.key" type="button" class="home-rail-card flex shrink-0 cursor-pointer flex-col text-left" @click="onSlotBCard(card)">
+              <div class="flex justify-start">
+                <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: card.color ?? 'var(--accent)' }">
+                  <img v-if="card.cover" :src="card.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                  <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ card.initial ?? card.title.charAt(0) }}</span>
+                </div>
+              </div>
+              <div class="home-mt-card w-full min-w-0">
+                <p class="home-card-title truncate font-medium">{{ card.title }}</p>
+                <p class="home-card-artist truncate text-muted">{{ card.subtitle }}</p>
+              </div>
+            </button>
+          </div>
+        </section>
+
+        <!-- Slot C: genres ↔ tracks, filtered by context. -->
+        <section class="home-mt-section">
+          <div class="home-mb-title home-mt-card flex items-center justify-between">
+            <span class="home-section-title font-bold tracking-tight">{{ segC === 'genres' ? t('nav.genres') : t('nav.tracks') }}</span>
+            <div class="flex gap-2">
+              <button type="button" class="home-chip ak-clip border border-line bg-surface font-medium transition-colors" :class="segC === 'genres' ? 'text-accent' : 'text-muted hover:text-fg'" @click="segC = 'genres'">{{ t("nav.genres") }}</button>
+              <button type="button" class="home-chip ak-clip border border-line bg-surface font-medium transition-colors" :class="segC === 'tracks' ? 'text-accent' : 'text-muted hover:text-fg'" @click="segC = 'tracks'">{{ t("nav.tracks") }}</button>
+            </div>
+          </div>
+          <div v-if="segC === 'genres'" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto">
+            <button v-for="card in slotCCards" :key="card.key" type="button" class="home-rail-card flex shrink-0 cursor-pointer flex-col text-left" @click="onGenreCard(card)">
+              <div class="flex justify-start">
+                <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: card.color ?? 'var(--accent)' }">
+                  <img v-if="card.cover" :src="card.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                  <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ card.initial ?? card.title.charAt(0) }}</span>
+                </div>
+              </div>
+              <div class="home-mt-card w-full min-w-0">
+                <p class="home-card-title truncate font-medium">{{ card.title }}</p>
+                <p class="home-card-artist truncate text-muted">{{ card.subtitle }}</p>
+              </div>
+            </button>
+          </div>
+          <div v-else class="home-added-wall home-gap-y-grid">
+            <article
+              v-for="track in slotCTracks"
+              :key="track.id"
+              class="album-grid-card flex flex-col cursor-pointer"
+              @click="onTrackTap(track)"
+              @pointerdown="onPressDown(track)"
+              @pointerup="onPressEnd"
+              @pointercancel="onPressEnd"
+              @pointerleave="onPressEnd"
+              @contextmenu.prevent="openContextMenu($event, track)"
+            >
+              <div class="flex w-full justify-start">
+                <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: track.color }">
+                  <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                  <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                  <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
+                </div>
+              </div>
+              <div class="home-mt-card w-full min-w-0">
+                <p class="album-grid-card__title truncate font-medium">{{ track.title }}</p>
+                <p class="album-grid-card__artist truncate text-muted">{{ track.artist }}</p>
+              </div>
+            </article>
+          </div>
+        </section>
+      </template>
 
     <TrackContextMenu v-if="contextTrack" :track="contextTrack" :x="contextPosition.x" :y="contextPosition.y" :downloading="downloadingTrackId === contextTrack.id" @close="contextTrack = null" @download-metadata="downloadMetadata" @edit-lyrics="emit('editLyrics', $event)" @edit-info="emit('editInfo', $event)" @show-info="emit('showInfo', $event)" />
   </div>

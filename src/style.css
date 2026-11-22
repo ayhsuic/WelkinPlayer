@@ -532,6 +532,27 @@ html[data-accent="blue"] {
     max-width: 100%;
   }
 
+  /* Library panel row: caption on the left, cover pinned to the right edge.
+     Row height and cover square match the home folded-list entry. */
+  .lib-list-item {
+    height: calc(var(--ch, 100vh) * 0.25 / 3 * var(--rail-scale, 1));
+    max-width: 100%;
+    gap: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.022 * var(--rail-scale, 1)));
+    min-width: 0;
+    padding: 0;
+  }
+
+  .lib-list-cover {
+    height: calc(var(--ch, 100vh) * 0.25 / 3 * var(--rail-scale, 1));
+    aspect-ratio: 1 / 1;
+    max-width: 100%;
+  }
+
+  /* Library search bar: height matches the home avatar square. */
+  .lib-search {
+    height: min(calc(var(--cw, 100vw) * 0.122 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.06 * var(--rail-scale, 1)));
+  }
+
   /* Album grid card: a grid item defaults to min-width:auto, which lets a long
      title stretch the track and defeat the caption ellipsis. Pin it to the
      column width so the title/artist truncate inside the cover. */
@@ -817,16 +838,21 @@ html[data-accent="blue"] {
     transform: translateX(-48px);
   }
 
-  /* Primary-tab switch: pages stay stacked in place and cross-fade, no
-     horizontal travel. */
-  .page-fade-enter-active,
-  .page-fade-leave-active {
-    transition: opacity 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Primary-tab switch: the incoming page slides in from the travel side while
+     the old one slides out the opposite way; direction is set per switch. */
+  .page-slide-enter-active,
+  .page-slide-leave-active {
+    transition: opacity 220ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
-  .page-fade-enter-from,
-  .page-fade-leave-to {
+  .page-slide-enter-from {
     opacity: 0;
+    transform: translateX(var(--enter-x, 48px));
+  }
+
+  .page-slide-leave-to {
+    opacity: 0;
+    transform: translateX(var(--leave-x, -48px));
   }
 
   .slide-enter-active,

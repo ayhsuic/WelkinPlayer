@@ -4,7 +4,7 @@
  */
 
 import type { Component } from "vue";
-import { CircleCheck, HardDriveDownload, LayoutGrid, Library, Search, Server } from "@lucide/vue";
+import { CircleCheck, HardDriveDownload, LayoutGrid, Library, Server } from "@lucide/vue";
 
 export type View = "wall" | "library" | "tracks" | "favorites" | "artists" | "albums" | "years" | "genres" | "sources" | "folders" | "webdav" | "source-browser" | "source-config" | "playlists" | "playlist-new" | "lyrics-edit" | "track-edit" | "track-info" | "downloading" | "downloaded" | "settings" | "search" | "player";
 export type Theme = "light" | "dark";
@@ -36,12 +36,12 @@ export interface MainTabItem {
 
 export const mainNavTabs: MainTabItem[] = [
   { id: "home", view: "library", labelKey: "nav.home", icon: Library },
-  { id: "library", view: "playlists", labelKey: "nav.media", icon: LayoutGrid },
-  { id: "search", view: "search", labelKey: "nav.search", icon: Search },
 ];
 
-/** Primary destinations shown in the horizontal pager and the top-bar entries. */
-export const mainPagerTabs: MainTab[] = ["home", "library", "search"];
+/** Primary destinations shown in the horizontal pager and the top-bar entries.
+ *  The home view carries overview / search / detail states in one shell; there
+ *  is no separate library tab. */
+export const mainPagerTabs: MainTab[] = ["home"];
 
 /** System group: the merged source entry (local folders + WebDAV together). */
 export const systemNavItems: NavItem[] = [
@@ -59,9 +59,6 @@ export const systemNavItems: NavItem[] = [
  */
 export const RECENT_PLAYS_ID = "builtin-recent-plays";
 export const RECENTLY_ADDED_ID = "builtin-recently-added";
-
-/** The six swipeable category panels, in sidebar order. */
-export const categoryViews: View[] = ["playlists", "artists", "albums", "tracks", "years", "genres"];
 
 /** Manual cache download manager, grouped with the library entries. */
 export const downloadNavItems: NavItem[] = [
