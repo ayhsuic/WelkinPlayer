@@ -82,23 +82,20 @@ function openAlbum(key: string) {
 <template>
   <div ref="rootEl" class="w-full">
     <div class="mx-auto flex w-full max-w-6xl flex-col px-4 py-5 sm:px-6 sm:py-6">
-      <!-- Sticky header: title on the left, top-bar entries and download entry on the right. -->
+      <!-- Sticky header: plain-text tab row on the left, download entry on the right. -->
       <header
-        class="sticky top-0 z-20 -mx-4 flex items-center justify-between gap-4 px-4 transition-[padding,background-color,border-color] duration-200 sm:-mx-6 sm:px-6"
+        class="sticky top-0 z-20 -mx-4 flex items-center justify-between gap-3 px-4 transition-[padding,background-color,border-color] duration-200 sm:-mx-6 sm:px-6"
         :class="collapsed ? 'border-b border-line bg-bg/95 py-2 backdrop-blur' : 'border-b border-transparent bg-transparent py-1'"
       >
-        <h1 class="truncate font-black leading-none tracking-tight transition-[font-size] duration-200" :class="collapsed ? 'text-base' : 'text-2xl'">{{ t("nav.collection") }}</h1>
-        <div class="flex shrink-0 items-center gap-2">
-          <MainNavTabs active="library" @select="(tab) => emit('selectTab', tab)" />
-          <button
-            type="button"
-            class="ak-clip flex shrink-0 items-center gap-1.5 border border-line bg-surface px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:text-fg"
-            @click="emit('navigate', 'downloaded')"
-          >
-            <HardDriveDownload :size="16" />
-            {{ t("nav.downloaded") }}
-          </button>
-        </div>
+        <MainNavTabs active="library" :collapsed="collapsed" @select="(tab) => emit('selectTab', tab)" />
+        <button
+          type="button"
+          class="ak-clip flex shrink-0 items-center gap-1.5 border border-line bg-surface px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:text-fg"
+          @click="emit('navigate', 'downloaded')"
+        >
+          <HardDriveDownload :size="16" />
+          {{ t("nav.downloaded") }}
+        </button>
       </header>
 
       <!-- Plain category list: accent line icon, title, trailing chevron, hairline dividers. -->

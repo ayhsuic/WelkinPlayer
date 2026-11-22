@@ -97,10 +97,14 @@ function moveDrag(clientX: number, clientY: number, event: { preventDefault(): v
   const dx = clientX - dragStartX;
   const dy = clientY - dragStartY;
   if (dragAxis === null) {
-    if (Math.abs(dx) > 5 && Math.abs(dx) >= Math.abs(dy)) {
+    const adx = Math.abs(dx);
+    const ady = Math.abs(dy);
+    // Only take over once the travel is clearly horizontal; a near-vertical or
+    // diagonal gesture is handed back so the ancestor list keeps scrolling.
+    if (adx > 8 && adx > ady * 1.2) {
       dragAxis = "x";
       event.preventDefault();
-    } else if (Math.abs(dy) > 5) {
+    } else if (ady > 8) {
       dragAxis = "y";
     }
   }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from "vue";
 import { Virtualizer } from "virtua/vue";
 import { History, ListMusic, LoaderCircle, RefreshCw, User } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
@@ -10,6 +10,7 @@ import { coverPending, initial } from "../lib/format";
 import { trackKey } from "../lib/sources";
 import type { View, MainTab } from "../lib/app";
 import { RECENT_PLAYS_ID, RECENTLY_ADDED_ID } from "../lib/app";
+import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
 import TrackContextMenu from "../components/TrackContextMenu.vue";
 import MainNavTabs from "../components/MainNavTabs.vue";
 
@@ -121,32 +122,7 @@ const avatarInitial = computed(() => {
 /** Collapsing sticky header: once the list scrolls past a short peek, the large title
  *  and avatar tuck into a pinned top bar (mirrors Mornye's pinned SliverAppBar). */
 const rootEl = ref<HTMLElement | null>(null);
-const collapsed = ref(false);
-const scrollerEl = ref<HTMLElement | null>(null);
-let scroller: HTMLElement | null = null;
-const HEADER_PEEK_PX = 12;
-
-function syncCollapsed() {
-  collapsed.value = (scroller?.scrollTop ?? 0) > HEADER_PEEK_PX;
-}
-
-onMounted(() => {
-  let el: HTMLElement | null = rootEl.value?.parentElement ?? null;
-  while (el) {
-    const overflowY = getComputedStyle(el).overflowY;
-    if (overflowY === "auto" || overflowY === "scroll") { scroller = el; break; }
-    el = el.parentElement;
-  }
-  scrollerEl.value = scroller;
-  scroller?.addEventListener("scroll", syncCollapsed, { passive: true });
-  syncCollapsed();
-  // The shared scroller is resolved above; re-measure the wall so its
-  // virtualizer start-margin is computed against the real scroll host.
-  measureAddWall();
-});
-onBeforeUnmount(() => {
-  scroller?.removeEventListener("scroll", syncCollapsed);
-});
+const { collapsed, scroller } = useCollapsibleHeader(rootEl);
 
 /* --- Daily recommendation: horizontal virtualized open rail. --- */
 const recOpenHost = ref<HTMLElement | null>(null);
@@ -255,8 +231,8 @@ function measureAddWall() {
   const cw = parseFloat(getComputedStyle(host).getPropertyValue("--cw"));
   if (!Number.isNaN(ch)) addCh.value = ch;
   if (!Number.isNaN(cw)) addCw.value = cw;
-  if (scroller) {
-    const top = host.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+  if (scroller.value) {
+    const top = host.getBoundingClientRect().top - scroller.value.getBoundingClientRect().top + scroller.value.scrollTop;
     addStartMargin.value = Math.max(0, top);
   }
 }
@@ -326,28 +302,23 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
 
 <template>
   <div ref="rootEl" class="home-root-pad mx-auto w-full">
-    <!-- Home header: title on the left, avatar entry to settings on the right.
-         Sticky: scrolling tucks the large title and avatar into a pinned top bar. -->
+    <!-- Home header: plain-text tab row on the left, avatar entry to settings on the right.
+         Sticky: scrolling tucks the header into a pinned compact bar and shrinks the tabs. -->
     <header
-      class="home-header home-scroll-pad sticky top-0 z-20 flex items-center justify-between transition-[padding,background-color,border-color] duration-200"
+      class="home-header home-scroll-pad sticky top-0 z-20 flex items-center justify-between gap-2 transition-[padding,background-color,border-color] duration-200"
       :class="[collapsed ? 'is-collapsed border-b border-line bg-bg/95 backdrop-blur' : 'border-b border-transparent bg-transparent']"
     >
-      <h1
-        class="home-header__title truncate font-black tracking-tight transition-[font-size] duration-200"
-      >{{ t("nav.home") }}</h1>
-      <div class="flex shrink-0 items-center gap-2">
-        <MainNavTabs active="home" @select="(tab) => emit('selectTab', tab)" />
-        <button
-          type="button"
-          class="home-header__avatar ak-clip-tr grid shrink-0 place-items-center border border-line bg-surface text-accent transition-[width,height,font-size] duration-200 active:scale-95"
-          :aria-label="t('nav.settings')"
-          :title="t('nav.settings')"
-          @click="emit('settings')"
-        >
-          <span v-if="avatarInitial" class="home-header__initial font-bold leading-none">{{ avatarInitial }}</span>
-          <User v-else class="home-header__icon" :size="collapsed ? 18 : 20" />
-        </button>
-      </div>
+      <MainNavTabs active="home" :collapsed="collapsed" @select="(tab) => emit('selectTab', tab)" />
+      <button
+        type="button"
+        class="home-header__avatar ak-clip-tr grid shrink-0 place-items-center border border-line bg-surface text-accent transition-[width,height,font-size] duration-200 active:scale-95"
+        :aria-label="t('nav.settings')"
+        :title="t('nav.settings')"
+        @click="emit('settings')"
+      >
+        <span v-if="avatarInitial" class="home-header__initial font-bold leading-none">{{ avatarInitial }}</span>
+        <User v-else class="home-header__icon" :size="collapsed ? 18 : 20" />
+      </button>
     </header>
 
       <!-- Daily recommendation: square cover cards on a horizontal rail. -->
@@ -498,7 +469,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <Virtualizer
             :data="addRowIndexes"
             :item-size="addRowHeight"
-            :scroll-ref="scrollerEl ?? undefined"
+            :scroll-ref="scroller ?? undefined"
             :start-margin="addStartMargin"
           >
             <template #default="{ item: row }">

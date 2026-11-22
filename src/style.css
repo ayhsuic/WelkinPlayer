@@ -473,7 +473,9 @@ html[data-accent="blue"] {
     overflow-x: auto;
     overflow-y: hidden;
     height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1) + var(--ch, 100vh) * 0.016 * var(--rail-scale, 1) * 2);
-    touch-action: pan-x;
+    /* Keep sideways native scroll; leave vertical gestures free for the
+       ancestor list to scroll. */
+    touch-action: pan-x pan-y;
     /* Proximity (not mandatory): loose snap to the nearest column start. A
        mandatory scroller yanks to dead slots between virtualized columns and
        pulls the rest position off when off-screen columns are not mounted. */
@@ -665,14 +667,6 @@ html[data-accent="blue"] {
     padding-bottom: calc(var(--ch, 100vh) * 0.018 * var(--rail-scale, 1));
   }
 
-  .home-header__title {
-    font-size: min(calc(var(--cw) * 0.067 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.04 * var(--rail-scale, 1)));
-  }
-
-  .home-header.is-collapsed .home-header__title {
-    font-size: min(calc(var(--cw) * 0.044 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.03 * var(--rail-scale, 1)));
-  }
-
   .home-header__avatar {
     width: calc(var(--cw) * 0.122 * var(--rail-scale, 1));
     aspect-ratio: 1 / 1;
@@ -707,8 +701,10 @@ html[data-accent="blue"] {
   .home-root-pad {
     padding-left: calc(var(--cw) * 0.067 * var(--rail-scale, 1));
     padding-right: calc(var(--cw) * 0.067 * var(--rail-scale, 1));
-    padding-top: calc(var(--ch, 100vh) * 0.031 * var(--rail-scale, 1));
-    padding-bottom: calc(var(--ch, 100vh) * 0.031 * var(--rail-scale, 1));
+    /* Top/bottom safe-area insets are owned once by the drawer sheet/body; the
+       root pad keeps only the horizontal content gutter, no extra vertical pad. */
+    padding-top: 0;
+    padding-bottom: 0;
   }
 
   .home-scroll-pad {
@@ -727,10 +723,10 @@ html[data-accent="blue"] {
     margin-right: calc(var(--cw) * -0.067 * var(--rail-scale, 1));
     padding-left: 0;
     padding-right: 0;
-    /* Horizontal rail: allow the browser to own the sideways gesture so the
-       native momentum/inertia kicks in; snap loosely to card starts. */
+    /* Horizontal rail: own the sideways gesture for native momentum/inertia,
+       but keep vertical gestures free to bubble up to the ancestor list scroll. */
     overflow-y: hidden;
-    touch-action: pan-x;
+    touch-action: pan-x pan-y;
     scroll-snap-type: x proximity;
     -webkit-overflow-scrolling: touch;
   }

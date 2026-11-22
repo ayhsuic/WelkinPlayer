@@ -103,7 +103,7 @@ function clear() {
             <X :size="16" :stroke-width="2" />
           </button>
         </label>
-        <MainNavTabs active="search" @select="(tab) => emit('selectTab', tab)" />
+        <MainNavTabs active="search" :collapsed="collapsed" @select="(tab) => emit('selectTab', tab)" />
       </header>
 
       <!-- Idle: centered hint before any query. -->
