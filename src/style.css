@@ -445,28 +445,34 @@ html[data-accent="blue"] {
     height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
     aspect-ratio: 1 / 1;
     max-width: 100%;
+    scroll-snap-align: start;
   }
 
   /* Clipped recommendation rail: the horizontal virtualizer needs a fixed
      viewport height (the big-card edge); otherwise its items collapse to 0. */
   .home-rec-container {
     height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
+    overflow-y: hidden;
+    touch-action: pan-x;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
   }
 
   /* Rail small card: square edge is the smaller of the width budget
-     (cw×0.28 ≈ 3.1 covers per row on a 9:21 phone) and the recommend-card
-     height cap. Portrait lets the width budget shrink the cover down;
-     landscape lets the height cap hold it at the big-card edge. */
+     (cw×0.22 ≈ three covers plus a quarter of the fourth on a 9:21 phone)
+     and the recommend-card height cap. Portrait lets the width budget shrink
+     the cover down; landscape lets the height cap hold it at the big-card edge. */
   .home-rail-card {
-    width: min(calc(var(--cw) * 0.28 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1)));
+    width: min(calc(var(--cw) * 0.22 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1)));
     max-width: 100%;
     align-items: flex-start;
     min-width: 0;
+    scroll-snap-align: start;
   }
 
   .home-rail-card .home-card-cover {
     width: auto;
-    height: min(calc(var(--cw) * 0.28 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1)));
+    height: min(calc(var(--cw) * 0.22 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1)));
     aspect-ratio: 1 / 1;
     max-width: 100%;
   }
@@ -478,7 +484,11 @@ html[data-accent="blue"] {
      collapsing to zero height. */
   .home-recent-columns {
     overflow-x: auto;
+    overflow-y: hidden;
     height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1) + var(--ch, 100vh) * 0.016 * var(--rail-scale, 1) * 2);
+    touch-action: pan-x;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
   }
 
   /* One column of three rows. Column width derives from the row height and a
@@ -490,6 +500,7 @@ html[data-accent="blue"] {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    scroll-snap-align: start;
   }
 
   /* List row item: horizontal strip (caption left, cover right). Height anchors
@@ -499,7 +510,6 @@ html[data-accent="blue"] {
   .home-list-item {
     height: calc(var(--ch, 100vh) * 0.25 / 3 * var(--rail-scale, 1));
     max-width: 100%;
-    scroll-snap-align: start;
     gap: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.022 * var(--rail-scale, 1)));
     min-width: 0;
     padding: 0;
@@ -608,21 +618,33 @@ html[data-accent="blue"] {
   }
 
   .home-card-hr {
-    font-size: min(calc(var(--cw) * 0.025 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.015 * var(--rail-scale, 1)));
-    padding-left: calc(var(--cw) * 0.015 * var(--rail-scale, 1));
-    padding-right: calc(var(--cw) * 0.015 * var(--rail-scale, 1));
-    padding-top: calc(var(--ch, 100vh) * 0.005 * var(--rail-scale, 1));
-    padding-bottom: calc(var(--ch, 100vh) * 0.005 * var(--rail-scale, 1));
+    /* Height-anchored: the badge height follows --ch; font-size and the
+       horizontal padding derive from that height (em), no width budget on cw. */
+    height: calc(var(--ch, 100vh) * 0.021 * var(--rail-scale, 1));
+    font-size: calc(var(--ch, 100vh) * 0.0107 * var(--rail-scale, 1));
+    border-radius: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding-left: 0.38em;
+    padding-right: 0.38em;
+    padding-top: 0;
+    padding-bottom: 0;
     bottom: calc(var(--ch, 100vh) * 0.008 * var(--rail-scale, 1));
     right: calc(var(--ch, 100vh) * 0.008 * var(--rail-scale, 1));
   }
 
   .home-list-hr {
-    font-size: min(calc(var(--cw) * 0.022 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.014 * var(--rail-scale, 1)));
-    padding-left: calc(var(--cw) * 0.01 * var(--rail-scale, 1));
-    padding-right: calc(var(--cw) * 0.01 * var(--rail-scale, 1));
-    padding-top: calc(var(--ch, 100vh) * 0.005 * var(--rail-scale, 1));
-    padding-bottom: calc(var(--ch, 100vh) * 0.005 * var(--rail-scale, 1));
+    height: calc(var(--ch, 100vh) * 0.0194 * var(--rail-scale, 1));
+    font-size: calc(var(--ch, 100vh) * 0.0094 * var(--rail-scale, 1));
+    border-radius: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding-left: 0.38em;
+    padding-right: 0.38em;
+    padding-top: 0;
+    padding-bottom: 0;
     bottom: calc(var(--ch, 100vh) * 0.006 * var(--rail-scale, 1));
     right: calc(var(--ch, 100vh) * 0.006 * var(--rail-scale, 1));
   }
@@ -705,10 +727,20 @@ html[data-accent="blue"] {
     padding-right: calc(var(--cw) * 0.067 * var(--rail-scale, 1));
   }
 
-  /* Horizontal rails keep the right padding as an exit gutter: the last card
-     does not slide flush against the screen edge. */
+  /* Horizontal rails do not bleed to the screen edges: the host aligns to the
+     content edge on the left (no negative margin, no extra left padding), and
+     keeps the right padding as an exit gutter so the last card does not flush
+     against the screen edge. */
   .home-scroll-pad.overflow-x-auto {
+    margin-left: 0;
     margin-right: 0;
+    padding-left: 0;
+    /* Horizontal rail: allow the browser to own the sideways gesture so the
+       native momentum/inertia kicks in; snap loosely to card starts. */
+    overflow-y: hidden;
+    touch-action: pan-x;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
   }
 
   .home-pad-x {

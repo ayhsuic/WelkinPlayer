@@ -175,7 +175,7 @@ const railCw = ref(0);
 let railResizeObs: ResizeObserver | undefined;
 const recentRailIndexes = computed(() => recentTracks.value.map((_, i) => i));
 const addedRailIndexes = computed(() => recentlyAdded.value.map((_, i) => i));
-const railCardW = computed(() => Math.round(Math.min((railCw.value || 312) * 0.28, (railCh.value || window.innerHeight) * 0.25)));
+const railCardW = computed(() => Math.round(Math.min((railCw.value || 312) * 0.22, (railCh.value || window.innerHeight) * 0.25)));
 const railGap = computed(() => Math.min(Math.round((railCw.value || 312) * 0.044), Math.round((railCh.value || 840) * 0.02)));
 const railSlotW = computed(() => railCardW.value + railGap.value);
 // Full card height for the horizontal virtualizer host: square cover + caption
@@ -450,7 +450,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
                         <LoaderCircle v-else-if="coverPending(recentTrackAt(col, row - 1)!)" :size="18" :stroke-width="2" class="home-list-spinner absolute inset-0 m-auto animate-spin text-white/90" />
                         <span v-else class="home-list-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recentTrackAt(col, row - 1)!) }}</span>
                         <span v-if="isActive(recentTrackAt(col, row - 1)!) && player.isPlaying" class="absolute home-eq-badge-list text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                        <span v-if="isHiRes(recentTrackAt(col, row - 1)!)" class="home-list-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+                        <span v-if="isHiRes(recentTrackAt(col, row - 1)!)" class="home-list-hr absolute bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
                       </div>
                     </article>
                   </template>
@@ -478,7 +478,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
                       <LoaderCircle v-else-if="coverPending(recentTracks[i]!)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
                       <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recentTracks[i]!) }}</span>
                       <span v-if="isActive(recentTracks[i]!) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                      <span v-if="isHiRes(recentTracks[i]!)" class="home-card-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+                      <span v-if="isHiRes(recentTracks[i]!)" class="home-card-hr absolute bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
                     </div>
                   </div>
                   <div class="home-mt-card w-full min-w-0">
@@ -532,7 +532,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
                         <LoaderCircle v-else-if="coverPending(addTrack(row, col)!)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
                         <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(addTrack(row, col)!) }}</span>
                         <span v-if="isActive(addTrack(row, col)!) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                        <span v-if="isHiRes(addTrack(row, col)!)" class="home-card-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+                        <span v-if="isHiRes(addTrack(row, col)!)" class="home-card-hr absolute bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
                       </div>
                     </div>
                     <div class="home-mt-card w-full min-w-0">
@@ -564,7 +564,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
                       <LoaderCircle v-else-if="coverPending(recentlyAdded[i]!)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
                       <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recentlyAdded[i]!) }}</span>
                       <span v-if="isActive(recentlyAdded[i]!) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                      <span v-if="isHiRes(recentlyAdded[i]!)" class="home-card-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+                      <span v-if="isHiRes(recentlyAdded[i]!)" class="home-card-hr absolute bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
                     </div>
                   </div>
                   <div class="home-mt-card w-full min-w-0">

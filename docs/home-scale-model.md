@@ -57,13 +57,15 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 | 元素 | 类名 | 高度锚定 | 比例 / 宽度 | 备注 |
 |---|---|---|---|---|
 | 每日推荐卡 | `.home-rec-card` | `ch×0.25×k` | aspect `1/1`，宽=高 | `max-width:100%` |
-| 横滑小卡 | `.home-rail-card` | 封面 `min(cw×0.28×k, ch×0.25×k)` | 卡宽=封面边；封面 aspect `1/1`、`width:auto` | `align-items:flex-start; min-width:0`；窄屏按宽预算缩到一屏约 3.1 张，宽屏被大卡高封顶 |
+| 横滑小卡 | `.home-rail-card` | 封面 `min(cw×0.22×k, ch×0.25×k)` | 卡宽=封面边；封面 aspect `1/1`、`width:auto` | `align-items:flex-start; min-width:0`；窄屏按宽预算缩到一屏 3 张完整 + 第四张露约 1/4，宽屏被大卡高封顶；左侧对齐标题左缘、不出血 |
 | 最近播放列容器 | `.home-recent-columns` | 三行加两行行距：`ch×0.25×k + 2×ch×0.016×k` | flex 横排，每列三行；列宽由行高反推 `rowH×4.7`，封顶内容宽 `100%`；多出条目往右加列横滑 | `scroll-snap-type:x mandatory`；9:21 竖屏单列占满内容区 |
 | 列表条目 | `.home-list-item` | `ch×0.25/3×k` | 宽占满所在列，不锁固定比例；`min-width:0; padding:0` | 标题在列宽内截断 |
 | 条目封面 | `.home-list-cover` | `ch×0.25/3×k` | aspect `1/1`，宽=高 | — |
 | 网格墙 | `.album-wall` / `.home-added-wall` | — | 基类 `auto-fill minmax(cw×0.32×k,1fr)`；首页 `.home-added-wall` 覆盖为 `auto-fill minmax(ch×0.16×k,1fr)` | 列宽驱动，最小卡边锚定屏高 `ch×0.16×k` |
 | 最近添加网格 | `.home-added-wall` | 无高度上限 | `overflow:visible`，开放式随页面整体滚动，不在容器内滚 | — |
 | 网格封面 | `.home-added-wall .home-card-cover` | 封顶 `ch×0.25×k` | `width:100%`、aspect `1/1`，宽跟随列宽 | `max-height/max-width ch×0.25×k` |
+| HR 金标（卡） | `.home-card-hr` | 高 `ch×0.021×k`，字号 `ch×0.0107×k` | 水平 padding `0.38em` 随字号派生，宽度由文字撑开 | 高度优先，不用 cw 宽度预算；直角矩形 `border-radius:0`；右下偏移 `ch×0.008×k` |
+| HR 金标（列表） | `.home-list-hr` | 高 `ch×0.0194×k`，字号 `ch×0.0094×k` | 水平 padding `0.38em` 随字号派生 | 同上；右下偏移 `ch×0.006×k` |
 
 ### 3.3 间距档位
 
@@ -108,8 +110,9 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 - 最近播放、最近添加、推荐均不再做条数截断：历史全量参与，最近添加按源修改时间倒序全量展示，推荐从最近添加队列洗牌重抽。
 - 条目占满所在列宽度，高度锚定行高（推荐卡高的 1/3），标题在列宽内截断；封面 1:1 随行高。不用固定比例把条目宽锁死，避免条目挤在列左侧、列间堆出死空白。
 - 高度预算：固定三行加两行行距（`ch×0.25×k + 2×ch×0.016×k`）封顶容器高度，横向虚拟化宿主须定高否则交叉轴塌缩；列距并入条目槽宽（列宽 + 列距），由虚拟化按槽宽排布。
-- 横滑 rail 容器（`.home-scroll-pad.overflow-x-auto`）右侧去掉负 margin，保留 `padding-right` 作为出口边距，末条不贴屏幕边。
-- rail 模式（`recentListMode=0`）：单行横滑小卡，封面 + 下方标题；封面边取 `min(cw×0.28, ch×0.25)`，窄屏一屏约 3.1 张，宽屏被大卡高封顶；宿主对齐基线露头横滑盒类（`home-gap-x flex overflow-x-auto`），保留横向虚拟化。
+- 横滑 rail 容器（`.home-scroll-pad.overflow-x-auto`）左侧去掉负 margin 与补偿 padding，首条与分区标题左缘对齐、不出血；右侧去掉负 margin，保留 `padding-right` 作为出口边距，末条不贴屏幕边。
+- 横滑手感：四个横向宿主（露头推荐、截断容器、最近播放折列、两个 rail）统一 `touch-action: pan-x` 让出浏览器横向手势以带原生惯性（`-webkit-overflow-scrolling: touch`）；卡流（推荐/rail）`scroll-snap-type: x proximity` 就近吸附，折列 `x mandatory` 按列分页对齐，子项/列 `scroll-snap-align: start`。外层纵向滚动体（抽屉内容层、横屏侧栏）`touch-action: pan-x pan-y` 放开横向手势，避免祖先 `pan-y` 交集锁死横滑。最下方纵向网格不参与。
+- rail 模式（`recentListMode=0`）：单行横滑小卡，封面 + 下方标题；封面边取 `min(cw×0.22, ch×0.25)`，窄屏一屏 3 张完整 + 第四张露约 1/4，宽屏被大卡高封顶；宿主对齐基线露头横滑盒类（`home-gap-x flex overflow-x-auto`），左侧对齐标题左缘不出血，保留横向虚拟化。
 - 推荐双模式（`recContainerMode`，键 `welkin.home.recContainerMode`，默认露头）：点分区标题切换。`0` 露头——基线横滑盒自然一行；`1` 截断容器——`.home-rec-container` 定高截断盒。两态均挂横向虚拟化，宿主定高 `ch×0.25×k` 防交叉轴塌缩，状态本地持久化。
 
 ### 5.2 已移除的旧链路
@@ -142,7 +145,7 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 | 推荐大卡 | 210×210 | 1:1 |
 | 列表条目 | 312×70 | 占满单列，不锁比例 |
 | 条目封面 | 70×70 | 1:1 |
-| rail 卡 / 封面 | 101 / 101×101 | 1:1（宽预算 cw×0.28，一屏约 3.1 张） |
+| rail 卡 / 封面 | 79 / 79×79 | 1:1（宽预算 cw×0.22，一屏 3 张完整 + 第四张露约 1/4） |
 | 网格封面 | 150×150 | 1:1（列宽分配，未触 210 封顶） |
 
 > 窄屏推荐卡按高度走比旧封顶版偏大，是高度优先口径的必然结果；所有元素宽度均小于容器宽，无横向溢出。

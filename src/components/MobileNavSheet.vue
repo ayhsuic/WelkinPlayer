@@ -59,7 +59,7 @@ const CLOSE_PX = 110;
 const VELOCITY_PX_PER_MS = 0.4;
 
 const sheetStyle = computed(() => {
-  const style: Record<string, string> = { touchAction: "pan-y" };
+  const style: Record<string, string> = { touchAction: "pan-x pan-y" };
   // Outside an active gesture leave transform/transition to the outer enter/
   // leave transition class; only take over while the finger or the settle
   // animation owns the element.
@@ -240,7 +240,7 @@ onBeforeUnmount(() => {
         <div
           ref="contentEl"
           class="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
-          style="touch-action: pan-y; padding-bottom: calc(env(safe-area-inset-bottom) + 84px)"
+          style="touch-action: pan-x pan-y; padding-bottom: calc(env(safe-area-inset-bottom) + 84px)"
         >
           <slot />
         </div>
