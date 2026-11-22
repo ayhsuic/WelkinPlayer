@@ -621,10 +621,10 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
               <LibraryView :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @select-tab="onTabSelect" />
             </template>
             <template #library>
-              <LibraryListView @navigate="navigate" @open-group="onOpenGroupFrom" @select-tab="onTabSelect" />
+              <LibraryListView @navigate="navigate" @open-group="onOpenGroupFrom" @open-playlist="openUserPlaylist" @create-playlist="createPlaylist" @select-tab="onTabSelect" />
             </template>
             <template #search>
-              <SearchView @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" @select-tab="onTabSelect" />
+              <SearchView @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" @navigate="navigate" @select-tab="onTabSelect" />
             </template>
           </MainPager>
         </div>
@@ -663,7 +663,7 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
           <SourceConfigView v-else-if="baseView === 'source-config'" key="source-config" :kind="sourceConfigKind" @back="closeSourceConfig" />
           <CategoriesView v-else-if="categoryActive" key="categories" :kind="baseView" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @navigate="navigate" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @open-group="onOpenGroupFrom" @refresh="refreshLibrary" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
           <FavoritesView v-else-if="baseView === 'favorites'" key="favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-          <SearchView v-else-if="baseView === 'search'" key="search" @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" @select-tab="onTabSelect" />
+          <SearchView v-else-if="baseView === 'search'" key="search" @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" @navigate="navigate" @select-tab="onTabSelect" />
           <DownloadingView v-else-if="baseView === 'downloading'" key="downloading" />
           <DownloadedView v-else-if="baseView === 'downloaded'" key="downloaded" @open-artist="openArtist" @open-album="openAlbum" />
           <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
@@ -694,10 +694,10 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
           <LibraryView :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @select-tab="onTabSelect" />
         </template>
         <template #library>
-          <LibraryListView @navigate="navigate" @open-group="onOpenGroupFrom" @select-tab="onTabSelect" />
+          <LibraryListView @navigate="navigate" @open-group="onOpenGroupFrom" @open-playlist="openUserPlaylist" @create-playlist="createPlaylist" @select-tab="onTabSelect" />
         </template>
         <template #search>
-          <SearchView @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" @select-tab="onTabSelect" />
+          <SearchView @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" @navigate="navigate" @select-tab="onTabSelect" />
         </template>
       </MainPager>
     </MobileNavSheet>

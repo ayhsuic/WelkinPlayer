@@ -4,216 +4,32 @@
 -->
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { mainPagerTabs, type MainTab } from "../lib/app";
+import { onBeforeUnmount, onMounted, ref } from "vue";
+import type { MainTab } from "../lib/app";
 import MainNavTabs from "./MainNavTabs.vue";
 import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
 
 /**
- * Three-page horizontal pager for the primary destinations (home / library /
- * search), modelled on the category strip in CategoriesView: a hand-written
- * transform strip driven by touch (mobile) and pointer (mouse) drags; on
- * release it animates to the nearest page and publishes the settled tab. No
- * native horizontal scrolling is used, so scroll events cannot fight the
- * animation.
+ * Primary destinations (home / library / search) stacked in place: switching
+ * tabs cross-fades the active page in and out, with no horizontal strip drag.
+ * Each page still scrolls inside its own section; the pinned top bar follows
+ * whichever section is scrolling.
  *
- * Each page is provided through a named slot so the parent keeps owning every
- * page's props and events; this component only owns the strip and the gesture.
+ * Every page is provided through a named slot so the parent keeps owning each
+ * page's props and events; this component only owns the shared tab row and the
+ * page transition.
  */
 const props = defineProps<{ active: MainTab }>();
 const emit = defineEmits<{ select: [tab: MainTab] }>();
 
-const strip = ref<HTMLElement | null>(null);
 const rootEl = ref<HTMLElement | null>(null);
-/** Shared pinned top bar: the tab row lives once above the strip and shrinks
+/** Shared pinned top bar: the tab row lives once above the pages and shrinks
  *  together with the ancestor list's collapsed header state. */
 const { collapsed } = useCollapsibleHeader(rootEl);
-const position = ref(0); // translateX px of the strip (0 or negative)
-const targetIndex = ref(0);
-let stripWidth = 1;
-
-function measure() {
-  stripWidth = strip.value?.clientWidth ?? 1;
-}
-
-function setTransition(enable: boolean) {
-  const el = strip.value;
-  if (el) el.style.transition = enable ? "transform 0.32s cubic-bezier(0.22, 1, 0.36, 1)" : "none";
-}
-
-function indexOf(tab: MainTab) {
-  return Math.max(0, mainPagerTabs.indexOf(tab));
-}
-
-function goTo(index: number, animate: boolean) {
-  targetIndex.value = Math.max(0, Math.min(mainPagerTabs.length - 1, index));
-  setTransition(animate);
-  position.value = -(targetIndex.value * stripWidth);
-}
-
-let settleTimer: ReturnType<typeof setTimeout> | null = null;
-const FLING_PX_PER_MS = 0.35;
-
-function settleAndPublish() {
-  const delta = -position.value / stripWidth;
-  const current = Math.round(delta);
-  const frac = delta - current;
-  let index = current;
-  if (velocity <= -FLING_PX_PER_MS && frac >= -0.3) index = current + 1;
-  else if (velocity >= FLING_PX_PER_MS && frac <= 0.3) index = current - 1;
-  index = Math.max(0, Math.min(mainPagerTabs.length - 1, index));
-  goTo(index, true);
-  if (settleTimer) clearTimeout(settleTimer);
-  settleTimer = setTimeout(() => {
-    const tab = mainPagerTabs[index];
-    if (tab && tab !== props.active) emit("select", tab);
-  }, 360);
-}
-
-function cancelSettle() {
-  if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
-}
-
-// --- Drag state (whole component area) ---
-let dragging = false;
-let dragStartX = 0;
-let dragStartY = 0;
-let dragStartPosition = 0;
-let dragAxis: "x" | "y" | null = null;
-let velocity = 0;
-let lastSampleX = 0;
-let lastSampleT = 0;
-/** A touch starting inside a horizontal rail/column host is left to that
- *  rail's own native horizontal scroll; the pager must not steal it. */
-let railGesture = false;
-
-/** Walk up from the touch target to find a horizontal scroll host. */
-function isHorizontalRail(target: EventTarget | null): boolean {
-  let n = target as HTMLElement | null;
-  while (n) {
-    if (n.classList && (n.classList.contains("overflow-x-auto") || n.classList.contains("home-recent-columns"))) {
-      return true;
-    }
-    n = n.parentElement;
-  }
-  return false;
-}
-
-function startDrag(clientX: number, clientY: number) {
-  dragging = true;
-  dragAxis = null;
-  dragStartX = clientX;
-  dragStartY = clientY;
-  dragStartPosition = position.value;
-  velocity = 0;
-  lastSampleX = clientX;
-  lastSampleT = performance.now();
-  cancelSettle();
-  setTransition(false);
-}
-
-function moveDrag(clientX: number, clientY: number, event: { preventDefault(): void }) {
-  if (!dragging) return;
-  const dx = clientX - dragStartX;
-  const dy = clientY - dragStartY;
-  if (dragAxis === null) {
-    const adx = Math.abs(dx);
-    const ady = Math.abs(dy);
-    // Only take over once the travel is clearly horizontal; a near-vertical or
-    // diagonal gesture is handed back so the ancestor list keeps scrolling.
-    if (adx > 8 && adx > ady * 1.2) {
-      dragAxis = "x";
-      event.preventDefault();
-    } else if (ady > 8) {
-      dragAxis = "y";
-    }
-  }
-  if (dragAxis === "x") {
-    event.preventDefault();
-    position.value = dragStartPosition + dx;
-    const now = performance.now();
-    const dt = now - lastSampleT;
-    if (dt > 0 && dt < 120) velocity = (clientX - lastSampleX) / dt;
-    else velocity = 0;
-    lastSampleX = clientX;
-    lastSampleT = now;
-  }
-}
-
-function endDrag() {
-  if (!dragging) return;
-  const wasHorizontal = dragAxis === "x";
-  dragging = false;
-  dragAxis = null;
-  if (wasHorizontal) settleAndPublish();
-}
-
-// --- Event wiring ---
-let unbind: (() => void) | null = null;
-
-function onPointerDown(event: PointerEvent) {
-  if (event.pointerType !== "mouse") return;
-  if (event.button !== 0) return;
-  startDrag(event.clientX, event.clientY);
-}
-function onPointerMove(event: PointerEvent) {
-  if (event.pointerType !== "mouse") return;
-  moveDrag(event.clientX, event.clientY, event);
-}
-function onPointerEnd(event: PointerEvent) {
-  if (event.pointerType !== "mouse") return;
-  endDrag();
-}
-
-function onTouchStart(event: TouchEvent) {
-  const touch = event.touches[0];
-  if (!touch) return;
-  railGesture = isHorizontalRail(event.target);
-  if (railGesture) return;
-  startDrag(touch.clientX, touch.clientY);
-}
-function onTouchMove(event: TouchEvent) {
-  if (railGesture) return;
-  const touch = event.touches[0];
-  if (!touch) return;
-  moveDrag(touch.clientX, touch.clientY, event);
-}
-function onTouchEnd() {
-  railGesture = false;
-  endDrag();
-}
-
-function bindDragEvents(el: HTMLElement) {
-  el.addEventListener("pointerdown", onPointerDown);
-  el.addEventListener("pointermove", onPointerMove);
-  el.addEventListener("pointerup", onPointerEnd);
-  el.addEventListener("pointercancel", onPointerEnd);
-  el.addEventListener("touchstart", onTouchStart, { passive: true });
-  el.addEventListener("touchmove", onTouchMove, { passive: false });
-  el.addEventListener("touchend", onTouchEnd);
-  el.addEventListener("touchcancel", onTouchEnd);
-  unbind = () => {
-    el.removeEventListener("pointerdown", onPointerDown);
-    el.removeEventListener("pointermove", onPointerMove);
-    el.removeEventListener("pointerup", onPointerEnd);
-    el.removeEventListener("pointercancel", onPointerEnd);
-    el.removeEventListener("touchstart", onTouchStart);
-    el.removeEventListener("touchmove", onTouchMove);
-    el.removeEventListener("touchend", onTouchEnd);
-    el.removeEventListener("touchcancel", onTouchEnd);
-  };
-}
-
-watch(() => props.active, (tab) => {
-  cancelSettle();
-  goTo(indexOf(tab), true);
-});
-
-let resizeObserver: ResizeObserver | null = null;
 
 /** Each page slot scrolls inside its own section; the pinned top bar follows
  *  whichever section is scrolling. Scroll events do not bubble, so capture on
- *  the strip to catch the section's own scroll. */
+ *  the root to catch the section's own scroll. */
 const HEADER_PEEK_PX = 12;
 function onInnerScroll(event: Event) {
   const scroller = event.target as HTMLElement | null;
@@ -221,46 +37,31 @@ function onInnerScroll(event: Event) {
 }
 
 onMounted(() => {
-  measure();
-  goTo(indexOf(props.active), false);
-  if (rootEl.value) bindDragEvents(rootEl.value);
-  strip.value?.addEventListener("scroll", onInnerScroll, true);
-  if (typeof ResizeObserver !== "undefined") {
-    resizeObserver = new ResizeObserver(() => {
-      measure();
-      goTo(targetIndex.value, false);
-    });
-    if (strip.value) resizeObserver.observe(strip.value);
-  }
+  rootEl.value?.addEventListener("scroll", onInnerScroll, true);
 });
 onBeforeUnmount(() => {
-  unbind?.();
-  strip.value?.removeEventListener("scroll", onInnerScroll, true);
-  resizeObserver?.disconnect();
-  cancelSettle();
+  rootEl.value?.removeEventListener("scroll", onInnerScroll, true);
 });
-
-const stripStyle = computed(() => ({ transform: `translateX(${position.value}px)` }));
 </script>
 
 <template>
-  <div ref="rootEl" class="main-pager flex h-full w-full flex-col" style="touch-action: pan-x pan-y">
-    <!-- Shared top bar: one plain-text tab row above the swipeable strip,
-         shared by all three pages. -->
+  <div ref="rootEl" class="main-pager flex h-full w-full flex-col">
+    <!-- Shared top bar: one plain-text tab row above the pages, shared by all
+         three pages. -->
     <header
       class="main-pager__topbar flex shrink-0 items-center justify-between gap-2 px-4 transition-[padding,background-color,border-color] duration-200 sm:px-6"
       :class="[collapsed ? 'border-b border-line bg-bg/95 backdrop-blur' : 'border-b border-transparent bg-transparent']"
     >
       <MainNavTabs :active="props.active" :collapsed="collapsed" @select="(tab) => emit('select', tab)" />
     </header>
-    <div class="relative min-h-0 flex-1 overflow-x-clip">
-      <div ref="strip" class="flex h-full w-full" :style="stripStyle">
-        <section v-for="tab in mainPagerTabs" :key="tab" class="h-full min-h-0 w-full shrink-0 overflow-y-auto overscroll-contain">
-          <slot v-if="tab === 'home'" name="home" />
-          <slot v-else-if="tab === 'library'" name="library" />
+    <div class="relative min-h-0 flex-1">
+      <Transition name="page-fade" mode="out-in">
+        <section :key="props.active" class="h-full min-h-0 overflow-y-auto overscroll-contain">
+          <slot v-if="props.active === 'home'" name="home" />
+          <slot v-else-if="props.active === 'library'" name="library" />
           <slot v-else name="search" />
         </section>
-      </div>
+      </Transition>
     </div>
   </div>
 </template>

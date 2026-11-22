@@ -5,124 +5,112 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import type { Component } from "vue";
-import { CalendarDays, ChevronRight, ListMusic, Mic2, Music, Server } from "@lucide/vue";
+import { Disc3, Music, Plus } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
-import { groupTracks, isUnknownGroup, type GroupKind } from "../lib/grouping";
+import { useProfileStore } from "../stores/profile";
+import { initial } from "../lib/format";
 import type { View, MainTab } from "../lib/app";
+import RailSection, { type RailSectionCard } from "../components/RailSection.vue";
 
 /**
- * Library ("媒体库") page: a category row list on top, followed by the full
- * album grid in the home-page cover-wall style. The album placeholder entry
- * card is gone — every album in the library is shown directly in the grid.
+ * Library ("媒体库") page: reuses the home three-rail layout.
+ * - Large rail: user playlists (cover card opens the playlist; action creates one).
+ * - Small rail: every track in the library; action opens the full track list.
+ * - Small rail: recently added tracks; action opens the album collection.
  */
 const emit = defineEmits<{
   navigate: [view: View];
-  openGroup: [kind: GroupKind, key: string];
+  openGroup: [kind: "artists" | "albums" | "years" | "genres", key: string];
+  openPlaylist: [id: string];
+  createPlaylist: [];
   selectTab: [tab: MainTab];
 }>();
 
 const { t } = useI18n();
 const player = usePlayerStore();
+const profile = useProfileStore();
 
-interface CategoryRow {
-  id: View;
-  titleKey: string;
-  icon: Component;
-}
-
-const rows: CategoryRow[] = [
-  { id: "playlists", titleKey: "nav.playlists", icon: ListMusic },
-  { id: "artists", titleKey: "nav.artists", icon: Mic2 },
-  { id: "tracks", titleKey: "nav.tracks", icon: Music },
-  { id: "years", titleKey: "nav.years", icon: CalendarDays },
-  { id: "sources", titleKey: "nav.sources", icon: Server },
-];
-
-interface AlbumCard {
-  key: string;
-  name: string;
-  count: number;
-  coverTrack?: Track;
-  time: number;
-}
-
-/** Every album in the library, newest modification first; no count cap. */
-const albums = computed<AlbumCard[]>(() => {
-  const list = groupTracks(player.tracks, "albums").map((group) => {
-    const coverTrack = group.tracks.find((track) => track.cover) ?? group.tracks[0];
-    const latest = group.tracks.slice().sort(
-      (a, b) => (Date.parse(b.modified ?? "") || 0) - (Date.parse(a.modified ?? "") || 0),
-    )[0];
-    return {
-      key: group.key,
-      name: isUnknownGroup(group.key) ? t("library.collections.unknownAlbum") : group.key,
-      count: group.tracks.length,
-      coverTrack,
-      time: Date.parse(latest?.modified ?? "") || 0,
-    };
-  });
-  list.sort((a, b) => b.time - a.time);
-  return list;
+/** Recently added: newest source modification first. */
+const recentlyAdded = computed(() => {
+  const indexed = player.tracks
+    .map((track, index) => ({ track, index, time: Date.parse(track.modified ?? "") || 0 }))
+    .filter((item) => item.track.path);
+  indexed.sort((a, b) => b.time - a.time || a.index - b.index);
+  return indexed.map((item) => item.track);
 });
 
-function openAlbum(key: string) {
-  emit("openGroup", "albums", key);
+const playlistCards = computed<RailSectionCard[]>(() =>
+  profile.playlists.map((playlist) => ({
+    key: playlist.id,
+    title: playlist.name,
+    subtitle: t("library.collections.trackCount", { count: playlist.tracks.length }),
+    playlist,
+  })),
+);
+
+function trackCard(track: Track): RailSectionCard {
+  return {
+    key: String(track.id),
+    title: track.title,
+    subtitle: track.artist,
+    cover: track.cover,
+    color: track.color,
+    initial: initial(track),
+  };
+}
+
+const allTrackCards = computed<RailSectionCard[]>(() =>
+  player.tracks.filter((track) => track.path).map(trackCard),
+);
+const addedCards = computed<RailSectionCard[]>(() => recentlyAdded.value.map(trackCard));
+
+function onOpen(card: RailSectionCard) {
+  if (card.playlist) {
+    emit("openPlaylist", card.playlist.id);
+    return;
+  }
+  const track = player.tracks.find((item) => String(item.id) === card.key);
+  if (track) player.playInQueue(player.tracks, track);
 }
 </script>
 
 <template>
   <div class="w-full">
-    <div class="mx-auto flex w-full max-w-6xl flex-col px-4 py-5 sm:px-6 sm:py-6">
-      <!-- Plain category list: accent line icon, title, trailing chevron, hairline dividers. -->
-      <section class="mt-4 flex flex-col">
-        <template v-for="(row, index) in rows" :key="row.id">
-          <button
-            type="button"
-            class="flex items-center gap-4 py-3.5 text-left transition-colors hover:bg-surface/60"
-            @click="emit('navigate', row.id)"
-          >
-            <component :is="row.icon" :size="26" :stroke-width="1.9" class="shrink-0 text-accent" />
-            <span class="flex-1 truncate text-lg font-semibold">{{ t(row.titleKey) }}</span>
-            <ChevronRight :size="18" class="shrink-0 text-dim" />
-          </button>
-          <div v-if="index < rows.length - 1" class="ml-[42px] h-px bg-line" />
-        </template>
-      </section>
+    <div class="mx-auto flex w-full max-w-6xl flex-col px-4 pt-5 sm:px-6 sm:pt-6">
+      <!-- Playlists: large cover cards; action creates a new playlist. -->
+      <RailSection
+        titleKey="home.playlists"
+        variant="large"
+        :cards="playlistCards"
+        action-label-key="playlistsPage.create"
+        :action-icon="Plus"
+        @open="onOpen"
+        @action="emit('createPlaylist')"
+      />
 
-      <!-- Full album grid: home-page cover cards, every album shown directly. -->
-      <section v-if="albums.length" class="mt-6">
-        <div class="mb-3 flex items-center justify-between">
-          <h2 class="text-lg font-bold tracking-tight">{{ t("nav.albums") }}</h2>
-          <span class="text-xs text-muted">{{ t("library.collections.albumCount", { count: albums.length }) }}</span>
-        </div>
-        <div class="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3">
-          <article
-            v-for="album in albums"
-            :key="album.key"
-            class="album-grid-card group flex flex-col cursor-pointer"
-            @click="openAlbum(album.key)"
-          >
-            <div class="flex w-full justify-start">
-              <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: album.coverTrack?.color ?? 'var(--accent)' }">
-                <img v-if="album.coverTrack?.cover" :src="album.coverTrack.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ album.name.charAt(0) }}</span>
-              </div>
-            </div>
-            <div class="home-mt-card w-full min-w-0">
-              <p class="album-grid-card__title truncate font-medium">{{ album.name }}</p>
-              <p class="album-grid-card__artist truncate text-muted">{{ t("library.collections.trackCount", { count: album.count }) }}</p>
-            </div>
-          </article>
-        </div>
-      </section>
+      <!-- Every track: small track cards; action opens the full track list. -->
+      <RailSection
+        titleKey="home.allSongs"
+        variant="small"
+        :cards="allTrackCards"
+        action-label-key="home.library"
+        :action-icon="Music"
+        @open="onOpen"
+        @action="emit('navigate', 'tracks')"
+      />
 
-      <section v-else class="ak-frame mt-8 grid shrink-0 place-items-center gap-4 border border-dashed border-line bg-surface/50 px-6 py-20 text-center">
-        <Music :size="36" class="text-dim" />
-        <p class="max-w-md text-sm text-muted">{{ t("library.collections.empty") }}</p>
-      </section>
+      <!-- Recently added: small track cards; action opens the album collection. -->
+      <RailSection
+        titleKey="home.recentlyAdded"
+        variant="small"
+        :cards="addedCards"
+        action-label-key="nav.albums"
+        :action-icon="Disc3"
+        @open="onOpen"
+        @action="emit('navigate', 'albums')"
+      />
     </div>
   </div>
 </template>

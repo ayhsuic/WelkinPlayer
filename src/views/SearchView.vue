@@ -5,77 +5,59 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ChevronDown, ChevronUp, Music, Search, User, X } from "@lucide/vue";
+import { Mic2, Search, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
-import type { Track } from "../stores/player";
 import { groupTracks, isUnknownGroup, type GroupKind } from "../lib/grouping";
+import type { View, MainTab } from "../lib/app";
 import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
-import TrackList from "../components/TrackList.vue";
-import type { MainTab } from "../lib/app";
+import RailSection, { type RailSectionCard } from "../components/RailSection.vue";
 
 /**
- * Global library search, modelled on the lmusic search screen:
- * - an input bar at the top;
- *   - idle (empty query): a centered icon + hint;
- *   - no match: a centered empty hint;
- *   - results split into a collapsible songs group (track rows) and a
- *     collapsible artists group (artist rows).
+ * Search page: keeps the top search input, then reuses the home three-rail
+ * layout over library groups — artists (large cards), genres and years (small
+ * cards). A card opens its group collection; the artist action opens the
+ * artist list.
  */
 const emit = defineEmits<{
+  navigate: [view: View];
   openArtist: [artist: string];
   openAlbum: [album: string];
   openGroup: [kind: GroupKind, key: string];
   selectTab: [tab: MainTab];
 }>();
+
 const { t } = useI18n();
 const player = usePlayerStore();
 const query = ref("");
 const scrollEl = ref<HTMLElement | null>(null);
-const { scroller } = useCollapsibleHeader(scrollEl);
+useCollapsibleHeader(scrollEl);
 
-const songs = computed<Track[]>(() => {
-  const value = query.value.trim().toLocaleLowerCase();
-  if (!value) return [];
-  return player.tracks.filter((track) =>
-    [track.title, track.artist, track.album]
-      .some((field) => field?.toLocaleLowerCase().includes(value)),
-  );
-});
+const unknownKey: Record<GroupKind, string> = {
+  artists: "library.collections.unknownArtist",
+  albums: "library.collections.unknownAlbum",
+  years: "library.collections.unknownYear",
+  genres: "library.collections.unknownGenre",
+};
 
-interface ArtistCard {
-  key: string;
-  name: string;
-  count: number;
-  color?: string;
-}
-
-const artists = computed<ArtistCard[]>(() => {
-  const value = query.value.trim().toLocaleLowerCase();
-  if (!value) return [];
-  return groupTracks(player.tracks, "artists")
-    .filter((group) => group.key.toLocaleLowerCase().includes(value))
-    .map((group) => ({
+function groupCards(kind: GroupKind): RailSectionCard[] {
+  return groupTracks(player.tracks, kind).map((group) => {
+    const coverTrack = group.tracks.find((track) => track.cover) ?? group.tracks[0];
+    const name = isUnknownGroup(group.key) ? t(unknownKey[kind]) : group.key;
+    return {
       key: group.key,
-      name: isUnknownGroup(group.key) ? t("library.collections.unknownArtist") : group.key,
-      count: group.tracks.length,
-      color: group.tracks[0]?.color,
-    }));
-});
-
-const idle = computed(() => query.value.trim() === "");
-const empty = computed(() => !idle.value && songs.value.length === 0 && artists.value.length === 0);
-
-const songsCollapsed = ref(false);
-const artistsCollapsed = ref(false);
-
-function play(track: Track) {
-  void player.playInQueue(songs.value, track);
+      title: name,
+      subtitle: t("library.collections.trackCount", { count: group.tracks.length }),
+      cover: coverTrack?.cover,
+      color: coverTrack?.color,
+      initial: name.charAt(0),
+    };
+  });
 }
 
-function openArtistCard(key: string) {
-  emit("openArtist", key);
-}
+const artistCards = computed(() => groupCards("artists"));
+const genreCards = computed(() => groupCards("genres"));
+const yearCards = computed(() => groupCards("years"));
 
 function clear() {
   query.value = "";
@@ -100,63 +82,32 @@ function clear() {
         </button>
       </label>
 
-      <!-- Idle: centered hint before any query. -->
-      <div v-if="idle" class="grid min-h-[50vh] place-items-center">
-        <div class="flex items-center gap-3 text-dim">
-          <Search :size="24" />
-          <span class="text-sm text-muted">{{ t("nav.searchIdle") }}</span>
-        </div>
-      </div>
+      <!-- Artists: large cover cards; action opens the artist list. -->
+      <RailSection
+        titleKey="library.collections.artistsTitle"
+        variant="large"
+        :cards="artistCards"
+        action-label-key="nav.artists"
+        :action-icon="Mic2"
+        @open="(card) => emit('openGroup', 'artists', card.key)"
+        @action="emit('navigate', 'artists')"
+      />
 
-      <!-- Empty: query entered but nothing matched. -->
-      <div v-else-if="empty" class="grid min-h-[50vh] place-items-center">
-        <span class="text-sm text-muted">{{ t("nav.noResult") }}</span>
-      </div>
+      <!-- Genres: small group cards. -->
+      <RailSection
+        titleKey="library.collections.genresTitle"
+        variant="small"
+        :cards="genreCards"
+        @open="(card) => emit('openGroup', 'genres', card.key)"
+      />
 
-      <!-- Results: collapsible songs and artists groups. -->
-      <div v-else class="mt-4 min-h-0 flex-1">
-        <section v-if="songs.length" class="mb-6">
-          <button type="button" class="mb-2 flex w-full items-center gap-2 px-1 text-left" @click="songsCollapsed = !songsCollapsed">
-            <Music :size="20" class="shrink-0 text-fg" />
-            <span class="flex-1 truncate text-base font-bold">{{ t("nav.songsResult") }} ({{ songs.length }})</span>
-            <ChevronUp v-if="!songsCollapsed" :size="18" class="shrink-0 text-dim" />
-            <ChevronDown v-else :size="18" class="shrink-0 text-dim" />
-          </button>
-          <TrackList
-            v-if="!songsCollapsed"
-            :tracks="songs"
-            :scroller="scroller"
-            empty-key="nav.searchEmpty"
-            @play="play"
-            @open-artist="emit('openArtist', $event)"
-            @open-album="emit('openAlbum', $event)"
-          />
-        </section>
-
-        <section v-if="artists.length">
-          <button type="button" class="mb-2 flex w-full items-center gap-2 px-1 text-left" @click="artistsCollapsed = !artistsCollapsed">
-            <User :size="20" class="shrink-0 text-fg" />
-            <span class="flex-1 truncate text-base font-bold">{{ t("nav.artistsResult") }} ({{ artists.length }})</span>
-            <ChevronUp v-if="!artistsCollapsed" :size="18" class="shrink-0 text-dim" />
-            <ChevronDown v-else :size="18" class="shrink-0 text-dim" />
-          </button>
-          <div v-if="!artistsCollapsed" class="flex flex-col pt-1">
-            <button
-              v-for="artist in artists"
-              :key="artist.key"
-              type="button"
-              class="flex w-full items-center gap-4 px-3 py-3 text-left transition-colors hover:bg-surface/60"
-              @click="openArtistCard(artist.key)"
-            >
-              <span class="ak-clip-tr grid h-11 w-11 shrink-0 place-items-center text-lg font-black text-white/90" :style="{ backgroundColor: artist.color ?? 'var(--accent)' }">
-                {{ artist.name.charAt(0) }}
-              </span>
-              <span class="min-w-0 flex-1 truncate text-sm font-semibold">{{ artist.name }}</span>
-              <span class="shrink-0 text-xs text-muted">{{ t("library.collections.trackCount", { count: artist.count }) }}</span>
-            </button>
-          </div>
-        </section>
-      </div>
+      <!-- Years: small group cards. -->
+      <RailSection
+        titleKey="library.collections.yearsTitle"
+        variant="small"
+        :cards="yearCards"
+        @open="(card) => emit('openGroup', 'years', card.key)"
+      />
     </div>
   </div>
 </template>
