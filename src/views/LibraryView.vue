@@ -8,7 +8,7 @@ import { tracksForPaths, useProfileStore } from "../stores/profile";
 import { coverPending, initial } from "../lib/format";
 import { trackKey } from "../lib/sources";
 import type { View } from "../lib/app";
-import { RECENT_PLAYS_ID } from "../lib/app";
+import { RECENT_PLAYS_ID, RECENTLY_ADDED_ID } from "../lib/app";
 import TrackContextMenu from "../components/TrackContextMenu.vue";
 
 withDefaults(defineProps<{ downloadingTrackId?: number | null }>(), { downloadingTrackId: null });
@@ -19,23 +19,47 @@ const profile = useProfileStore();
 const contextTrack = ref<Track | null>(null);
 const contextPosition = ref({ x: 0, y: 0 });
 
-/** Randomly recommended tracks, held by path so a library re-list keeps the same picks with fresh metadata. */
-const recommendedPaths = ref<string[]>([]);
-const recommended = computed(() => tracksForPaths(recommendedPaths.value, player.tracks));
-
-const HOME_LIMIT = 8;
-/** Recently played shows one extra row; the recommendation and added lists keep HOME_LIMIT. */
-const RECENT_LIMIT = 9;
-
-/** Tracks most recently added to the library, newest source modification first. */
+/** Tracks most recently added to the library, newest source modification first;
+   the whole library participates, no count cap. */
 const recentlyAdded = computed(() => {
   const indexed = player.tracks
     .map((track, index) => ({ track, index, time: Date.parse(track.modified ?? "") || 0 }))
     .filter((item) => item.track.path);
   indexed.sort((a, b) => (b.time - a.time) || (a.index - b.index));
-  return indexed.slice(0, HOME_LIMIT).map((item) => item.track);
+  return indexed.map((item) => item.track);
 });
-const recentTracks = computed(() => tracksForPaths(profile.recent, player.tracks).slice(0, RECENT_LIMIT));
+
+/** Daily recommendation: a shuffled queue drawn from the recently added list.
+   The queue is reseeded on demand (refresh button) or when the added set truly
+   changes; a re-list that reapplies the same set keeps the current order. */
+const recommended = ref<Track[]>([]);
+function shuffleQueue(list: Track[]): Track[] {
+  const arr = [...list];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+function refreshRecommended() {
+  recommended.value = shuffleQueue(recentlyAdded.value);
+}
+// Reseed only when the added track set truly changes; a re-list with the same
+// set keeps the current queue. The refresh button reshuffles on demand.
+const addedSignature = computed(() => recentlyAdded.value.map((track) => trackKey(track)).join("\n"));
+watch(addedSignature, refreshRecommended, { immediate: true });
+const recentTracks = computed(() => tracksForPaths(profile.recent, player.tracks));
+
+/** Folded list: three rows per column; extra entries flow into new columns to
+   the right. Column width derives from the row height and a fixed entry ratio,
+   capped to the content width so a 9:21 portrait fills the area in one column. */
+const RECENT_ROWS = 3;
+const recentColIndexes = computed(() =>
+  Array.from({ length: Math.ceil(recentTracks.value.length / RECENT_ROWS) }, (_, i) => i),
+);
+function recentTrackAt(col: number, row: number): Track | undefined {
+  return recentTracks.value[col * RECENT_ROWS + row];
+}
 
 /** Home section layout toggles: recent plays rail ↔ row list; recent adds rail ↔ album grid.
  *  Persisted locally so the chosen layout survives an app restart. */
@@ -86,33 +110,6 @@ onBeforeUnmount(() => {
 function isHiRes(track: Track): boolean {
   return (track.sampleRate ?? 0) > 48000 || (track.bitDepth ?? 0) >= 24;
 }
-
-function pickRandom(list: Track[], count: number): Track[] {
-  const pool = list.filter((track) => track.path);
-  const used = new Set<number>();
-  const result: Track[] = [];
-  while (result.length < count && used.size < pool.length) {
-    const index = Math.floor(Math.random() * pool.length);
-    if (used.has(index)) continue;
-    used.add(index);
-    result.push(pool[index]);
-  }
-  return result;
-}
-function refreshRecommended() {
-  recommendedPaths.value = pickRandom(player.tracks, HOME_LIMIT)
-    .map((track) => trackKey(track))
-    .filter((key): key is string => !!key);
-}
-/**
- * Fingerprint of the library's track paths. A remote re-list re-applies the same
- * library with fresh objects, so reshuffle only when the paths truly change
- * instead of on every `player.tracks` reassignment.
- */
-const librarySignature = computed(() =>
-  player.tracks.map((track) => trackKey(track)).filter((key): key is string => !!key).sort().join("\n"),
-);
-watch(librarySignature, refreshRecommended, { immediate: true });
 
 function play(track: Track) {
   if (isActive(track)) { void player.togglePlayback(); return; }
@@ -191,28 +188,32 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           </button>
         </div>
 
-        <!-- List mode: one column in portrait, two equal columns in landscape. -->
+        <!-- List mode: three rows per column; extra entries fold into columns to the right. -->
         <div v-if="recentListMode" class="home-scroll-pad home-pb-rail">
           <div class="home-recent-columns">
-            <article
-              v-for="track in recentTracks"
-              :key="`hist-list-${track.id}`"
-              class="home-list-item flex min-w-0 cursor-pointer items-center"
-              @click="play(track)"
-              @contextmenu.prevent="openContextMenu($event, track)"
-            >
-              <div class="home-list-caption min-w-0 flex-1">
-                <p class="home-card-title truncate font-semibold" :class="isActive(track) ? 'text-accent' : ''">{{ track.title }}</p>
-                <p class="home-card-artist home-mt-caption min-w-0 truncate text-muted">{{ track.artist }}</p>
-              </div>
-              <div class="home-list-cover ak-clip-tr relative shrink-0 overflow-hidden" :style="{ backgroundColor: track.color }">
-                <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                <LoaderCircle v-else-if="coverPending(track)" :size="18" :stroke-width="2" class="home-list-spinner absolute inset-0 m-auto animate-spin text-white/90" />
-                <span v-else class="home-list-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
-                <span v-if="isActive(track) && player.isPlaying" class="absolute home-eq-badge-list text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                <span v-if="isHiRes(track)" class="home-list-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
-              </div>
-            </article>
+            <div v-for="col in recentColIndexes" :key="`hist-col-${col}`" class="home-recent-col">
+              <template v-for="row in RECENT_ROWS" :key="row">
+                <article
+                  v-if="recentTrackAt(col, row - 1)"
+                  :key="`hist-list-${recentTrackAt(col, row - 1)!.id}`"
+                  class="home-list-item flex min-w-0 cursor-pointer items-center"
+                  @click="play(recentTrackAt(col, row - 1)!)"
+                  @contextmenu.prevent="openContextMenu($event, recentTrackAt(col, row - 1)!)"
+                >
+                  <div class="home-list-caption min-w-0 flex-1">
+                    <p class="home-card-title truncate font-semibold" :class="isActive(recentTrackAt(col, row - 1)!) ? 'text-accent' : ''">{{ recentTrackAt(col, row - 1)!.title }}</p>
+                    <p class="home-card-artist home-mt-caption min-w-0 truncate text-muted">{{ recentTrackAt(col, row - 1)!.artist }}</p>
+                  </div>
+                  <div class="home-list-cover ak-clip-tr relative shrink-0 overflow-hidden" :style="{ backgroundColor: recentTrackAt(col, row - 1)!.color }">
+                    <img v-if="recentTrackAt(col, row - 1)!.cover" :src="recentTrackAt(col, row - 1)!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                    <LoaderCircle v-else-if="coverPending(recentTrackAt(col, row - 1)!)" :size="18" :stroke-width="2" class="home-list-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                    <span v-else class="home-list-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recentTrackAt(col, row - 1)!) }}</span>
+                    <span v-if="isActive(recentTrackAt(col, row - 1)!) && player.isPlaying" class="absolute home-eq-badge-list text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                    <span v-if="isHiRes(recentTrackAt(col, row - 1)!)" class="home-list-hr absolute rounded bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+                  </div>
+                </article>
+              </template>
+            </div>
           </div>
         </div>
 
@@ -253,8 +254,8 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           >
             {{ t("home.recentlyAdded") }}
           </button>
-          <button type="button" class="home-chip ak-clip flex items-center border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="emit('navigate', 'tracks')">
-            <ListMusic :size="13" class="home-chip__icon" />{{ t("home.allSongs") }}
+          <button type="button" class="home-chip ak-clip flex items-center border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="emit('openPlaylist', RECENTLY_ADDED_ID)">
+            <ListMusic :size="13" class="home-chip__icon" />{{ t("home.viewAll") }}
           </button>
         </div>
 

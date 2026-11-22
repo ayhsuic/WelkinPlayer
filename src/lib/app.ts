@@ -46,11 +46,16 @@ export const systemNavItems: NavItem[] = [
 ];
 
 /**
- * Synthetic playlist id for the auto-generated "play ranking" playlist: the
- * library sorted by play count, most played first. It has no stored playlist
- * record, so the views resolve it from `profile.playCounts` instead.
+ * Synthetic playlist ids for the generated built-in collections. They have no
+ * stored playlist record; the views resolve them from the profile and library
+ * instead.
+ *
+ * - `RECENT_PLAYS_ID`: tracks from the play history, most recently played first.
+ * - `RECENTLY_ADDED_ID`: library tracks ordered by source modification time,
+ *   newest first.
  */
 export const RECENT_PLAYS_ID = "builtin-recent-plays";
+export const RECENTLY_ADDED_ID = "builtin-recently-added";
 
 /** The six swipeable category panels, in sidebar order. */
 export const categoryViews: View[] = ["playlists", "artists", "albums", "tracks", "years", "genres"];

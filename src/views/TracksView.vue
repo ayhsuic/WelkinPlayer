@@ -5,7 +5,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { ListChecks, Pencil, Play, RefreshCw, Sparkles, TrendingUp } from "@lucide/vue";
+import { ListChecks, History, ListMusic, Pencil, Play, RefreshCw, Sparkles } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
@@ -13,8 +13,7 @@ import { tracksForPaths, useProfileStore } from "../stores/profile";
 import type { Playlist } from "../lib/profile";
 import { useSmartTransitionStore } from "../stores/smartTransition";
 import { useSourcesStore } from "../stores/sources";
-import { RECENT_PLAYS_ID } from "../lib/app";
-import { rankTracksByPlayCount } from "../lib/playRanking";
+import { RECENT_PLAYS_ID, RECENTLY_ADDED_ID } from "../lib/app";
 import { trackKey } from "../lib/sources";
 import { pushToast } from "../lib/toast";
 import { groupKeys, isUnknownGroup, type GroupKind } from "../lib/grouping";
@@ -43,9 +42,18 @@ const { collapsed, scroller } = useCollapsibleHeader(scrollEl);
 const smartOpen = ref(false);
 
 const activePlaylist = computed(() => props.playlistId ? profile.playlists.find((item) => item.id === props.playlistId) ?? null : null);
-/** The generated play-ranking playlist: not stored, resolved from play counts. */
-const smartPlays = computed(() => props.playlistId === RECENT_PLAYS_ID);
-const rankedTracks = computed(() => rankTracksByPlayCount(player.tracks, profile.profile.playCounts));
+/** Generated built-in collections: recent play history, and recently added. */
+const builtinPlays = computed(() => props.playlistId === RECENT_PLAYS_ID);
+const builtinAdded = computed(() => props.playlistId === RECENTLY_ADDED_ID);
+const builtinPlaylist = computed(() => builtinPlays.value || builtinAdded.value);
+/** Recently added: newest source modification first, same order as the home page. */
+const recentlyAddedTracks = computed(() => {
+  const indexed = player.tracks
+    .map((track, index) => ({ track, index, time: Date.parse(track.modified ?? "") || 0 }))
+    .filter((item) => item.track.path);
+  indexed.sort((a, b) => (b.time - a.time) || (a.index - b.index));
+  return indexed.map((item) => item.track);
+});
 /** A generated artist/album collection, selected from the classification views. */
 const groupKind = computed<GroupKind>(() => (props.artist ? "artists" : props.album ? "albums" : props.year ? "years" : "genres"));
 const groupKeyValue = computed(() => props.artist ?? props.album ?? props.year ?? props.genre ?? null);
@@ -67,7 +75,8 @@ const groupTitle = computed(() => {
 /** Representative cover for a generated collection: the first track that has artwork. */
 const groupCoverTrack = computed(() => groupTracks.value?.find((track) => track.cover) ?? groupTracks.value?.[0]);
 const sourceTracks = computed(() => {
-  if (smartPlays.value) return rankedTracks.value.map((item) => item.track);
+  if (builtinPlays.value) return tracksForPaths(profile.recent, player.tracks);
+  if (builtinAdded.value) return recentlyAddedTracks.value;
   if (activePlaylist.value) return tracksForPaths(activePlaylist.value.tracks, player.tracks);
   if (groupTracks.value) return groupTracks.value;
   if (sourceFilter.value) return player.tracks.filter((track) => track.sourceId === sourceFilter.value);
@@ -77,7 +86,7 @@ const sourceTracks = computed(() => {
 const sortContext = computed<TrackSortContext>(() => activePlaylist.value ? "playlist" : isGroup.value ? (groupKind.value === "artists" ? "artist" : "album") : "tracks");const sortKey = computed(() => useTrackSort(sortContext.value).key.value);
 const sortDir = computed(() => useTrackSort(sortContext.value).dir.value);
 /** Source order with the chosen sort applied; the play queue follows this so "next" matches the screen. */
-const orderedTracks = computed(() => smartPlays.value ? sourceTracks.value : sortTracks(sourceTracks.value, sortKey.value, sortDir.value));
+const orderedTracks = computed(() => builtinPlaylist.value ? sourceTracks.value : sortTracks(sourceTracks.value, sortKey.value, sortDir.value));
 const tracks = computed(() => orderedTracks.value);
 const smartEnabled = computed(() => activePlaylist.value?.smartTransition?.enabled === true);
 const smartReady = computed(() => activePlaylist.value?.smartTransition?.status === "ready");
@@ -111,7 +120,7 @@ const smartOrderTracks = computed<Track[] | null>(() => {
  */
 const queueTracks = computed(() => (smartLocked.value ? (smartOrderTracks.value ?? sourceTracks.value) : orderedTracks.value));
 /** The A–Z rail, only on the pages that opted in while sorting by title. */
-const letterIndex = computed(() => (sortKey.value === "title" && !smartPlays.value && !selectMode.value && (sortContext.value === "tracks" || sortContext.value === "playlist") ? titleLetterIndex(tracks.value) : null));
+const letterIndex = computed(() => (sortKey.value === "title" && !builtinPlaylist.value && !selectMode.value && (sortContext.value === "tracks" || sortContext.value === "playlist") ? titleLetterIndex(tracks.value) : null));
 
 watch([() => props.playlistId, () => props.artist, () => props.album, () => props.year, () => props.genre], () => { selectMode.value = false; selected.value = new Set(); });
 // Load the analysis document when opening an enabled playlist so playback can
@@ -232,7 +241,8 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
       >
         <div class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6">
           <PlaylistCover v-if="activePlaylist && !collapsed" :playlist="activePlaylist" class="ak-frame h-32 w-32 shrink-0 border border-line text-5xl" :icon-size="40" />
-          <span v-else-if="smartPlays && !collapsed" class="ak-frame grid h-32 w-32 shrink-0 place-items-center border border-line bg-accent/10 text-accent"><TrendingUp :size="40" :stroke-width="2" /></span>
+          <span v-else-if="builtinPlays && !collapsed" class="ak-frame grid h-32 w-32 shrink-0 place-items-center border border-line bg-accent/10 text-accent"><History :size="40" :stroke-width="2" /></span>
+          <span v-else-if="builtinAdded && !collapsed" class="ak-frame grid h-32 w-32 shrink-0 place-items-center border border-line bg-accent/10 text-accent"><ListMusic :size="40" :stroke-width="2" /></span>
           <span v-else-if="isGroup && !collapsed" class="ak-frame grid h-32 w-32 shrink-0 place-items-center overflow-hidden border border-line text-5xl font-black text-white/90" :style="{ backgroundColor: groupCoverTrack?.color ?? 'var(--accent)' }">
             <img v-if="groupCoverTrack?.cover" :src="groupCoverTrack.cover" alt="" decoding="async" class="h-full w-full object-cover" />
             <template v-else>{{ groupTitle.charAt(0) }}</template>
@@ -242,8 +252,12 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
               <h1 class="truncate font-black tracking-tight transition-[font-size] duration-200" :class="collapsed ? 'text-base' : 'text-2xl'">{{ activePlaylist.name }}</h1>
               <p v-if="!collapsed" class="mt-1 text-sm text-muted">{{ t("library.playlists.count", { count: activePlaylist.tracks.length }) }}</p>
             </template>
-            <template v-else-if="smartPlays">
+            <template v-else-if="builtinPlays">
               <h1 class="truncate font-black tracking-tight transition-[font-size] duration-200" :class="collapsed ? 'text-base' : 'text-2xl'">{{ t("playlistsPage.recentTitle") }}</h1>
+              <p v-if="!collapsed" class="mt-1 text-sm text-muted">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
+            </template>
+            <template v-else-if="builtinAdded">
+              <h1 class="truncate font-black tracking-tight transition-[font-size] duration-200" :class="collapsed ? 'text-base' : 'text-2xl'">{{ t("playlistsPage.addedTitle") }}</h1>
               <p v-if="!collapsed" class="mt-1 text-sm text-muted">{{ t("library.tracks", { count: sourceTracks.length }) }}</p>
             </template>
             <template v-else-if="isGroup">
@@ -256,11 +270,11 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
             </template>
 
             <div class="mt-auto flex flex-wrap items-center gap-3 pt-4">
-              <div class="flex w-full min-w-0 items-center gap-3 @2xl:order-2 @2xl:ml-auto @2xl:w-auto" :class="activePlaylist || smartPlays ? 'order-2' : 'order-1'">
-                <button v-if="!activePlaylist && !smartPlays && !isGroup" type="button" class="grid h-10 w-10 shrink-0 place-items-center border border-line text-dim transition-colors hover:border-accent hover:text-accent disabled:opacity-50" :title="t('library.refresh')" :disabled="refreshing" @click="emit('refresh')"><RefreshCw :size="16" :stroke-width="2" :class="refreshing ? 'animate-spin' : ''" /></button>
+              <div class="flex w-full min-w-0 items-center gap-3 @2xl:order-2 @2xl:ml-auto @2xl:w-auto" :class="activePlaylist || builtinPlaylist ? 'order-2' : 'order-1'">
+                <button v-if="!activePlaylist && !builtinPlaylist && !isGroup" type="button" class="grid h-10 w-10 shrink-0 place-items-center border border-line text-dim transition-colors hover:border-accent hover:text-accent disabled:opacity-50" :title="t('library.refresh')" :disabled="refreshing" @click="emit('refresh')"><RefreshCw :size="16" :stroke-width="2" :class="refreshing ? 'animate-spin' : ''" /></button>
               </div>
-              <div v-if="activePlaylist || smartPlays || isGroup" class="flex items-center gap-3 @2xl:order-1" :class="activePlaylist || smartPlays ? 'order-1' : 'order-2'">
-                <template v-if="activePlaylist || smartPlays">
+              <div v-if="activePlaylist || builtinPlaylist || isGroup" class="flex items-center gap-3 @2xl:order-1" :class="activePlaylist || builtinPlaylist ? 'order-1' : 'order-2'">
+                <template v-if="activePlaylist || builtinPlaylist">
                   <button type="button" class="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-accent px-3.5 text-xs font-semibold text-accent-fg transition-transform active:scale-95 disabled:opacity-50" :disabled="!tracks.length" @click="playFirst"><Play :size="14" :stroke-width="2.2" />{{ t("library.play") }}</button>
                   <button v-if="activePlaylist" type="button" class="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3.5 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('edit', activePlaylist.id)"><Pencil :size="14" />{{ t("library.edit") }}</button>
                   <button v-if="activePlaylist" type="button" class="flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-xs font-medium transition-colors" :class="activePlaylist.smartTransition?.enabled ? 'bg-accent-soft text-accent' : 'bg-surface text-muted hover:text-fg'" :title="t('library.playlists.smart.buttonHint')" @click="openSmart">
@@ -287,7 +301,7 @@ function downloadMetadata(track: Track) { emit("downloadMetadata", track); }
                 <button v-else type="button" class="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-accent px-3.5 text-xs font-semibold text-accent-fg transition-transform active:scale-95 disabled:opacity-50" :disabled="!tracks.length" @click="playFirst"><Play :size="14" :stroke-width="2.2" />{{ t("library.collections.playAll") }}</button>
               </div>
               <div class="order-3 flex items-center gap-3">
-                <TrackSortMenu v-if="!smartPlays" :context="sortContext" />
+                <TrackSortMenu v-if="!builtinPlaylist" :context="sortContext" />
                 <ViewModeToggle />
                 <button type="button" class="grid h-10 w-10 shrink-0 place-items-center border transition-colors" :class="selectMode ? 'border-accent bg-accent text-accent-fg' : 'border-line text-dim hover:border-accent hover:text-accent'" :title="t('library.selectMode')" @click="toggleSelectMode"><ListChecks :size="16" :stroke-width="2" /></button>
               </div>

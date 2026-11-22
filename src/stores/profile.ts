@@ -48,7 +48,6 @@ interface ResolvedCover {
 }
 
 const SAVE_DEBOUNCE_MS = 900;
-const RECENT_LIMIT = 12;
 
 export const useProfileStore = defineStore("profile", () => {
   const profile = ref<Profile>(createDefaultProfile());
@@ -196,7 +195,7 @@ export const useProfileStore = defineStore("profile", () => {
     if (!path) return;
     path = profileKey(path);
     profile.value.playCounts[path] = (profile.value.playCounts[path] ?? 0) + 1;
-    profile.value.recent = [path, ...profile.value.recent.filter((item) => item !== path)].slice(0, RECENT_LIMIT);
+    profile.value.recent = [path, ...profile.value.recent.filter((item) => item !== path)];
     scheduleSave();
   }
 

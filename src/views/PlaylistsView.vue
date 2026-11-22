@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Heart, ListMusic, Pencil, Plus, Sparkles, TrendingUp } from "@lucide/vue";
+import { Heart, History, ListMusic, Pencil, Plus, Sparkles } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
-import { useProfileStore } from "../stores/profile";
+import { tracksForPaths, useProfileStore } from "../stores/profile";
 import { usePlayerStore } from "../stores/player";
-import { RECENT_PLAYS_ID } from "../lib/app";
-import { rankTracksByPlayCount } from "../lib/playRanking";
+import { RECENT_PLAYS_ID, RECENTLY_ADDED_ID } from "../lib/app";
 import type { View } from "../lib/app";
 import PlaylistCover from "../components/PlaylistCover.vue";
 import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
@@ -22,8 +21,9 @@ const playlists = computed(() => profile.playlists);
 
 /** Favorites act as the default playlist; its card is pinned first in the grid. */
 const favoriteCount = computed(() => profile.favorites.length);
-/** The generated play-ranking playlist: library tracks ordered by play count. */
-const rankedCount = computed(() => rankTracksByPlayCount(player.tracks, profile.profile.playCounts).length);
+/** Built-in generated collections: play history, and recently added. */
+const recentCount = computed(() => tracksForPaths(profile.recent, player.tracks).length);
+const addedCount = computed(() => player.tracks.filter((track) => track.path).length);
 </script>
 
 <template>
@@ -43,7 +43,7 @@ const rankedCount = computed(() => rankTracksByPlayCount(player.tracks, profile.
         <button type="button" class="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('createPlaylist')"><Plus :size="13" :stroke-width="2.2" />{{ t("playlistsPage.create") }}</button>
       </header>
 
-      <div v-if="profile.playlists.length === 0 && favoriteCount === 0 && rankedCount === 0" class="ak-frame mt-8 grid place-items-center gap-4 border border-dashed border-line bg-surface/50 px-6 py-20 text-center">
+      <div v-if="profile.playlists.length === 0 && favoriteCount === 0 && recentCount === 0 && addedCount === 0" class="ak-frame mt-8 grid place-items-center gap-4 border border-dashed border-line bg-surface/50 px-6 py-20 text-center">
         <ListMusic :size="36" class="text-dim" />
         <p class="max-w-md text-sm text-muted">{{ t("playlistsPage.empty") }}</p>
         <button type="button" class="flex h-8 items-center gap-1.5 rounded-full bg-surface px-3 text-xs font-medium text-muted transition-colors hover:text-fg" @click="emit('createPlaylist')">{{ t("playlistsPage.create") }}</button>
@@ -57,10 +57,17 @@ const rankedCount = computed(() => rankTracksByPlayCount(player.tracks, profile.
           </span>
         </button>
         <button type="button" class="flex w-full items-center gap-4 px-3 py-3 text-left transition-colors hover:bg-surface/60" :title="t('playlistsPage.open')" @click="emit('openPlaylist', RECENT_PLAYS_ID)">
-          <span class="grid h-11 w-11 shrink-0 place-items-center overflow-hidden bg-accent/15 text-accent"><TrendingUp :size="18" :stroke-width="2" /></span>
+          <span class="grid h-11 w-11 shrink-0 place-items-center overflow-hidden bg-accent/15 text-accent"><History :size="18" :stroke-width="2" /></span>
           <span class="grid min-w-0 flex-1 gap-0.5">
             <strong class="truncate text-sm font-semibold">{{ t("playlistsPage.recentTitle") }}</strong>
-            <small class="text-xs text-muted">{{ t("playlistsPage.count", { count: rankedCount }) }}</small>
+            <small class="text-xs text-muted">{{ t("playlistsPage.count", { count: recentCount }) }}</small>
+          </span>
+        </button>
+        <button type="button" class="flex w-full items-center gap-4 px-3 py-3 text-left transition-colors hover:bg-surface/60" :title="t('playlistsPage.open')" @click="emit('openPlaylist', RECENTLY_ADDED_ID)">
+          <span class="grid h-11 w-11 shrink-0 place-items-center overflow-hidden bg-accent/15 text-accent"><ListMusic :size="18" :stroke-width="2" /></span>
+          <span class="grid min-w-0 flex-1 gap-0.5">
+            <strong class="truncate text-sm font-semibold">{{ t("playlistsPage.addedTitle") }}</strong>
+            <small class="text-xs text-muted">{{ t("playlistsPage.count", { count: addedCount }) }}</small>
           </span>
         </button>
         <div v-for="playlist in playlists" :key="playlist.id" class="flex w-full items-center gap-4 px-3 py-3 text-left transition-colors hover:bg-surface/60">

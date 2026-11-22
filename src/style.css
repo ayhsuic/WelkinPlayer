@@ -418,17 +418,23 @@ html[data-accent="blue"] {
   }
 
   /* Home "recently added" open album wall: no inner scroll box — the grid
-     spreads openly and scrolls with the page. The wall stays reusable by the
-     library list view. */
+     spreads openly and scrolls with the page. One rule for every width: the
+     minimum column edge anchors to the viewport height (not the page width),
+     so the container auto-fits as many columns as it can; each cover shrinks
+     with its 1fr slot and only caps at the recommend-card edge. */
   .home-added-wall {
     overflow: visible;
+    grid-template-columns: repeat(auto-fill, minmax(calc(var(--ch, 100vh) * 0.16 * var(--rail-scale, 1)), 1fr));
   }
 
-  /* Grid cover fills its column square, capped at the recommend-card edge so
-     an open wall cannot grow covers without bound on wide screens. */
+  /* Grid cover: square, capped at the recommend-card edge (ch×0.25). The
+     caption column shares the same cap so long titles truncate inside the
+     cover's right edge instead of running past it. */
   .home-added-wall .home-card-cover {
-    max-height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
     max-width: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
+    max-height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
+    width: 100%;
+    aspect-ratio: 1 / 1;
   }
 
   /* Three-limit model: every element has a width budget (fraction of the page
@@ -459,23 +465,29 @@ html[data-accent="blue"] {
     max-width: 100%;
   }
 
+  /* Folded recent list: three rows per column, columns laid out left to right
+     with extra entries folding into new columns that scroll horizontally. The
+     fixed three-row height keeps the box from collapsing as entries arrive. */
   .home-recent-columns {
-    /* Equal-column grid: portrait one column (rows spread with the page),
-       landscape three equal columns capped at three rows. Each item fills its
-       column track, so no dead gap sits between columns. */
-    display: grid;
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: row;
+    gap: min(calc(var(--cw) * 0.067 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.029 * var(--rail-scale, 1)));
     overflow-x: auto;
     scroll-snap-type: x mandatory;
-    row-gap: calc(var(--ch, 100vh) * 0.016 * var(--rail-scale, 1));
-    column-gap: min(calc(var(--cw) * 0.033 * var(--rail-scale, 1)), calc(var(--ch, 100vh) * 0.015 * var(--rail-scale, 1)));
+    height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1) + var(--ch, 100vh) * 0.016 * var(--rail-scale, 1) * 2);
   }
 
-  @media (min-aspect-ratio: 115 / 100) {
-    .home-recent-columns {
-      grid-template-columns: repeat(3, 1fr);
-      max-height: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1) + var(--ch, 100vh) * 0.016 * var(--rail-scale, 1) * 2);
-    }
+  /* One column of three rows. Column width derives from the row height and a
+     fixed entry ratio (rowH × 4.7), capped to the content width so a 9:21
+     portrait fills the area in a single column; wider screens add columns to
+     the right instead of stretching entries. */
+  .home-recent-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex-shrink: 0;
+    gap: calc(var(--ch, 100vh) * 0.016 * var(--rail-scale, 1));
+    width: min(calc(var(--ch, 100vh) * 0.25 / 3 * 4.7 * var(--rail-scale, 1)), 100%);
   }
 
   /* List row item: horizontal strip (caption left, cover right). Height anchors
@@ -512,7 +524,7 @@ html[data-accent="blue"] {
   }
 
   .album-grid-card .home-mt-card {
-    max-width: 100%;
+    max-width: calc(var(--ch, 100vh) * 0.25 * var(--rail-scale, 1));
   }
 
   .album-grid-card .album-grid-card__title {
