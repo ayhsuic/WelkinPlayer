@@ -96,6 +96,7 @@ function measureRecentList() {
  *  Persisted locally so the chosen layout survives an app restart. */
 const RECENT_LIST_KEY = "welkin.home.recentListMode";
 const ADDED_GRID_KEY = "welkin.home.addedGridMode";
+const REC_BLEED_KEY = "welkin.home.recBleedMode";
 function readStoredFlag(key: string, fallback: boolean): boolean {
   const raw = localStorage.getItem(key);
   if (raw === null) return fallback;
@@ -103,8 +104,13 @@ function readStoredFlag(key: string, fallback: boolean): boolean {
 }
 const recentListMode = ref(readStoredFlag(RECENT_LIST_KEY, false));
 const addedGridMode = ref(readStoredFlag(ADDED_GRID_KEY, false));
+// Daily recommendation rail: true = bleed off the right edge (negative margin,
+// cards run to the screen edge); false = clipped inside the content width, the
+// last card aligns to the content right edge. Toggled from the section title.
+const recBleedMode = ref(readStoredFlag(REC_BLEED_KEY, true));
 watch(recentListMode, (value) => localStorage.setItem(RECENT_LIST_KEY, value ? "1" : "0"));
 watch(addedGridMode, (value) => localStorage.setItem(ADDED_GRID_KEY, value ? "1" : "0"));
+watch(recBleedMode, (value) => localStorage.setItem(REC_BLEED_KEY, value ? "1" : "0"));
 
 /** First nickname glyph for the home avatar; falls back to the person icon when unnamed. */
 const avatarInitial = computed(() => {
@@ -174,16 +180,21 @@ let railResizeObs: ResizeObserver | undefined;
 const recentRailIndexes = computed(() => recentTracks.value.map((_, i) => i));
 const addedRailIndexes = computed(() => recentlyAdded.value.map((_, i) => i));
 const railGap = computed(() => Math.min(Math.round((railCw.value || 312) * 0.044), Math.round((railCh.value || 840) * 0.02)));
-// Left-cover row: the square cover matches the folded-list row cover edge
-// (one third of the recommend-card height); the caption takes its own right-hand
-// slot, so a narrow landscape no longer squeezes the text onto the cover edge.
+// Vertical card: square cover on top (edge matches the folded-list row cover,
+// one third of the recommend-card height), caption slot full-width below.
 const railCover = computed(() => Math.round(Math.min((railCh.value || window.innerHeight) * 0.25 / 3, (railCw.value || 312) * 0.3)));
-const railTextW = computed(() => Math.round(Math.min((railCw.value || 312) * 0.36, (railCh.value || 840) * 0.18)));
-const railCardW = computed(() => railCover.value + railGap.value + railTextW.value);
+const railCardW = computed(() => railCover.value);
+const railTextSlot = computed(() => {
+  const ch = railCh.value || window.innerHeight;
+  const cw = railCw.value || window.innerWidth;
+  const titleFs = Math.min(cw * 0.036, ch * 0.026);
+  const artistFs = Math.min(cw * 0.03, ch * 0.022);
+  return Math.round(titleFs * 1.5 + ch * 0.01 + artistFs * 1.5);
+});
 const railSlotW = computed(() => railCardW.value + railGap.value);
 // Fixed host height so the horizontal virtualizer's 100%-height root does not
-// collapse the cross-axis; a row card is as tall as its square cover.
-const railCardH = computed(() => railCover.value);
+// collapse the cross-axis; card height = square cover + caption slot.
+const railCardH = computed(() => railCardW.value + railTextSlot.value);
 function measureRailBudget(host: HTMLElement | null) {
   if (!host) return;
   const ch = parseFloat(getComputedStyle(host).getPropertyValue("--ch"));
@@ -342,14 +353,24 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
       <!-- Daily recommendation: square cover cards on a horizontal rail. -->
       <section v-if="recommended.length">
         <div class="home-mb-title home-mt-card flex items-center justify-between">
-          <span class="home-section-title font-bold tracking-tight">{{ t("home.dailyRecommend") }}</span>
+          <button
+            type="button"
+            class="home-section-title font-bold tracking-tight transition-colors hover:text-fg"
+            :title="recBleedMode ? t('home.recNoBleed') : t('home.recBleed')"
+            @click="recBleedMode = !recBleedMode"
+          >{{ t("home.dailyRecommend") }}</button>
           <button type="button" class="home-chip ak-clip flex items-center border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="refreshRecommended">
             <RefreshCw :size="13" class="home-chip__icon" />{{ t("home.refresh") }}
           </button>
         </div>
 
         <!-- Open rail: natural horizontal row on a baseline scroll host; virtualized horizontally. -->
-        <div ref="recOpenHost" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto" :style="{ height: `${recCardW}px` }">
+        <div
+          ref="recOpenHost"
+          class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto"
+          :class="recBleedMode ? 'rec-host--bleed' : 'rec-host--inline'"
+          :style="{ height: `${recCardW}px` }"
+        >
           <Virtualizer horizontal :data="recIndexes" :item-size="recSlotW">
             <template #default="{ item: i }">
               <div v-if="recTrackAt(i)" :style="{ width: `${recSlotW}px` }">
@@ -425,25 +446,27 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         </div>
 
         <!-- Rail: single horizontal row of smaller square cards; virtualized horizontally. -->
-        <div v-else ref="recentRailHost" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto" :style="{ height: `${railCardH}px` }">
+        <div v-else ref="recentRailHost" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto rail-host--inline" :style="{ height: `${railCardH}px` }">
           <Virtualizer horizontal :data="recentRailIndexes" :item-size="railSlotW">
             <template #default="{ item: i }">
               <div v-if="recentTracks[i]" :style="{ width: `${railSlotW}px` }">
                 <article
                   :key="`hist-v-${recentTracks[i]!.id}`"
-                  class="home-rail-card flex shrink-0 cursor-pointer items-center"
-                  :style="{ width: `${railCardW}px`, gap: `${railGap}px` }"
+                  class="home-rail-card flex shrink-0 cursor-pointer flex-col"
+                  :style="{ width: `${railCardW}px` }"
                   @click="play(recentTracks[i]!)"
                   @contextmenu.prevent="openContextMenu($event, recentTracks[i]!)"
                 >
-                  <div class="home-card-cover ak-clip-tr relative aspect-square shrink-0 overflow-hidden" :style="{ height: `${railCover}px`, backgroundColor: recentTracks[i]!.color }">
-                    <img v-if="recentTracks[i]!.cover" :src="recentTracks[i]!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                    <LoaderCircle v-else-if="coverPending(recentTracks[i]!)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
-                    <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recentTracks[i]!) }}</span>
-                    <span v-if="isActive(recentTracks[i]!) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                    <span v-if="isHiRes(recentTracks[i]!)" class="home-card-hr absolute bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+                  <div class="flex justify-start">
+                    <div class="home-card-cover ak-clip-tr relative aspect-square overflow-hidden" :style="{ height: `${railCover}px`, backgroundColor: recentTracks[i]!.color }">
+                      <img v-if="recentTracks[i]!.cover" :src="recentTracks[i]!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                      <LoaderCircle v-else-if="coverPending(recentTracks[i]!)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                      <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recentTracks[i]!) }}</span>
+                      <span v-if="isActive(recentTracks[i]!) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                      <span v-if="isHiRes(recentTracks[i]!)" class="home-card-hr absolute bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+                    </div>
                   </div>
-                  <div class="home-rail-caption min-w-0 flex-1">
+                  <div class="home-mt-card w-full min-w-0">
                     <p class="home-card-title truncate font-medium">{{ recentTracks[i]!.title }}</p>
                     <p class="home-card-artist truncate text-muted">{{ recentTracks[i]!.artist }}</p>
                   </div>
@@ -509,25 +532,27 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         </div>
 
         <!-- Rail: single horizontal row of smaller square cards; virtualized horizontally. -->
-        <div v-else ref="addedRailHost" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto" :style="{ height: `${railCardH}px` }">
+        <div v-else ref="addedRailHost" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto rail-host--inline" :style="{ height: `${railCardH}px` }">
           <Virtualizer horizontal :data="addedRailIndexes" :item-size="railSlotW">
             <template #default="{ item: i }">
               <div v-if="recentlyAdded[i]" :style="{ width: `${railSlotW}px` }">
                 <article
                   :key="`add-v-${recentlyAdded[i]!.id}`"
-                  class="home-rail-card flex shrink-0 cursor-pointer items-center"
-                  :style="{ width: `${railCardW}px`, gap: `${railGap}px` }"
+                  class="home-rail-card flex shrink-0 cursor-pointer flex-col"
+                  :style="{ width: `${railCardW}px` }"
                   @click="play(recentlyAdded[i]!)"
                   @contextmenu.prevent="openContextMenu($event, recentlyAdded[i]!)"
                 >
-                  <div class="home-card-cover ak-clip-tr relative aspect-square shrink-0 overflow-hidden" :style="{ height: `${railCover}px`, backgroundColor: recentlyAdded[i]!.color }">
-                    <img v-if="recentlyAdded[i]!.cover" :src="recentlyAdded[i]!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                    <LoaderCircle v-else-if="coverPending(recentlyAdded[i]!)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
-                    <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recentlyAdded[i]!) }}</span>
-                    <span v-if="isActive(recentlyAdded[i]!) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
-                    <span v-if="isHiRes(recentlyAdded[i]!)" class="home-card-hr absolute bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+                  <div class="flex justify-start">
+                    <div class="home-card-cover ak-clip-tr relative aspect-square overflow-hidden" :style="{ height: `${railCover}px`, backgroundColor: recentlyAdded[i]!.color }">
+                      <img v-if="recentlyAdded[i]!.cover" :src="recentlyAdded[i]!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                      <LoaderCircle v-else-if="coverPending(recentlyAdded[i]!)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                      <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(recentlyAdded[i]!) }}</span>
+                      <span v-if="isActive(recentlyAdded[i]!) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                      <span v-if="isHiRes(recentlyAdded[i]!)" class="home-card-hr absolute bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+                    </div>
                   </div>
-                  <div class="home-rail-caption min-w-0 flex-1">
+                  <div class="home-mt-card w-full min-w-0">
                     <p class="home-card-title truncate font-medium">{{ recentlyAdded[i]!.title }}</p>
                     <p class="home-card-artist truncate text-muted">{{ recentlyAdded[i]!.artist }}</p>
                   </div>

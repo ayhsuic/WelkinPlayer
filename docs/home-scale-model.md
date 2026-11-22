@@ -57,7 +57,7 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 | 元素 | 类名 | 高度锚定 | 比例 / 宽度 | 备注 |
 |---|---|---|---|---|
 | 每日推荐卡 | `.home-rec-card` | `ch×0.25×k` | aspect `1/1`，宽=高 | `max-width:100%` |
-| 横滑小卡（横条） | `.home-rail-card` | 卡高=封面边 `min(ch×0.25/3×k, cw×0.3×k)` | 左封面右文字；封面 aspect `1/1`、`height:100%`；文字槽宽 `min(cw×0.36, ch×0.18)×k`；卡宽=封面边+间距+文字槽 | `align-items:center; min-width:0`；封面边与列表条目封面同边（推荐卡高的 1/3）；文字占独立右槽，窄横屏不被封面宽度挤没；左侧对齐标题左缘、不出血 |
+| 横滑小卡（竖排） | `.home-rail-card` | 卡高=封面边+文字槽 | 竖排：封面在上 aspect `1/1`，文字整宽在下；卡宽=封面边；封面边 `min(ch×0.25/3×k, cw×0.3×k)` | `flex-col; align-items:flex-start; min-width:0`；封面边与列表条目封面同边（推荐卡高的 1/3）；左侧对齐标题左缘；rail 宿主不出血，末卡右缘对齐段内按钮切角矩形右缘 |
 | 最近播放列容器 | `.home-recent-columns` | 三行加两行行距：`ch×0.25×k + 2×ch×0.016×k` | flex 横排，每列三行；列宽由行高反推 `rowH×4.7`，封顶内容宽 `100%`；多出条目往右加列横滑 | `scroll-snap-type:x proximity` 就近吸附；9:21 竖屏单列占满内容区 |
 | 列表条目 | `.home-list-item` | `ch×0.25/3×k` | 宽占满所在列，不锁固定比例；`min-width:0; padding:0`；封面在左、文字在右 | 标题在列宽内截断 |
 | 条目封面 | `.home-list-cover` | `ch×0.25/3×k` | aspect `1/1`，宽=高 | — |
@@ -110,10 +110,10 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 - 最近播放、最近添加、推荐均不再做条数截断：历史全量参与，最近添加按源修改时间倒序全量展示，推荐从最近添加队列洗牌重抽。
 - 条目占满所在列宽度，高度锚定行高（推荐卡高的 1/3），封面在左、文字在右，标题在列宽内截断；封面 1:1 随行高。不用固定比例把条目宽锁死，避免条目挤在列左侧、列间堆出死空白。
 - 高度预算：固定三行加两行行距（`ch×0.25×k + 2×ch×0.016×k`）封顶容器高度，横向虚拟化宿主须定高否则交叉轴塌缩；列距并入非末列槽宽（列宽 + 列距），由虚拟化按槽宽排布；末列用纯列宽、不带尾部列距。吸附用 `proximity` 就近对齐，不用 `mandatory` 强制分页——强制吸附会在离屏列未挂载时把静止位置拉到列间死槽上。
-- 横滑 rail 容器（`.home-scroll-pad.overflow-x-auto`）左侧去掉负 margin 与补偿 padding，首条与分区标题左缘对齐、不出血；右侧保留 `-cw×0.067` 负 margin 让宿主出血延伸到屏边，右侧不预留 padding gutter，末条后不再留间隔。
+- 横滑 rail 容器（`.home-scroll-pad.overflow-x-auto`）左侧去掉负 margin 与补偿 padding，首条与分区标题左缘对齐、不出血。右侧出血分两类：推荐段可点击分区标题在出血（`-cw×0.067` 负 margin，卡片露头到屏边，默认）↔ 不出血（`margin-right:0`，末卡对齐内容右缘）间切换，选择本地持久化；两个 rail 宿主固定不出血（`.rail-host--inline`，`margin-right:0`），末卡右缘对齐段内按钮切角矩形右缘；右侧不预留 padding gutter，末条后不再留间隔。
 - 横滑手感：三个横向宿主（露头推荐、最近播放折列、两个 rail）统一 `touch-action: pan-x` 让出浏览器横向手势以带原生惯性（`-webkit-overflow-scrolling: touch`）；全部 `scroll-snap-type: x proximity` 就近吸附，子项/列 `scroll-snap-align: start`。外层纵向滚动体（抽屉内容层、横屏侧栏）`touch-action: pan-x pan-y` 放开横向手势，避免祖先 `pan-y` 交集锁死横滑。最下方纵向网格不参与。
-- rail 模式（`recentListMode=0`）：单行横滑横条，左封面 + 右文字；封面边取 `min(ch×0.25/3, cw×0.3)`，与列表条目封面同边；文字槽宽 `min(cw×0.36, ch×0.18)`，窄横屏文字占独立右槽不被封面挤没；宿主对齐基线露头横滑盒类（`home-gap-x flex overflow-x-auto`），左侧对齐标题左缘不出血，保留横向虚拟化。
-- 推荐段为单一露头横滑：基线横滑盒自然一行，挂横向虚拟化，宿主定高 `ch×0.25×k` 防交叉轴塌缩；分区标题为纯文本，不承担点击切换（旧的露头↔截断容器双模式已移除）。
+- rail 模式（`recentListMode=0`）：单行横滑竖排小卡，封面在上、文字整宽在下；封面边取 `min(ch×0.25/3, cw×0.3)`，与列表条目封面同边；卡宽=封面边，卡高=封面边+文字槽；宿主对齐基线露头横滑盒类（`home-gap-x flex overflow-x-auto`），左侧对齐标题左缘、固定不出血，保留横向虚拟化。
+- 推荐段为单一露头横滑：基线横滑盒自然一行，挂横向虚拟化，宿主定高 `ch×0.25×k` 防交叉轴塌缩；分区标题为可点击按钮，点击在出血 ↔ 不出血 margin 间切换（选择本地持久化），不恢复旧的露头↔截断容器双模式。
 
 ### 5.2 已移除的旧链路
 

@@ -448,27 +448,20 @@ html[data-accent="blue"] {
     scroll-snap-align: start;
   }
 
-  /* Rail small row: left square cover + right caption. The cover edge matches
-     the folded-list row cover (one third of the recommend-card height); the
-     caption owns its own right-hand slot so a narrow landscape does not squeeze
-     the text onto the cover edge. Card height anchors to the cover edge. */
+  /* Rail small card: vertical stack — square cover on top, full-width caption
+     below. Cover edge matches the folded-list row cover (one third of the
+     recommend-card height); card width equals the cover edge. */
   .home-rail-card {
     max-width: 100%;
-    align-items: center;
+    align-items: flex-start;
     min-width: 0;
-    height: calc(var(--ch, 100vh) * 0.25 / 3 * var(--rail-scale, 1));
     scroll-snap-align: start;
   }
 
   .home-rail-card .home-card-cover {
     width: auto;
-    height: 100%;
     aspect-ratio: 1 / 1;
     max-width: 100%;
-  }
-
-  .home-rail-caption {
-    min-width: 0;
   }
 
   /* Folded recent list: three rows per column, columns laid out left to right
@@ -740,6 +733,18 @@ html[data-accent="blue"] {
     touch-action: pan-x;
     scroll-snap-type: x proximity;
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* Recommendation rail bleed toggle: bleed keeps the right negative margin so
+     cards run to the screen edge; inset removes it so the last card aligns to
+     the content right edge (same right edge as the section chip). */
+  .home-scroll-pad.overflow-x-auto.rec-host--bleed {
+    margin-right: calc(var(--cw) * -0.067 * var(--rail-scale, 1));
+  }
+  .home-scroll-pad.overflow-x-auto.rec-host--inline,
+  .home-scroll-pad.overflow-x-auto.rail-host--inline {
+    margin-right: 0;
+    padding-right: 0;
   }
 
   .home-pad-x {
