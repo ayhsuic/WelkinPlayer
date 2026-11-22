@@ -40,7 +40,7 @@ import { useCacheStore } from "./stores/cache";
 import PlayerBar from "./components/PlayerBar.vue";
 import PlayerNavBar from "./components/PlayerNavBar.vue";
 import MobileNavSheet from "./components/MobileNavSheet.vue";
-import MobileTabBar from "./components/MobileTabBar.vue";
+import MainPager from "./components/MainPager.vue";
 import WallView from "./components/wall/WallView.vue";
 import AudioQualityModal from "./components/AudioQualityModal.vue";
 import MeteredPlaybackModal from "./components/MeteredPlaybackModal.vue";
@@ -615,13 +615,18 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
             <DownloadedView v-else-if="baseView === 'downloaded'" key="split-downloaded" @open-artist="openArtist" @open-album="openAlbum" />
             <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="split-playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
           </template>
-          <LibraryView v-else-if="sheetTab === 'home'" key="split-home" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-          <LibraryListView v-else-if="sheetTab === 'library'" key="split-library" @navigate="navigate" />
           <SettingsView v-else-if="sheetTab === 'settings'" key="split-settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @friendly-error="showError" />
-          <SearchView v-else key="split-search" @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" />
-        </div>
-        <div class="split-nav-bar">
-          <MobileTabBar :active="navTab" @select="onTabSelect" />
+          <MainPager v-else key="split-pager" :active="sheetTab" @select="onTabSelect">
+            <template #home>
+              <LibraryView :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @select-tab="onTabSelect" />
+            </template>
+            <template #library>
+              <LibraryListView @navigate="navigate" @open-group="onOpenGroupFrom" @select-tab="onTabSelect" />
+            </template>
+            <template #search>
+              <SearchView @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" @select-tab="onTabSelect" />
+            </template>
+          </MainPager>
         </div>
       </aside>
       <div
@@ -651,14 +656,14 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
       <main class="relative min-w-0 flex-1 overflow-y-auto" :style="{ paddingTop: 'env(safe-area-inset-top)' }">
         <Transition name="page" mode="out-in">
           <WallView v-if="baseView === 'wall'" key="wall" :focus-token="wallFocusToken" @open-lyrics="navigate('player')" />
-          <LibraryView v-else-if="baseView === 'library'" key="library" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
+          <LibraryView v-else-if="baseView === 'library'" key="library" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @select-tab="onTabSelect" />
           <TracksView v-else-if="baseView === 'tracks' && (playlistFilter || artistFilter || albumFilter || yearFilter || genreFilter || sourceFilter)" key="tracks" @open-artist="openArtist" @open-album="openAlbum" :playlist-id="playlistFilter" :artist="artistFilter" :album="albumFilter" :year="yearFilter" :genre="genreFilter" :source-id="sourceFilter" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @refresh="refreshLibrary" @edit="editPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
           <SourcesView v-else-if="baseView === 'sources' || baseView === 'folders' || baseView === 'webdav' || (baseView === 'source-browser' && !browseSourceId)" :key="`sources-${sourcesPageKind}`" :kind="sourcesPageKind" :loading="loadingLibrary" @open="browseSource" @manage="openSourceConfig(sourcesPageKind === 'webdav' ? 'webdav' : sourcesPageKind === 'local' ? 'folders' : 'sources')" />
           <SourceBrowserView v-else-if="baseView === 'source-browser' && browseSourceId" key="source-browser" :source-id="browseSourceId" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @back="navigate('sources')" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
           <SourceConfigView v-else-if="baseView === 'source-config'" key="source-config" :kind="sourceConfigKind" @back="closeSourceConfig" />
           <CategoriesView v-else-if="categoryActive" key="categories" :kind="baseView" :loading="loadingLibrary" :refreshing="refreshing" :downloading-track-id="downloadingTrackId" @navigate="navigate" @open-playlist="openUserPlaylist" @edit-playlist="editPlaylist" @create-playlist="createPlaylist" @open-group="onOpenGroupFrom" @refresh="refreshLibrary" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @open-artist="openArtist" @open-album="openAlbum" />
           <FavoritesView v-else-if="baseView === 'favorites'" key="favorites" @open-artist="openArtist" @open-album="openAlbum" :loading="loadingLibrary" :downloading-track-id="downloadingTrackId" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-          <SearchView v-else-if="baseView === 'search'" key="search" @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" />
+          <SearchView v-else-if="baseView === 'search'" key="search" @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" @select-tab="onTabSelect" />
           <DownloadingView v-else-if="baseView === 'downloading'" key="downloading" />
           <DownloadedView v-else-if="baseView === 'downloaded'" key="downloaded" @open-artist="openArtist" @open-album="openAlbum" />
           <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
@@ -682,11 +687,19 @@ listen<PlaybackSnapshot>("playback:changed", (event) => {
         <PlaylistEditorView v-else-if="baseView === 'playlist-new'" key="sheet-playlist-new" :playlist-id="editingPlaylist" @done="onPlaylistSaved" @deleted="onPlaylistDeleted" @cancel="onPlaylistEditorCancel" />
       </template>
 
-      <!-- The main tab pages. -->
-      <LibraryView v-else-if="sheetTab === 'home'" key="sheet-home" :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" />
-      <LibraryListView v-else-if="sheetTab === 'library'" key="sheet-library" @navigate="navigate" />
+      <!-- The main tab pages, swipeable in a horizontal pager. -->
       <SettingsView v-else-if="sheetTab === 'settings'" key="sheet-settings" v-model:theme="theme" v-model:accent="accent" @downloading="navigate('downloading')" @downloaded="navigate('downloaded')" @friendly-error="showError" />
-      <SearchView v-else key="sheet-search" @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" />
+      <MainPager v-else key="sheet-pager" :active="sheetTab" @select="onTabSelect">
+        <template #home>
+          <LibraryView :downloading-track-id="downloadingTrackId" @settings="openSettings" @navigate="navigate" @open-playlist="openUserPlaylist" @download-metadata="downloadMetadata" @edit-lyrics="editLyrics" @edit-info="editInfo" @show-info="showTrackInfo" @select-tab="onTabSelect" />
+        </template>
+        <template #library>
+          <LibraryListView @navigate="navigate" @open-group="onOpenGroupFrom" @select-tab="onTabSelect" />
+        </template>
+        <template #search>
+          <SearchView @open-artist="openArtist" @open-album="openAlbum" @open-group="onOpenGroupFrom" @select-tab="onTabSelect" />
+        </template>
+      </MainPager>
     </MobileNavSheet>
     <ToastStack />
     <AudioQualityModal />
@@ -726,11 +739,7 @@ main {
   overscroll-behavior: contain;
   touch-action: pan-x pan-y;
   padding-top: env(safe-area-inset-top);
-  padding-bottom: calc(env(safe-area-inset-bottom) + 84px);
-}
-
-.split-nav-bar {
-  flex: none;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
 }
 
 .split-handle {

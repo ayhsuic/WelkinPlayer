@@ -5,24 +5,29 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Search, X } from "@lucide/vue";
+import { ChevronDown, ChevronUp, Music, Search, User, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
 import { groupTracks, isUnknownGroup, type GroupKind } from "../lib/grouping";
 import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
 import TrackList from "../components/TrackList.vue";
+import MainNavTabs from "../components/MainNavTabs.vue";
+import type { MainTab } from "../lib/app";
 
 /**
- * Global library search. Matches title / artist / album against the loaded
- * tracks; tapping a result plays that track inside the filtered list. The genre
- * chips sit permanently under the search box and drill into a genre-filtered
- * track list.
+ * Global library search, modelled on the lmusic search screen:
+ * - an input bar at the top;
+ *   - idle (empty query): a centered icon + hint;
+ *   - no match: a centered empty hint;
+ *   - results split into a collapsible songs group (track rows) and a
+ *     collapsible artists group (artist rows).
  */
 const emit = defineEmits<{
   openArtist: [artist: string];
   openAlbum: [album: string];
   openGroup: [kind: GroupKind, key: string];
+  selectTab: [tab: MainTab];
 }>();
 const { t } = useI18n();
 const player = usePlayerStore();
@@ -30,7 +35,7 @@ const query = ref("");
 const scrollEl = ref<HTMLElement | null>(null);
 const { collapsed, scroller } = useCollapsibleHeader(scrollEl);
 
-const filtered = computed<Track[]>(() => {
+const songs = computed<Track[]>(() => {
   const value = query.value.trim().toLocaleLowerCase();
   if (!value) return [];
   return player.tracks.filter((track) =>
@@ -39,24 +44,38 @@ const filtered = computed<Track[]>(() => {
   );
 });
 
-interface GenreChip {
+interface ArtistCard {
   key: string;
   name: string;
+  count: number;
+  color?: string;
 }
 
-const genres = computed<GenreChip[]>(() =>
-  groupTracks(player.tracks, "genres").map((group) => ({
-    key: group.key,
-    name: isUnknownGroup(group.key) ? t("library.collections.unknownGenre") : group.key,
-  })),
-);
+const artists = computed<ArtistCard[]>(() => {
+  const value = query.value.trim().toLocaleLowerCase();
+  if (!value) return [];
+  return groupTracks(player.tracks, "artists")
+    .filter((group) => group.key.toLocaleLowerCase().includes(value))
+    .map((group) => ({
+      key: group.key,
+      name: isUnknownGroup(group.key) ? t("library.collections.unknownArtist") : group.key,
+      count: group.tracks.length,
+      color: group.tracks[0]?.color,
+    }));
+});
 
-function openGenre(key: string) {
-  emit("openGroup", "genres", key);
-}
+const idle = computed(() => query.value.trim() === "");
+const empty = computed(() => !idle.value && songs.value.length === 0 && artists.value.length === 0);
+
+const songsCollapsed = ref(false);
+const artistsCollapsed = ref(false);
 
 function play(track: Track) {
-  void player.playInQueue(filtered.value, track);
+  void player.playInQueue(songs.value, track);
+}
+
+function openArtistCard(key: string) {
+  emit("openArtist", key);
 }
 
 function clear() {
@@ -68,11 +87,10 @@ function clear() {
   <div ref="scrollEl" class="w-full">
     <div class="mx-auto flex w-full max-w-6xl flex-col px-4 pb-2 pt-5 sm:px-6 sm:pt-6">
       <header
-        class="sticky top-0 z-20 -mx-4 px-4 transition-[padding,background-color,border-color] duration-200 sm:-mx-6 sm:px-6"
+        class="sticky top-0 z-20 -mx-4 flex items-center justify-between gap-3 px-4 transition-[padding,background-color,border-color] duration-200 sm:-mx-6 sm:px-6"
         :class="collapsed ? 'border-b border-line bg-bg/95 py-2 backdrop-blur' : 'border-b border-transparent bg-transparent py-1'"
       >
-        <p v-if="!collapsed" class="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.35em] text-accent"><span class="h-2 w-2 bg-accent"></span>{{ t("nav.search") }}</p>
-        <label class="mt-3 flex h-11 items-center gap-3 border border-line bg-bg px-3">
+        <label class="flex h-11 min-w-0 flex-1 items-center gap-3 border border-line bg-bg px-3">
           <Search :size="17" :stroke-width="2" class="shrink-0 text-dim" />
           <input
             v-model="query"
@@ -85,31 +103,65 @@ function clear() {
             <X :size="16" :stroke-width="2" />
           </button>
         </label>
-        <div v-if="!collapsed && genres.length" class="mt-3">
-          <p class="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-dim">{{ t("nav.genres") }}</p>
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="genre in genres"
-              :key="genre.key"
-              type="button"
-              class="rounded-full border border-line bg-surface px-3 py-1.5 text-sm text-muted transition-colors hover:text-fg"
-              @click="openGenre(genre.key)"
-            >
-              {{ genre.name }}
-            </button>
-          </div>
-        </div>
+        <MainNavTabs active="search" @select="(tab) => emit('selectTab', tab)" />
       </header>
 
-      <div class="mt-4 min-h-0 flex-1">
-        <TrackList
-          :tracks="filtered"
-          :scroller="scroller"
-          empty-key="nav.searchEmpty"
-          @play="play"
-          @open-artist="emit('openArtist', $event)"
-          @open-album="emit('openAlbum', $event)"
-        />
+      <!-- Idle: centered hint before any query. -->
+      <div v-if="idle" class="grid min-h-[50vh] place-items-center">
+        <div class="flex items-center gap-3 text-dim">
+          <Search :size="24" />
+          <span class="text-sm text-muted">{{ t("nav.searchIdle") }}</span>
+        </div>
+      </div>
+
+      <!-- Empty: query entered but nothing matched. -->
+      <div v-else-if="empty" class="grid min-h-[50vh] place-items-center">
+        <span class="text-sm text-muted">{{ t("nav.noResult") }}</span>
+      </div>
+
+      <!-- Results: collapsible songs and artists groups. -->
+      <div v-else class="mt-4 min-h-0 flex-1">
+        <section v-if="songs.length" class="mb-6">
+          <button type="button" class="mb-2 flex w-full items-center gap-2 px-1 text-left" @click="songsCollapsed = !songsCollapsed">
+            <Music :size="20" class="shrink-0 text-fg" />
+            <span class="flex-1 truncate text-base font-bold">{{ t("nav.songsResult") }} ({{ songs.length }})</span>
+            <ChevronUp v-if="!songsCollapsed" :size="18" class="shrink-0 text-dim" />
+            <ChevronDown v-else :size="18" class="shrink-0 text-dim" />
+          </button>
+          <TrackList
+            v-if="!songsCollapsed"
+            :tracks="songs"
+            :scroller="scroller"
+            empty-key="nav.searchEmpty"
+            @play="play"
+            @open-artist="emit('openArtist', $event)"
+            @open-album="emit('openAlbum', $event)"
+          />
+        </section>
+
+        <section v-if="artists.length">
+          <button type="button" class="mb-2 flex w-full items-center gap-2 px-1 text-left" @click="artistsCollapsed = !artistsCollapsed">
+            <User :size="20" class="shrink-0 text-fg" />
+            <span class="flex-1 truncate text-base font-bold">{{ t("nav.artistsResult") }} ({{ artists.length }})</span>
+            <ChevronUp v-if="!artistsCollapsed" :size="18" class="shrink-0 text-dim" />
+            <ChevronDown v-else :size="18" class="shrink-0 text-dim" />
+          </button>
+          <div v-if="!artistsCollapsed" class="flex flex-col pt-1">
+            <button
+              v-for="artist in artists"
+              :key="artist.key"
+              type="button"
+              class="flex w-full items-center gap-4 px-3 py-3 text-left transition-colors hover:bg-surface/60"
+              @click="openArtistCard(artist.key)"
+            >
+              <span class="ak-clip-tr grid h-11 w-11 shrink-0 place-items-center text-lg font-black text-white/90" :style="{ backgroundColor: artist.color ?? 'var(--accent)' }">
+                {{ artist.name.charAt(0) }}
+              </span>
+              <span class="min-w-0 flex-1 truncate text-sm font-semibold">{{ artist.name }}</span>
+              <span class="shrink-0 text-xs text-muted">{{ t("library.collections.trackCount", { count: artist.count }) }}</span>
+            </button>
+          </div>
+        </section>
       </div>
     </div>
   </div>

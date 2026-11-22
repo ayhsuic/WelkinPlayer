@@ -5,13 +5,13 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import MobileTabBar from "./MobileTabBar.vue";
 import type { MainTab } from "../lib/app";
 
 /**
  * Full-screen mobile drawer, modelled on lmusic's BottomSheetLayout: the sheet
  * is a separate layer above the playing wall. Its body renders the active tab
- * page (provided through the default slot); the bottom holds the tab bar.
+ * page (provided through the default slot); primary navigation lives in each
+ * page's top-bar entries, not a bottom tab bar.
  * Once every scrollable ancestor in the touched page is pinned to its top, a
  * further downward drag collapses the drawer back onto the wall. The gesture is
  * bound to the scrolling body (not just a handle strip) and mirrors the nested
@@ -28,10 +28,6 @@ const emit = defineEmits<{
 function close() {
   emit("update:open", false);
   emit("close");
-}
-
-function onSelect(tab: MainTab) {
-  emit("select", tab);
 }
 
 const bodyEl = ref<HTMLElement | null>(null);
@@ -240,11 +236,10 @@ onBeforeUnmount(() => {
         <div
           ref="contentEl"
           class="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
-          style="touch-action: pan-x pan-y; padding-bottom: calc(env(safe-area-inset-bottom) + 84px)"
+          style="touch-action: pan-x pan-y; padding-bottom: calc(env(safe-area-inset-bottom) + 16px)"
         >
           <slot />
         </div>
-        <MobileTabBar :active="props.activeTab" @select="onSelect" />
       </section>
     </Transition>
   </Teleport>

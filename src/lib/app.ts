@@ -40,6 +40,9 @@ export const mainNavTabs: MainTabItem[] = [
   { id: "search", view: "search", labelKey: "nav.search", icon: Search },
 ];
 
+/** Primary destinations shown in the horizontal pager and the top-bar entries. */
+export const mainPagerTabs: MainTab[] = ["home", "library", "search"];
+
 /** System group: the merged source entry (local folders + WebDAV together). */
 export const systemNavItems: NavItem[] = [
   { id: "sources", labelKey: "nav.sources", index: "09", icon: Server },
