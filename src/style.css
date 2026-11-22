@@ -495,7 +495,8 @@ html[data-accent="blue"] {
      fixed entry ratio (rowH × 4.7), capped to the content width so a 9:21
      portrait fills the area in a single column; wider screens add columns to
      the right instead of stretching entries. The slot width (column + gap) is
-     passed inline to the virtualizer; the column itself only lays out rows. */
+     passed inline for non-last columns; the last column uses the plain column
+     width so no trailing gap is left after the final entry. */
   .home-recent-col {
     display: flex;
     flex-direction: column;
@@ -727,13 +728,13 @@ html[data-accent="blue"] {
     padding-right: calc(var(--cw) * 0.067 * var(--rail-scale, 1));
   }
 
-  /* Horizontal rails do not bleed to the screen edges: the host aligns to the
-     content edge on the left (no negative margin, no extra left padding), and
-     keeps the right padding as an exit gutter so the last card does not flush
-     against the screen edge. */
+  /* Horizontal rails: the left edge aligns to the content title (no negative
+     margin, no left padding, no left bleed). The right keeps a negative
+     margin so the host bleeds out to the screen edge; the right padding stays
+     as an exit gutter so the last card does not flush against the edge. */
   .home-scroll-pad.overflow-x-auto {
     margin-left: 0;
-    margin-right: 0;
+    margin-right: calc(var(--cw) * -0.067 * var(--rail-scale, 1));
     padding-left: 0;
     /* Horizontal rail: allow the browser to own the sideways gesture so the
        native momentum/inertia kicks in; snap loosely to card starts. */

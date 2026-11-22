@@ -72,9 +72,12 @@ const recentColW = computed(() =>
 const recentColGap = computed(() => Math.min(Math.round((recentCw.value || 312) * 0.067), Math.round((recentCh.value || 840) * 0.029)));
 const recentRowGap = computed(() => Math.round((recentCh.value || 840) * 0.016));
 // The virtualizer measures each item's content box, so the column gap is reserved
-// inside the item width (entry capped to colW, trailing slot = gap).
+// inside the slot width (entry capped to colW, trailing slot = gap). The last
+// column carries no trailing gap: otherwise that dead strip becomes its own
+// snap target on a mandatory scroller and pulls the rest position off.
 const recentColSlotW = computed(() => recentColW.value + recentColGap.value);
 const recentColSize = computed(() => recentColSlotW.value);
+const recentColCount = computed(() => recentColIndexes.value.length);
 function recentTrackAt(col: number, row: number): Track | undefined {
   return recentTracks.value[col * RECENT_ROWS + row];
 }
@@ -431,7 +434,7 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
           <div ref="recentHost" class="home-recent-columns">
             <Virtualizer horizontal :data="recentColIndexes" :item-size="recentColSize">
               <template #default="{ item: col }">
-                <div class="home-recent-col" :style="{ width: `${recentColSlotW}px`, rowGap: `${recentRowGap}px` }">
+                <div class="home-recent-col" :style="{ width: `${col === recentColCount - 1 ? recentColW : recentColSlotW}px`, rowGap: `${recentRowGap}px` }">
                   <template v-for="row in RECENT_ROWS" :key="row">
                     <article
                       v-if="recentTrackAt(col, row - 1)"

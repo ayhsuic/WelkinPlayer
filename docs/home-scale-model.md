@@ -109,8 +109,8 @@ scope: src/App.vue, src/style.css, src/components/MobileTabBar.vue, src/views/Li
 - 列表模式（`recentListMode=1`）：外层 `.home-recent-columns` 为自滚横向虚拟化宿主，每列固定三行；多出的条目往右加列，横向滚动承接溢出。列宽由行高按 `rowH×4.7` 反推，封顶内容宽 `100%`，9:21 竖屏单列占满内容区。
 - 最近播放、最近添加、推荐均不再做条数截断：历史全量参与，最近添加按源修改时间倒序全量展示，推荐从最近添加队列洗牌重抽。
 - 条目占满所在列宽度，高度锚定行高（推荐卡高的 1/3），标题在列宽内截断；封面 1:1 随行高。不用固定比例把条目宽锁死，避免条目挤在列左侧、列间堆出死空白。
-- 高度预算：固定三行加两行行距（`ch×0.25×k + 2×ch×0.016×k`）封顶容器高度，横向虚拟化宿主须定高否则交叉轴塌缩；列距并入条目槽宽（列宽 + 列距），由虚拟化按槽宽排布。
-- 横滑 rail 容器（`.home-scroll-pad.overflow-x-auto`）左侧去掉负 margin 与补偿 padding，首条与分区标题左缘对齐、不出血；右侧去掉负 margin，保留 `padding-right` 作为出口边距，末条不贴屏幕边。
+- 高度预算：固定三行加两行行距（`ch×0.25×k + 2×ch×0.016×k`）封顶容器高度，横向虚拟化宿主须定高否则交叉轴塌缩；列距并入非末列槽宽（列宽 + 列距），由虚拟化按槽宽排布；末列用纯列宽、不带尾部列距，否则这段死槽在 mandatory 吸附下会成为独立吸附位、把静止位置拉偏。
+- 横滑 rail 容器（`.home-scroll-pad.overflow-x-auto`）左侧去掉负 margin 与补偿 padding，首条与分区标题左缘对齐、不出血；右侧保留 `-cw×0.067` 负 margin 让宿主出血延伸到屏边，`padding-right` 同值作为出口 gutter，末条不贴屏幕边。
 - 横滑手感：四个横向宿主（露头推荐、截断容器、最近播放折列、两个 rail）统一 `touch-action: pan-x` 让出浏览器横向手势以带原生惯性（`-webkit-overflow-scrolling: touch`）；卡流（推荐/rail）`scroll-snap-type: x proximity` 就近吸附，折列 `x mandatory` 按列分页对齐，子项/列 `scroll-snap-align: start`。外层纵向滚动体（抽屉内容层、横屏侧栏）`touch-action: pan-x pan-y` 放开横向手势，避免祖先 `pan-y` 交集锁死横滑。最下方纵向网格不参与。
 - rail 模式（`recentListMode=0`）：单行横滑小卡，封面 + 下方标题；封面边取 `min(cw×0.22, ch×0.25)`，窄屏一屏 3 张完整 + 第四张露约 1/4，宽屏被大卡高封顶；宿主对齐基线露头横滑盒类（`home-gap-x flex overflow-x-auto`），左侧对齐标题左缘不出血，保留横向虚拟化。
 - 推荐双模式（`recContainerMode`，键 `welkin.home.recContainerMode`，默认露头）：点分区标题切换。`0` 露头——基线横滑盒自然一行；`1` 截断容器——`.home-rec-container` 定高截断盒。两态均挂横向虚拟化，宿主定高 `ch×0.25×k` 防交叉轴塌缩，状态本地持久化。
