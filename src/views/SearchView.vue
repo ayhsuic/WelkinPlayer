@@ -12,7 +12,6 @@ import type { Track } from "../stores/player";
 import { groupTracks, isUnknownGroup, type GroupKind } from "../lib/grouping";
 import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
 import TrackList from "../components/TrackList.vue";
-import MainNavTabs from "../components/MainNavTabs.vue";
 import type { MainTab } from "../lib/app";
 
 /**
@@ -33,7 +32,7 @@ const { t } = useI18n();
 const player = usePlayerStore();
 const query = ref("");
 const scrollEl = ref<HTMLElement | null>(null);
-const { collapsed, scroller } = useCollapsibleHeader(scrollEl);
+const { scroller } = useCollapsibleHeader(scrollEl);
 
 const songs = computed<Track[]>(() => {
   const value = query.value.trim().toLocaleLowerCase();
@@ -86,25 +85,20 @@ function clear() {
 <template>
   <div ref="scrollEl" class="w-full">
     <div class="mx-auto flex w-full max-w-6xl flex-col px-4 pb-2 pt-5 sm:px-6 sm:pt-6">
-      <header
-        class="sticky top-0 z-20 -mx-4 flex items-center justify-between gap-3 px-4 transition-[padding,background-color,border-color] duration-200 sm:-mx-6 sm:px-6"
-        :class="collapsed ? 'border-b border-line bg-bg/95 py-2 backdrop-blur' : 'border-b border-transparent bg-transparent py-1'"
-      >
-        <label class="flex h-11 min-w-0 flex-1 items-center gap-3 border border-line bg-bg px-3">
-          <Search :size="17" :stroke-width="2" class="shrink-0 text-dim" />
-          <input
-            v-model="query"
-            type="search"
-            class="min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-dim"
-            :placeholder="t('nav.searchPlaceholder')"
-            :aria-label="t('nav.searchPlaceholder')"
-          />
-          <button v-if="query" type="button" class="grid h-8 w-8 shrink-0 place-items-center text-dim hover:text-fg" :aria-label="t('controls.collapse')" @click="clear">
-            <X :size="16" :stroke-width="2" />
-          </button>
-        </label>
-        <MainNavTabs active="search" :collapsed="collapsed" @select="(tab) => emit('selectTab', tab)" />
-      </header>
+      <!-- Search input lives in the content page, not the shared top bar. -->
+      <label class="flex h-11 min-w-0 flex-1 items-center gap-3 border border-line bg-bg px-3">
+        <Search :size="17" :stroke-width="2" class="shrink-0 text-dim" />
+        <input
+          v-model="query"
+          type="search"
+          class="min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-dim"
+          :placeholder="t('nav.searchPlaceholder')"
+          :aria-label="t('nav.searchPlaceholder')"
+        />
+        <button v-if="query" type="button" class="grid h-8 w-8 shrink-0 place-items-center text-dim hover:text-fg" :aria-label="t('controls.collapse')" @click="clear">
+          <X :size="16" :stroke-width="2" />
+        </button>
+      </label>
 
       <!-- Idle: centered hint before any query. -->
       <div v-if="idle" class="grid min-h-[50vh] place-items-center">

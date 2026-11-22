@@ -12,7 +12,6 @@ import type { View, MainTab } from "../lib/app";
 import { RECENT_PLAYS_ID, RECENTLY_ADDED_ID } from "../lib/app";
 import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
 import TrackContextMenu from "../components/TrackContextMenu.vue";
-import MainNavTabs from "../components/MainNavTabs.vue";
 
 withDefaults(defineProps<{ downloadingTrackId?: number | null }>(), { downloadingTrackId: null });
 const emit = defineEmits<{ settings: []; downloadMetadata: [track: Track]; editLyrics: [track: Track]; editInfo: [track: Track]; showInfo: [track: Track]; navigate: [view: View]; openPlaylist: [id: string]; selectTab: [tab: MainTab] }>();
@@ -122,7 +121,7 @@ const avatarInitial = computed(() => {
 /** Collapsing sticky header: once the list scrolls past a short peek, the large title
  *  and avatar tuck into a pinned top bar (mirrors Mornye's pinned SliverAppBar). */
 const rootEl = ref<HTMLElement | null>(null);
-const { collapsed, scroller } = useCollapsibleHeader(rootEl);
+const { scroller } = useCollapsibleHeader(rootEl);
 
 /* --- Daily recommendation: horizontal virtualized open rail. --- */
 const recOpenHost = ref<HTMLElement | null>(null);
@@ -302,13 +301,9 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
 
 <template>
   <div ref="rootEl" class="home-root-pad mx-auto w-full">
-    <!-- Home header: plain-text tab row on the left, avatar entry to settings on the right.
-         Sticky: scrolling tucks the header into a pinned compact bar and shrinks the tabs. -->
-    <header
-      class="home-header home-scroll-pad sticky top-0 z-20 flex items-center justify-between gap-2 transition-[padding,background-color,border-color] duration-200"
-      :class="[collapsed ? 'is-collapsed border-b border-line bg-bg/95 backdrop-blur' : 'border-b border-transparent bg-transparent']"
-    >
-      <MainNavTabs active="home" :collapsed="collapsed" @select="(tab) => emit('selectTab', tab)" />
+    <!-- Home content header: avatar/settings entry lives in the content page,
+         not the shared top bar. -->
+    <div class="home-mt-card flex items-center justify-end">
       <button
         type="button"
         class="home-header__avatar ak-clip-tr grid shrink-0 place-items-center border border-line bg-surface text-accent transition-[width,height,font-size] duration-200 active:scale-95"
@@ -317,9 +312,9 @@ function isActive(track: Track) { return track.id === player.currentTrack?.id; }
         @click="emit('settings')"
       >
         <span v-if="avatarInitial" class="home-header__initial font-bold leading-none">{{ avatarInitial }}</span>
-        <User v-else class="home-header__icon" :size="collapsed ? 18 : 20" />
+        <User v-else class="home-header__icon" :size="20" />
       </button>
-    </header>
+    </div>
 
       <!-- Daily recommendation: square cover cards on a horizontal rail. -->
       <section v-if="recommended.length">

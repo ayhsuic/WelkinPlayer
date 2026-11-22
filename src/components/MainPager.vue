@@ -6,6 +6,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { mainPagerTabs, type MainTab } from "../lib/app";
+import MainNavTabs from "./MainNavTabs.vue";
+import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
 
 /**
  * Three-page horizontal pager for the primary destinations (home / library /
@@ -23,6 +25,9 @@ const emit = defineEmits<{ select: [tab: MainTab] }>();
 
 const strip = ref<HTMLElement | null>(null);
 const rootEl = ref<HTMLElement | null>(null);
+/** Shared pinned top bar: the tab row lives once above the strip and shrinks
+ *  together with the ancestor list's collapsed header state. */
+const { collapsed } = useCollapsibleHeader(rootEl);
 const position = ref(0); // translateX px of the strip (0 or negative)
 const targetIndex = ref(0);
 let stripWidth = 1;
@@ -78,6 +83,21 @@ let dragAxis: "x" | "y" | null = null;
 let velocity = 0;
 let lastSampleX = 0;
 let lastSampleT = 0;
+/** A touch starting inside a horizontal rail/column host is left to that
+ *  rail's own native horizontal scroll; the pager must not steal it. */
+let railGesture = false;
+
+/** Walk up from the touch target to find a horizontal scroll host. */
+function isHorizontalRail(target: EventTarget | null): boolean {
+  let n = target as HTMLElement | null;
+  while (n) {
+    if (n.classList && (n.classList.contains("overflow-x-auto") || n.classList.contains("home-recent-columns"))) {
+      return true;
+    }
+    n = n.parentElement;
+  }
+  return false;
+}
 
 function startDrag(clientX: number, clientY: number) {
   dragging = true;
@@ -148,14 +168,18 @@ function onPointerEnd(event: PointerEvent) {
 function onTouchStart(event: TouchEvent) {
   const touch = event.touches[0];
   if (!touch) return;
+  railGesture = isHorizontalRail(event.target);
+  if (railGesture) return;
   startDrag(touch.clientX, touch.clientY);
 }
 function onTouchMove(event: TouchEvent) {
+  if (railGesture) return;
   const touch = event.touches[0];
   if (!touch) return;
   moveDrag(touch.clientX, touch.clientY, event);
 }
 function onTouchEnd() {
+  railGesture = false;
   endDrag();
 }
 
@@ -186,10 +210,21 @@ watch(() => props.active, (tab) => {
 });
 
 let resizeObserver: ResizeObserver | null = null;
+
+/** Each page slot scrolls inside its own section; the pinned top bar follows
+ *  whichever section is scrolling. Scroll events do not bubble, so capture on
+ *  the strip to catch the section's own scroll. */
+const HEADER_PEEK_PX = 12;
+function onInnerScroll(event: Event) {
+  const scroller = event.target as HTMLElement | null;
+  collapsed.value = (scroller?.scrollTop ?? 0) > HEADER_PEEK_PX;
+}
+
 onMounted(() => {
   measure();
   goTo(indexOf(props.active), false);
   if (rootEl.value) bindDragEvents(rootEl.value);
+  strip.value?.addEventListener("scroll", onInnerScroll, true);
   if (typeof ResizeObserver !== "undefined") {
     resizeObserver = new ResizeObserver(() => {
       measure();
@@ -200,6 +235,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   unbind?.();
+  strip.value?.removeEventListener("scroll", onInnerScroll, true);
   resizeObserver?.disconnect();
   cancelSettle();
 });
@@ -208,10 +244,18 @@ const stripStyle = computed(() => ({ transform: `translateX(${position.value}px)
 </script>
 
 <template>
-  <div ref="rootEl" class="main-pager w-full" style="touch-action: pan-y">
-    <div class="relative w-full overflow-x-clip">
-      <div ref="strip" class="flex w-full" :style="stripStyle">
-        <section v-for="tab in mainPagerTabs" :key="tab" class="w-full shrink-0 min-w-0">
+  <div ref="rootEl" class="main-pager flex h-full w-full flex-col" style="touch-action: pan-x pan-y">
+    <!-- Shared top bar: one plain-text tab row above the swipeable strip,
+         shared by all three pages. -->
+    <header
+      class="main-pager__topbar flex shrink-0 items-center justify-between gap-2 px-4 transition-[padding,background-color,border-color] duration-200 sm:px-6"
+      :class="[collapsed ? 'border-b border-line bg-bg/95 backdrop-blur' : 'border-b border-transparent bg-transparent']"
+    >
+      <MainNavTabs :active="props.active" :collapsed="collapsed" @select="(tab) => emit('select', tab)" />
+    </header>
+    <div class="relative min-h-0 flex-1 overflow-x-clip">
+      <div ref="strip" class="flex h-full w-full" :style="stripStyle">
+        <section v-for="tab in mainPagerTabs" :key="tab" class="h-full min-h-0 w-full shrink-0 overflow-y-auto overscroll-contain">
           <slot v-if="tab === 'home'" name="home" />
           <slot v-else-if="tab === 'library'" name="library" />
           <slot v-else name="search" />

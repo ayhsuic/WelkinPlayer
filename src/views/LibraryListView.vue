@@ -4,16 +4,14 @@
 -->
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import type { Component } from "vue";
-import { CalendarDays, ChevronRight, HardDriveDownload, ListMusic, Mic2, Music, Server } from "@lucide/vue";
+import { CalendarDays, ChevronRight, ListMusic, Mic2, Music, Server } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
 import { groupTracks, isUnknownGroup, type GroupKind } from "../lib/grouping";
-import { useCollapsibleHeader } from "../composables/useCollapsibleHeader";
 import type { View, MainTab } from "../lib/app";
-import MainNavTabs from "../components/MainNavTabs.vue";
 
 /**
  * Library ("媒体库") page: a category row list on top, followed by the full
@@ -28,10 +26,6 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const player = usePlayerStore();
-
-/** Collapsing sticky header, mirroring the home page. */
-const rootEl = ref<HTMLElement | null>(null);
-const { collapsed } = useCollapsibleHeader(rootEl);
 
 interface CategoryRow {
   id: View;
@@ -80,24 +74,8 @@ function openAlbum(key: string) {
 </script>
 
 <template>
-  <div ref="rootEl" class="w-full">
+  <div class="w-full">
     <div class="mx-auto flex w-full max-w-6xl flex-col px-4 py-5 sm:px-6 sm:py-6">
-      <!-- Sticky header: plain-text tab row on the left, download entry on the right. -->
-      <header
-        class="sticky top-0 z-20 -mx-4 flex items-center justify-between gap-3 px-4 transition-[padding,background-color,border-color] duration-200 sm:-mx-6 sm:px-6"
-        :class="collapsed ? 'border-b border-line bg-bg/95 py-2 backdrop-blur' : 'border-b border-transparent bg-transparent py-1'"
-      >
-        <MainNavTabs active="library" :collapsed="collapsed" @select="(tab) => emit('selectTab', tab)" />
-        <button
-          type="button"
-          class="ak-clip flex shrink-0 items-center gap-1.5 border border-line bg-surface px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:text-fg"
-          @click="emit('navigate', 'downloaded')"
-        >
-          <HardDriveDownload :size="16" />
-          {{ t("nav.downloaded") }}
-        </button>
-      </header>
-
       <!-- Plain category list: accent line icon, title, trailing chevron, hairline dividers. -->
       <section class="mt-4 flex flex-col">
         <template v-for="(row, index) in rows" :key="row.id">
