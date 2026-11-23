@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from "vue";
 import { Virtualizer } from "virtua/vue";
-import { ChevronLeft, History, ListMusic, LoaderCircle, Plus, RefreshCw, Search, User } from "@lucide/vue";
+import { ChevronLeft, History, ListMusic, LoaderCircle, RefreshCw, Search, User } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { usePlayerStore } from "../stores/player";
 import type { Track } from "../stores/player";
@@ -141,10 +141,12 @@ type DetailFrame = { kind: "artist" | "album" | "genre" | "year" | "playlist"; k
 /** Drill-down stack: opening an album from an artist detail pushes a frame;
  *  back pops the top frame. The shell stays in one view, no route change. */
 const detailStack = ref<DetailFrame[]>([]);
+/** Whether the collapsed search box has been tapped open into the index shell. */
+const searchOpen = ref(false);
 const searching = computed(() => query.value.trim().length > 0);
 const detail = computed<DetailFrame | null>(() => detailStack.value[detailStack.value.length - 1] ?? null);
 const mode = computed<"overview" | "index">(() =>
-  detail.value || searching.value ? "index" : "overview",
+  detail.value || searchOpen.value || searching.value ? "index" : "overview",
 );
 
 /** Three index slots, each with its own in-place segment toggle. */
@@ -206,14 +208,24 @@ const detailCrumbs = computed<Crumb[]>(() =>
 /** Separator between index levels shown inside the search box text. */
 const CRUMB_SEP = " > ";
 
-/** Search box text: live query in overview, index path once a frame is pushed. */
-const searchBoxText = computed(() =>
-  detail.value ? detailCrumbs.value.map((c) => c.label).join(CRUMB_SEP) : query.value,
-);
+/** Root label prefixed to every drill-down breadcrumb in the open search box. */
+const rootLabel = computed(() => t("home.libraryRoot"));
+
+/** Search box text: root label once opened, breadcrumb trail once framed, live query otherwise. */
+const searchBoxText = computed(() => {
+  if (detail.value) return [rootLabel.value, ...detailCrumbs.value.map((c) => c.label)].join(CRUMB_SEP);
+  if (searchOpen.value) return rootLabel.value;
+  return query.value;
+});
 function onSearchInput(event: Event) {
   if (detail.value) return;
   query.value = (event.target as HTMLInputElement).value;
 }
+
+/** Tap the collapsed square search icon: open the index shell over the home page. */
+function openSearch() { searchOpen.value = true; }
+/** Fold the search box back to the square icon and return to the overview. */
+function closeSearch() { searchOpen.value = false; closeDetail(); }
 
 function openDetail(kind: DetailFrame["kind"], key: string) {
   const top = detailStack.value[detailStack.value.length - 1];
@@ -229,7 +241,8 @@ function closeDetail() {
 }
 function backDetail() {
   if (detailStack.value.length > 1) popDetail();
-  else closeDetail();
+  else if (detailStack.value.length === 1) closeDetail();
+  else closeSearch();
 }
 
 /* ------------------------- grouped / playlist cards ------------------------- */
@@ -340,6 +353,18 @@ const slotBCards = computed<ShellCard[]>(() =>
 const slotCCards = computed<ShellCard[]>(() => cardsFrom(contextTracks.value, "genres"));
 const slotCTracks = computed<Track[]>(() => contextTracks.value);
 
+/* --- Index shell slots: reuse the home rail/grid budgets below; only the data
+       source and hosts differ. Index arrays back the same virtualizers. --- */
+const slotAIndexes = computed(() => slotACards.value.map((_, i) => i));
+const slotBIndexes = computed(() => slotBCards.value.map((_, i) => i));
+const slotCGenreIndexes = computed(() => slotCCards.value.map((_, i) => i));
+const slotCTrackRows = computed(() =>
+  Array.from({ length: Math.ceil(slotCTracks.value.length / addCols.value) }, (_, i) => i),
+);
+function slotCTrackAt(row: number, col: number): Track | undefined {
+  return slotCTracks.value[row * addCols.value + col];
+}
+
 /** Collapsing sticky header: once the list scrolls past a short peek, the large title
  *  and avatar tuck into a pinned top bar (mirrors Mornye's pinned SliverAppBar). */
 const rootEl = ref<HTMLElement | null>(null);
@@ -347,6 +372,7 @@ const { scroller } = useCollapsibleHeader(rootEl);
 
 /* --- Daily recommendation: horizontal virtualized open rail. --- */
 const recOpenHost = ref<HTMLElement | null>(null);
+const slotAHost = ref<HTMLElement | null>(null);
 const recCh = ref(0);
 const recCw = ref(0);
 let recResizeObs: ResizeObserver | undefined;
@@ -359,8 +385,7 @@ const recSlotW = computed(() => recCardW.value + recGap.value);
 function recTrackAt(index: number): Track | undefined {
   return recommended.value[index];
 }
-function measureRecRail() {
-  const host = recOpenHost.value;
+function measureRecRail(host: HTMLElement | null = recOpenHost.value) {
   if (!host) return;
   const ch = parseFloat(getComputedStyle(host).getPropertyValue("--ch"));
   const cw = parseFloat(getComputedStyle(host).getPropertyValue("--cw"));
@@ -371,6 +396,8 @@ function measureRecRail() {
 /* --- Rail small cards (recent plays / recently added): horizontal virtualized. --- */
 const recentRailHost = ref<HTMLElement | null>(null);
 const addedRailHost = ref<HTMLElement | null>(null);
+const slotBHost = ref<HTMLElement | null>(null);
+const slotCGenreHost = ref<HTMLElement | null>(null);
 const railCh = ref(0);
 const railCw = ref(0);
 let railResizeObs: ResizeObserver | undefined;
@@ -402,6 +429,7 @@ function measureRailBudget(host: HTMLElement | null) {
 
 /* --- Recently added open wall: row-based vertical virtualization over the shared scroller. --- */
 const addWallHost = ref<HTMLElement | null>(null);
+const slotGridHost = ref<HTMLElement | null>(null);
 const addWallWidth = ref(0);
 const addCh = ref(0);
 const addCw = ref(0);
@@ -443,8 +471,7 @@ const addRowHeight = computed(() => {
 function addTrack(row: number, col: number): Track | undefined {
   return recentlyAdded.value[row * addCols.value + col];
 }
-function measureAddWall() {
-  const host = addWallHost.value;
+function measureAddWall(host: HTMLElement | null = addWallHost.value) {
   if (!host) return;
   const rect = host.getBoundingClientRect();
   addWallWidth.value = host.clientWidth || Math.round(rect.width);
@@ -475,29 +502,39 @@ function observeHost(hostRef: Ref<HTMLElement | null>, measure: () => void, obs:
 
 watch(recentListMode, () => void nextTick(measureRecentList));
 observeHost(recentHost, measureRecentList, { current: recentResizeObs });
-watch(recOpenHost, (target) => {
-  measureRecRail();
+watch([recOpenHost, slotAHost], ([h1, h2]) => {
+  const target = h1 ?? h2 ?? null;
+  measureRecRail(target);
   if (typeof ResizeObserver === "undefined") return;
   recResizeObs?.disconnect();
-  recResizeObs = new ResizeObserver(measureRecRail);
+  recResizeObs = new ResizeObserver(() => measureRecRail(recOpenHost.value ?? slotAHost.value));
   if (target) {
     recResizeObs.observe(target);
     if (target.parentElement) recResizeObs.observe(target.parentElement);
   }
 }, { immediate: true });
-watch([recentRailHost, addedRailHost], ([h1, h2]) => {
-  const target = h1 ?? h2 ?? null;
+watch([recentRailHost, addedRailHost, slotBHost, slotCGenreHost], (hosts) => {
+  const target = hosts.find((h) => h) ?? null;
   measureRailBudget(target);
   if (typeof ResizeObserver === "undefined") return;
   railResizeObs?.disconnect();
-  railResizeObs = new ResizeObserver(() => measureRailBudget(recentRailHost.value ?? addedRailHost.value));
+  railResizeObs = new ResizeObserver(() => measureRailBudget(recentRailHost.value ?? addedRailHost.value ?? slotBHost.value ?? slotCGenreHost.value));
   if (target) {
     railResizeObs.observe(target);
     if (target.parentElement) railResizeObs.observe(target.parentElement);
   }
 }, { immediate: true });
 watch(addedGridMode, () => void nextTick(measureAddWall));
-observeHost(addWallHost, measureAddWall, { current: addResizeObs });
+observeHost(addWallHost, () => measureAddWall(), { current: addResizeObs });
+watch(slotGridHost, (target) => {
+  measureAddWall(target);
+  if (typeof ResizeObserver === "undefined") return;
+  if (target) {
+    if (!addResizeObs) addResizeObs = new ResizeObserver(() => measureAddWall(addWallHost.value ?? slotGridHost.value));
+    addResizeObs.observe(target);
+    if (target.parentElement) addResizeObs.observe(target.parentElement);
+  }
+}, { immediate: true });
 
 onBeforeUnmount(() => {
   recentResizeObs?.disconnect();
@@ -583,19 +620,39 @@ function onSlotBCard(card: ShellCard) {
         <span v-if="avatarInitial" class="home-header__initial font-bold leading-none">{{ avatarInitial }}</span>
         <User v-else class="home-header__icon" :size="20" />
       </button>
-      <div class="min-w-0 flex-1">
+      <div v-if="mode === 'overview'" class="min-w-0 flex-1">
         <p class="home-section-title truncate font-bold tracking-tight">
           {{ greeting }}<span v-if="profile.nickname" class="home-card-artist home-mt-caption"> · {{ profile.nickname }}</span>
         </p>
       </div>
-      <label class="lib-search flex min-w-0 items-center gap-3 border border-line bg-surface px-3 ak-clip-tr">
+      <!-- Overview: collapsed square search button, same edge as the avatar. -->
+      <button
+        v-if="mode === 'overview'"
+        type="button"
+        class="home-header__avatar home-search-toggle ak-clip-tr ml-auto grid shrink-0 place-items-center border border-line bg-surface text-accent active:scale-95"
+        :aria-label="t('nav.searchPlaceholder')"
+        :title="t('nav.searchPlaceholder')"
+        @click="openSearch"
+      >
+        <Search :size="17" :stroke-width="2" class="text-dim" />
+      </button>
+      <!-- Index: expanded search bar carrying the breadcrumb path and back action. -->
+      <label v-else class="lib-search flex min-w-0 flex-1 items-center gap-3 border border-line bg-surface px-3 ak-clip-tr">
+        <button
+          type="button"
+          class="grid shrink-0 place-items-center text-dim hover:text-fg"
+          :aria-label="t('controls.collapse')"
+          @click="backDetail"
+        >
+          <ChevronLeft :size="18" :stroke-width="2" />
+        </button>
         <Search :size="17" :stroke-width="2" class="shrink-0 text-dim" />
         <input
           :value="searchBoxText"
           :readonly="!!detail"
           type="search"
           class="min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-dim"
-          :placeholder="t('nav.searchPlaceholder')"
+          :placeholder="rootLabel"
           :aria-label="t('nav.searchPlaceholder')"
           @input="onSearchInput"
         />
@@ -882,9 +939,9 @@ function onSlotBCard(card: ShellCard) {
         <!-- Slot A: playlist/artist wall, or the framed virtual hero card. -->
         <section class="home-mt-section">
           <div class="home-mb-title home-mt-card flex items-center justify-between">
-            <div v-if="!detail" class="flex gap-2">
-              <button type="button" class="home-chip ak-clip border border-line bg-surface font-medium transition-colors" :class="segA === 'playlists' ? 'text-accent' : 'text-muted hover:text-fg'" @click="segA = 'playlists'">{{ t("nav.playlists") }}</button>
-              <button type="button" class="home-chip ak-clip border border-line bg-surface font-medium transition-colors" :class="segA === 'artists' ? 'text-accent' : 'text-muted hover:text-fg'" @click="segA = 'artists'">{{ t("nav.artists") }}</button>
+            <div v-if="!detail" class="flex gap-3">
+              <button type="button" class="home-section-title tracking-tight transition-colors" :class="segA === 'playlists' ? 'font-bold text-fg' : 'font-medium text-muted hover:text-fg'" @click="segA = 'playlists'">{{ t("nav.playlists") }}</button>
+              <button type="button" class="home-section-title tracking-tight transition-colors" :class="segA === 'artists' ? 'font-bold text-fg' : 'font-medium text-muted hover:text-fg'" @click="segA = 'artists'">{{ t("nav.artists") }}</button>
             </div>
             <div v-else class="flex min-w-0 items-center gap-3">
               <button type="button" class="grid h-9 w-9 shrink-0 place-items-center text-dim hover:text-fg" :aria-label="t('controls.collapse')" @click="backDetail">
@@ -892,102 +949,129 @@ function onSlotBCard(card: ShellCard) {
               </button>
               <span class="home-section-title truncate font-bold tracking-tight">{{ detailTitle }}</span>
             </div>
-            <button v-if="!detail && segA === 'playlists'" type="button" class="home-chip ak-clip flex items-center border border-line bg-surface font-medium text-muted transition-colors hover:text-fg" @click="emit('navigate', 'playlist-new')">
-              <Plus :size="13" class="home-chip__icon" />{{ t("home.newPlaylist") }}
-            </button>
           </div>
-          <div class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto">
-            <button
-              v-for="card in slotACards"
-              :key="card.key"
-              type="button"
-              :disabled="!!detail"
-              class="home-rec-card ak-clip-tr group relative aspect-square shrink-0 overflow-hidden text-left"
-              :style="{ backgroundColor: card.color ?? 'var(--accent)' }"
-              @click="onSlotACard(card)"
-            >
-              <img v-if="card.cover" :src="card.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-              <span v-else class="home-rec-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ card.initial ?? card.title.charAt(0) }}</span>
-              <div class="home-pad-cover absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent">
-                <p class="home-rec-title truncate font-semibold text-white">{{ card.title }}</p>
-                <p v-if="card.subtitle" class="home-rec-artist home-mt-caption truncate text-white/75">{{ card.subtitle }}</p>
-              </div>
-            </button>
+          <div ref="slotAHost" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto rec-host--inline" :style="{ height: `${recCardW}px` }">
+            <Virtualizer horizontal :data="slotAIndexes" :item-size="recSlotW">
+              <template #default="{ item: i }">
+                <div v-if="slotACards[i]" :style="{ width: `${recSlotW}px` }">
+                  <button
+                    :key="slotACards[i]!.key"
+                    type="button"
+                    :disabled="!!detail"
+                    class="home-rec-card ak-clip-tr group relative aspect-square shrink-0 overflow-hidden text-left"
+                    :style="{ width: `${recCardW}px`, backgroundColor: slotACards[i]!.color ?? 'var(--accent)' }"
+                    @click="onSlotACard(slotACards[i]!)"
+                  >
+                    <img v-if="slotACards[i]!.cover" :src="slotACards[i]!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                    <span v-else class="home-rec-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ slotACards[i]!.initial ?? slotACards[i]!.title.charAt(0) }}</span>
+                    <div class="home-pad-cover absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent">
+                      <p class="home-rec-title truncate font-semibold text-white">{{ slotACards[i]!.title }}</p>
+                      <p v-if="slotACards[i]!.subtitle" class="home-rec-artist home-mt-caption truncate text-white/75">{{ slotACards[i]!.subtitle }}</p>
+                    </div>
+                  </button>
+                </div>
+              </template>
+            </Virtualizer>
           </div>
         </section>
 
         <!-- Slot B: albums ↔ years, filtered by context. -->
         <section class="home-mt-section">
           <div class="home-mb-title home-mt-card flex items-center justify-between">
-            <span class="home-section-title font-bold tracking-tight">{{ segB === 'albums' ? t('nav.albums') : t('nav.years') }}</span>
-            <div class="flex gap-2">
-              <button type="button" class="home-chip ak-clip border border-line bg-surface font-medium transition-colors" :class="segB === 'albums' ? 'text-accent' : 'text-muted hover:text-fg'" @click="segB = 'albums'">{{ t("nav.albums") }}</button>
-              <button type="button" class="home-chip ak-clip border border-line bg-surface font-medium transition-colors" :class="segB === 'years' ? 'text-accent' : 'text-muted hover:text-fg'" @click="segB = 'years'">{{ t("nav.years") }}</button>
+            <div class="flex gap-3">
+              <button type="button" class="home-section-title tracking-tight transition-colors" :class="segB === 'albums' ? 'font-bold text-fg' : 'font-medium text-muted hover:text-fg'" @click="segB = 'albums'">{{ t("nav.albums") }}</button>
+              <button type="button" class="home-section-title tracking-tight transition-colors" :class="segB === 'years' ? 'font-bold text-fg' : 'font-medium text-muted hover:text-fg'" @click="segB = 'years'">{{ t("nav.years") }}</button>
             </div>
           </div>
-          <div class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto">
-            <button v-for="card in slotBCards" :key="card.key" type="button" class="home-rail-card flex shrink-0 cursor-pointer flex-col text-left" @click="onSlotBCard(card)">
-              <div class="flex justify-start">
-                <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: card.color ?? 'var(--accent)' }">
-                  <img v-if="card.cover" :src="card.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                  <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ card.initial ?? card.title.charAt(0) }}</span>
+          <div ref="slotBHost" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto rail-host--inline" :style="{ height: `${railCardH}px` }">
+            <Virtualizer horizontal :data="slotBIndexes" :item-size="railSlotW">
+              <template #default="{ item: i }">
+                <div v-if="slotBCards[i]" :style="{ width: `${railSlotW}px` }">
+                  <button :key="slotBCards[i]!.key" type="button" class="home-rail-card flex shrink-0 cursor-pointer flex-col text-left" :style="{ width: `${railCardW}px` }" @click="onSlotBCard(slotBCards[i]!)">
+                    <div class="flex justify-start">
+                      <div class="home-card-cover ak-clip-tr relative aspect-square overflow-hidden" :style="{ height: `${railCover}px`, backgroundColor: slotBCards[i]!.color ?? 'var(--accent)' }">
+                        <img v-if="slotBCards[i]!.cover" :src="slotBCards[i]!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                        <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ slotBCards[i]!.initial ?? slotBCards[i]!.title.charAt(0) }}</span>
+                      </div>
+                    </div>
+                    <div class="home-mt-card w-full min-w-0">
+                      <p class="home-card-title truncate font-medium">{{ slotBCards[i]!.title }}</p>
+                      <p class="home-card-artist truncate text-muted">{{ slotBCards[i]!.subtitle }}</p>
+                    </div>
+                  </button>
                 </div>
-              </div>
-              <div class="home-mt-card w-full min-w-0">
-                <p class="home-card-title truncate font-medium">{{ card.title }}</p>
-                <p class="home-card-artist truncate text-muted">{{ card.subtitle }}</p>
-              </div>
-            </button>
+              </template>
+            </Virtualizer>
           </div>
         </section>
 
         <!-- Slot C: genres ↔ tracks, filtered by context. -->
         <section class="home-mt-section">
           <div class="home-mb-title home-mt-card flex items-center justify-between">
-            <span class="home-section-title font-bold tracking-tight">{{ segC === 'genres' ? t('nav.genres') : t('nav.tracks') }}</span>
-            <div class="flex gap-2">
-              <button type="button" class="home-chip ak-clip border border-line bg-surface font-medium transition-colors" :class="segC === 'genres' ? 'text-accent' : 'text-muted hover:text-fg'" @click="segC = 'genres'">{{ t("nav.genres") }}</button>
-              <button type="button" class="home-chip ak-clip border border-line bg-surface font-medium transition-colors" :class="segC === 'tracks' ? 'text-accent' : 'text-muted hover:text-fg'" @click="segC = 'tracks'">{{ t("nav.tracks") }}</button>
+            <div class="flex gap-3">
+              <button type="button" class="home-section-title tracking-tight transition-colors" :class="segC === 'genres' ? 'font-bold text-fg' : 'font-medium text-muted hover:text-fg'" @click="segC = 'genres'">{{ t("nav.genres") }}</button>
+              <button type="button" class="home-section-title tracking-tight transition-colors" :class="segC === 'tracks' ? 'font-bold text-fg' : 'font-medium text-muted hover:text-fg'" @click="segC = 'tracks'">{{ t("nav.tracks") }}</button>
             </div>
           </div>
-          <div v-if="segC === 'genres'" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto">
-            <button v-for="card in slotCCards" :key="card.key" type="button" class="home-rail-card flex shrink-0 cursor-pointer flex-col text-left" @click="onGenreCard(card)">
-              <div class="flex justify-start">
-                <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: card.color ?? 'var(--accent)' }">
-                  <img v-if="card.cover" :src="card.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                  <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ card.initial ?? card.title.charAt(0) }}</span>
+          <div v-if="segC === 'genres'" ref="slotCGenreHost" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto rail-host--inline" :style="{ height: `${railCardH}px` }">
+            <Virtualizer horizontal :data="slotCGenreIndexes" :item-size="railSlotW">
+              <template #default="{ item: i }">
+                <div v-if="slotCCards[i]" :style="{ width: `${railSlotW}px` }">
+                  <button :key="slotCCards[i]!.key" type="button" class="home-rail-card flex shrink-0 cursor-pointer flex-col text-left" :style="{ width: `${railCardW}px` }" @click="onGenreCard(slotCCards[i]!)">
+                    <div class="flex justify-start">
+                      <div class="home-card-cover ak-clip-tr relative aspect-square overflow-hidden" :style="{ height: `${railCover}px`, backgroundColor: slotCCards[i]!.color ?? 'var(--accent)' }">
+                        <img v-if="slotCCards[i]!.cover" :src="slotCCards[i]!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                        <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ slotCCards[i]!.initial ?? slotCCards[i]!.title.charAt(0) }}</span>
+                      </div>
+                    </div>
+                    <div class="home-mt-card w-full min-w-0">
+                      <p class="home-card-title truncate font-medium">{{ slotCCards[i]!.title }}</p>
+                      <p class="home-card-artist truncate text-muted">{{ slotCCards[i]!.subtitle }}</p>
+                    </div>
+                  </button>
                 </div>
-              </div>
-              <div class="home-mt-card w-full min-w-0">
-                <p class="home-card-title truncate font-medium">{{ card.title }}</p>
-                <p class="home-card-artist truncate text-muted">{{ card.subtitle }}</p>
-              </div>
-            </button>
+              </template>
+            </Virtualizer>
           </div>
-          <div v-else class="home-added-wall home-gap-y-grid">
-            <article
-              v-for="track in slotCTracks"
-              :key="track.id"
-              class="album-grid-card flex flex-col cursor-pointer"
-              @click="onTrackTap(track)"
-              @pointerdown="onPressDown(track)"
-              @pointerup="onPressEnd"
-              @pointercancel="onPressEnd"
-              @pointerleave="onPressEnd"
-              @contextmenu.prevent="openContextMenu($event, track)"
+          <div v-else ref="slotGridHost" class="home-added-wall home-gap-y-grid">
+            <Virtualizer
+              :data="slotCTrackRows"
+              :item-size="addRowHeight"
+              :scroll-ref="scroller ?? undefined"
+              :start-margin="addStartMargin"
             >
-              <div class="flex w-full justify-start">
-                <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: track.color }">
-                  <img v-if="track.cover" :src="track.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
-                  <LoaderCircle v-else-if="coverPending(track)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
-                  <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(track) }}</span>
+              <template #default="{ item: row }">
+                <div class="grid" :style="{ gridTemplateColumns: `repeat(${addCols}, minmax(0, 1fr))`, columnGap: `${addColGap}px`, paddingBottom: `${addRowGap}px` }">
+                  <template v-for="col in addCols" :key="col">
+                    <article
+                      v-if="slotCTrackAt(row, col)"
+                      :key="`slot-grid-${slotCTrackAt(row, col)!.id}`"
+                      class="album-grid-card flex flex-col cursor-pointer"
+                      @click="onTrackTap(slotCTrackAt(row, col)!)"
+                      @pointerdown="onPressDown(slotCTrackAt(row, col)!)"
+                      @pointerup="onPressEnd"
+                      @pointercancel="onPressEnd"
+                      @pointerleave="onPressEnd"
+                      @contextmenu.prevent="openContextMenu($event, slotCTrackAt(row, col)!)"
+                    >
+                      <div class="flex w-full justify-start">
+                        <div class="home-card-cover ak-clip-tr relative aspect-square w-full overflow-hidden" :style="{ backgroundColor: slotCTrackAt(row, col)!.color }">
+                          <img v-if="slotCTrackAt(row, col)!.cover" :src="slotCTrackAt(row, col)!.cover" alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />
+                          <LoaderCircle v-else-if="coverPending(slotCTrackAt(row, col)!)" :size="22" :stroke-width="2" class="home-card-spinner absolute inset-0 m-auto animate-spin text-white/90" />
+                          <span v-else class="home-card-initial absolute inset-0 grid place-items-center font-black text-white/90">{{ initial(slotCTrackAt(row, col)!) }}</span>
+                          <span v-if="isActive(slotCTrackAt(row, col)!) && player.isPlaying" class="absolute home-eq-badge text-white"><span class="ak-eq"><i></i><i></i><i></i></span></span>
+                          <span v-if="isHiRes(slotCTrackAt(row, col)!)" class="home-card-hr absolute bg-amber-400/95 font-bold leading-none tracking-wide text-black">HR</span>
+                        </div>
+                      </div>
+                      <div class="home-mt-card w-full min-w-0">
+                        <p class="album-grid-card__title truncate font-medium">{{ slotCTrackAt(row, col)!.title }}</p>
+                        <p class="album-grid-card__artist truncate text-muted">{{ slotCTrackAt(row, col)!.artist }}</p>
+                      </div>
+                    </article>
+                  </template>
                 </div>
-              </div>
-              <div class="home-mt-card w-full min-w-0">
-                <p class="album-grid-card__title truncate font-medium">{{ track.title }}</p>
-                <p class="album-grid-card__artist truncate text-muted">{{ track.artist }}</p>
-              </div>
-            </article>
+              </template>
+            </Virtualizer>
           </div>
         </section>
       </template>
