@@ -120,9 +120,6 @@ const avatarInitial = computed(() => {
   return name ? Array.from(name)[0]?.toUpperCase() ?? "" : "";
 });
 
-/** Search box text; drives the in-home search/detail shell. */
-const query = ref("");
-
 /** Time-of-day greeting shown beside the avatar, beside the optional nickname. */
 const greeting = computed(() => {
   const h = new Date().getHours();
@@ -136,17 +133,24 @@ const greeting = computed(() => {
 
 /* ------------------------- shell state machine ------------------------- */
 
-type DetailFrame = { kind: "artist" | "album" | "genre" | "year" | "playlist"; key: string };
+type EntityKind = "artist" | "album" | "genre" | "year" | "playlist";
+type EntityFrame = { kind: "entity"; entityKind: EntityKind; key: string };
+type TextFrame = { kind: "text"; text: string };
+type Frame = EntityFrame | TextFrame;
 
-/** Drill-down stack: opening an album from an artist detail pushes a frame;
- *  back pops the top frame. The shell stays in one view, no route change. */
-const detailStack = ref<DetailFrame[]>([]);
+/**
+ * Mixed drill-down trail: entity frames come from tapping a card; text frames
+ * are search keywords committed after tapping a match. Either may appear at any
+ * level, so a path can read 资源库 > 2010 > <歌手词> > 某歌手 > <流派词>.
+ */
+const frames = ref<Frame[]>([]);
 /** Whether the collapsed search box has been tapped open into the index shell. */
 const searchOpen = ref(false);
-const searching = computed(() => query.value.trim().length > 0);
-const detail = computed<DetailFrame | null>(() => detailStack.value[detailStack.value.length - 1] ?? null);
+/** Active, not-yet-committed keyword typed into the box; filters the pool live. */
+const draft = ref("");
+const searching = computed(() => draft.value.trim().length > 0);
 const mode = computed<"overview" | "index">(() =>
-  detail.value || searchOpen.value || searching.value ? "index" : "overview",
+  frames.value.length > 0 || searchOpen.value || searching.value ? "index" : "overview",
 );
 
 /** Three index slots, each with its own in-place segment toggle. */
@@ -157,14 +161,18 @@ const segA = ref<SegA>("playlists");
 const segB = ref<SegB>("albums");
 const segC = ref<SegC>("tracks");
 
-/** Standalone track detail (long-press), separate from the index stack. */
+/** Standalone track detail (long-press), separate from the index trail. */
 const trackDetail = ref<Track | null>(null);
 
-const q = computed(() => query.value.trim().toLowerCase());
-/** Match within a record's own text fields; each category filters itself. */
-function matchesSelf(...fields: (string | undefined)[]) {
-  if (!q.value) return true;
-  return fields.some((f) => (f ?? "").toLowerCase().includes(q.value));
+const needle = computed(() => draft.value.trim().toLowerCase());
+/** Match a record's own text fields against a keyword; empty keyword matches all. */
+function matchFields(fields: (string | undefined)[], n: string) {
+  if (!n) return true;
+  return fields.some((f) => (f ?? "").toLowerCase().includes(n));
+}
+/** A track matches a keyword across its own text fields. */
+function trackMatches(t: Track, n: string) {
+  return matchFields([t.title, t.artist, t.album, t.genre, String(t.year ?? "")], n);
 }
 
 const unknownKey: Record<GroupKind, string> = {
@@ -174,9 +182,9 @@ const unknownKey: Record<GroupKind, string> = {
   genres: "library.collections.unknownGenre",
 };
 
-/** Map a detail frame back to its grouping kind. */
-function frameGroupKind(kind: DetailFrame["kind"]): GroupKind {
-  switch (kind) {
+/** Map an entity frame back to its grouping kind. */
+function frameGroupKind(entityKind: EntityKind): GroupKind {
+  switch (entityKind) {
     case "album": return "albums";
     case "genre": return "genres";
     case "year": return "years";
@@ -184,22 +192,20 @@ function frameGroupKind(kind: DetailFrame["kind"]): GroupKind {
   }
 }
 
-/** Localized label for a stack frame, playlist frames resolved by name. */
-function frameLabel(f: DetailFrame): string {
-  if (f.kind === "playlist") {
+/** Localized label for an entity frame; playlist frames resolved by name. */
+function entityLabel(f: EntityFrame): string {
+  if (f.entityKind === "playlist") {
     if (f.key === "favorites") return t("nav.favorites");
     if (f.key === "recent") return t("home.recent");
     if (f.key === "added") return t("home.recentlyAdded");
     return profile.playlists.find((p) => p.id === f.key)?.name ?? f.key;
   }
-  return isUnknownGroup(f.key) ? t(unknownKey[frameGroupKind(f.kind)]) : f.key;
+  return isUnknownGroup(f.key) ? t(unknownKey[frameGroupKind(f.entityKind)]) : f.key;
 }
 
-interface Crumb { kind: DetailFrame["kind"]; key: string; label: string; }
-
-/** Breadcrumb trail mirroring the drill-down stack; one segment per frame. */
-const detailCrumbs = computed<Crumb[]>(() =>
-  detailStack.value.map((f) => ({ kind: f.kind, key: f.key, label: frameLabel(f) })),
+/** Breadcrumb segments for committed frames; the active draft appends one more. */
+const trailLabels = computed<string[]>(() =>
+  frames.value.map((f) => (f.kind === "text" ? f.text : entityLabel(f))),
 );
 
 /** Separator between index levels shown inside the search box text. */
@@ -208,37 +214,36 @@ const CRUMB_SEP = " > ";
 /** Root label prefixed to every drill-down breadcrumb in the open search box. */
 const rootLabel = computed(() => t("home.libraryRoot"));
 
-/** Search box text: root label once opened, breadcrumb trail once framed, live query otherwise. */
-const searchBoxText = computed(() => {
-  if (detail.value) return [rootLabel.value, ...detailCrumbs.value.map((c) => c.label)].join(CRUMB_SEP);
-  if (searchOpen.value) return rootLabel.value;
-  return query.value;
-});
 function onSearchInput(event: Event) {
-  if (detail.value) return;
-  query.value = (event.target as HTMLInputElement).value;
+  draft.value = (event.target as HTMLInputElement).value;
 }
 
 /** Tap the collapsed square search icon: open the index shell over the home page. */
 function openSearch() { searchOpen.value = true; }
 /** Fold the search box back to the square icon and return to the overview. */
-function closeSearch() { searchOpen.value = false; closeDetail(); }
+function closeSearch() { searchOpen.value = false; frames.value = []; draft.value = ""; }
 
-function openDetail(kind: DetailFrame["kind"], key: string) {
-  const top = detailStack.value[detailStack.value.length - 1];
-  if (top && top.kind === kind && top.key === key) return;
-  detailStack.value = [...detailStack.value, { kind, key }];
+/** Tap a matched card: commit the active keyword as a text layer, then push the entity. */
+function openDetail(entityKind: EntityKind, key: string) {
+  const next: Frame[] = [...frames.value];
+  const pending = draft.value.trim();
+  if (pending) next.push({ kind: "text", text: pending });
+  const top = next[next.length - 1];
+  if (top && top.kind === "entity" && top.entityKind === entityKind && top.key === key) {
+    frames.value = next;
+    draft.value = "";
+    return;
+  }
+  next.push({ kind: "entity", entityKind, key });
+  frames.value = next;
+  draft.value = "";
 }
-function popDetail() {
-  detailStack.value = detailStack.value.slice(0, -1);
-}
-function closeDetail() {
-  detailStack.value = [];
-  query.value = "";
+function popFrame() {
+  frames.value = frames.value.slice(0, -1);
 }
 function backDetail() {
-  if (detailStack.value.length > 1) popDetail();
-  else if (detailStack.value.length === 1) closeDetail();
+  if (searching.value) draft.value = "";
+  else if (frames.value.length > 0) popFrame();
   else closeSearch();
 }
 
@@ -255,10 +260,9 @@ interface ShellCard {
 }
 
 function cardsFrom(tracks: Track[], kind: GroupKind): ShellCard[] {
-  // Each category filters itself: artists match the artist name, albums the album
-  // name, genres the genre, years the year number — no cross-field mixing.
+  // Groups are derived from the already-narrowed pool; a group shows whenever
+  // it still owns a matching track, no second name-level filter on the group key.
   return groupTracks(tracks, kind)
-    .filter((g) => matchesSelf(g.key))
     .map((g) => {
       const coverTrack = g.tracks.find((x) => x.cover) ?? g.tracks[0];
       const name = isUnknownGroup(g.key) ? t(unknownKey[kind]) : g.key;
@@ -290,7 +294,8 @@ const playlistCards = computed<ShellCard[]>(() => {
     playlist,
   }));
   const create: ShellCard = { key: "__new__", title: t("home.newPlaylist"), initial: "+", color: "var(--accent)" };
-  return [...fixed, ...custom, create];
+  const listed = [...fixed, ...custom].filter((c) => matchFields([c.title], needle.value));
+  return needle.value ? listed : [...listed, create];
 });
 
 /** Resolve a built-in or user playlist to its tracks. */
@@ -303,22 +308,26 @@ function playlistTracksByKey(key: string): Track[] {
 }
 
 /**
- * Tracks under the drill-down stack: each frame narrows the pool in turn, so
- * parent and child frames are AND-combined (e.g. an artist then an album keeps
- * only tracks under that artist in that album). A playlist frame resets the
- * pool to its own tracks; an empty stack is the whole library.
+ * Tracks under the mixed trail: each committed frame narrows the pool in turn,
+ * so parent and child frames are AND-combined (e.g. an artist then an album keeps
+ * only tracks under that artist in that album). Text frames filter by keyword,
+ * a playlist frame resets the pool to its own tracks; the active draft filters
+ * live on top. An empty trail is the whole library.
  */
 const contextTracks = computed<Track[]>(() => {
-  if (detailStack.value.length === 0) return player.tracks;
   let pool = player.tracks;
-  for (const frame of detailStack.value) {
-    if (frame.kind === "playlist") {
-      pool = playlistTracksByKey(frame.key);
+  for (const fr of frames.value) {
+    if (fr.kind === "text") {
+      const n = fr.text.trim().toLowerCase();
+      pool = pool.filter((t) => trackMatches(t, n));
+    } else if (fr.entityKind === "playlist") {
+      pool = playlistTracksByKey(fr.key);
     } else {
-      const kind = frameGroupKind(frame.kind);
-      pool = pool.filter((x) => groupKeys(x, kind).includes(frame.key));
+      const kind = frameGroupKind(fr.entityKind);
+      pool = pool.filter((x) => groupKeys(x, kind).includes(fr.key));
     }
   }
+  if (needle.value) pool = pool.filter((t) => trackMatches(t, needle.value));
   return pool;
 });
 
@@ -328,11 +337,11 @@ const contextTracks = computed<Track[]>(() => {
 const slotACards = computed<ShellCard[]>(() =>
   segA.value === "playlists" ? playlistCards.value : cardsFrom(contextTracks.value, "artists"),
 );
-/** Slot B: albums ↔ years, filtered by the current context. */
+/** Slot B: albums ↔ years, filtered by the current matched pool. */
 const slotBCards = computed<ShellCard[]>(() =>
   segB.value === "albums" ? cardsFrom(contextTracks.value, "albums") : cardsFrom(contextTracks.value, "years"),
 );
-/** Slot C: genres ↔ tracks, filtered by the current context. */
+/** Slot C: genres ↔ tracks, filtered by the current matched pool. */
 const slotCCards = computed<ShellCard[]>(() => cardsFrom(contextTracks.value, "genres"));
 const slotCTracks = computed<Track[]>(() => contextTracks.value);
 
@@ -630,12 +639,13 @@ function onSlotBCard(card: ShellCard) {
           <ChevronLeft :size="18" :stroke-width="2" />
         </button>
         <Search :size="17" :stroke-width="2" class="shrink-0 text-dim" />
+        <span class="shrink-0 select-none text-sm text-dim">{{ rootLabel }}{{ CRUMB_SEP }}</span>
+        <span v-if="trailLabels.length" class="shrink-0 truncate text-sm text-dim">{{ trailLabels.join(CRUMB_SEP) }}{{ CRUMB_SEP }}</span>
         <input
-          :value="searchBoxText"
-          :readonly="!!detail"
+          :value="draft"
           type="search"
           class="min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-dim"
-          :placeholder="rootLabel"
+          :placeholder="t('nav.searchPlaceholder')"
           :aria-label="t('nav.searchPlaceholder')"
           @input="onSearchInput"
         />
