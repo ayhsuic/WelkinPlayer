@@ -940,8 +940,12 @@ function onSlotBCard(card: ShellCard) {
         <section class="home-mt-section">
           <div class="home-mb-title home-mt-card flex items-center justify-between">
             <div v-if="!detail" class="flex gap-3">
-              <button type="button" class="home-section-title tracking-tight transition-colors" :class="segA === 'playlists' ? 'font-bold text-fg' : 'font-medium text-muted hover:text-fg'" @click="segA = 'playlists'">{{ t("nav.playlists") }}</button>
-              <button type="button" class="home-section-title tracking-tight transition-colors" :class="segA === 'artists' ? 'font-bold text-fg' : 'font-medium text-muted hover:text-fg'" @click="segA = 'artists'">{{ t("nav.artists") }}</button>
+              <button
+                type="button"
+                class="home-section-title tracking-tight font-bold text-fg transition-colors hover:text-accent"
+                :title="segA === 'playlists' ? t('nav.artists') : t('nav.playlists')"
+                @click="segA = segA === 'playlists' ? 'artists' : 'playlists'"
+              >{{ segA === 'playlists' ? t("nav.playlists") : t("nav.artists") }}</button>
             </div>
             <div v-else class="flex min-w-0 items-center gap-3">
               <button type="button" class="grid h-9 w-9 shrink-0 place-items-center text-dim hover:text-fg" :aria-label="t('controls.collapse')" @click="backDetail">
@@ -979,8 +983,12 @@ function onSlotBCard(card: ShellCard) {
         <section class="home-mt-section">
           <div class="home-mb-title home-mt-card flex items-center justify-between">
             <div class="flex gap-3">
-              <button type="button" class="home-section-title tracking-tight transition-colors" :class="segB === 'albums' ? 'font-bold text-fg' : 'font-medium text-muted hover:text-fg'" @click="segB = 'albums'">{{ t("nav.albums") }}</button>
-              <button type="button" class="home-section-title tracking-tight transition-colors" :class="segB === 'years' ? 'font-bold text-fg' : 'font-medium text-muted hover:text-fg'" @click="segB = 'years'">{{ t("nav.years") }}</button>
+              <button
+                type="button"
+                class="home-section-title tracking-tight font-bold text-fg transition-colors hover:text-accent"
+                :title="segB === 'albums' ? t('nav.years') : t('nav.albums')"
+                @click="segB = segB === 'albums' ? 'years' : 'albums'"
+              >{{ segB === 'albums' ? t("nav.albums") : t("nav.years") }}</button>
             </div>
           </div>
           <div ref="slotBHost" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto rail-host--inline" :style="{ height: `${railCardH}px` }">
@@ -1009,8 +1017,12 @@ function onSlotBCard(card: ShellCard) {
         <section class="home-mt-section">
           <div class="home-mb-title home-mt-card flex items-center justify-between">
             <div class="flex gap-3">
-              <button type="button" class="home-section-title tracking-tight transition-colors" :class="segC === 'genres' ? 'font-bold text-fg' : 'font-medium text-muted hover:text-fg'" @click="segC = 'genres'">{{ t("nav.genres") }}</button>
-              <button type="button" class="home-section-title tracking-tight transition-colors" :class="segC === 'tracks' ? 'font-bold text-fg' : 'font-medium text-muted hover:text-fg'" @click="segC = 'tracks'">{{ t("nav.tracks") }}</button>
+              <button
+                type="button"
+                class="home-section-title tracking-tight font-bold text-fg transition-colors hover:text-accent"
+                :title="segC === 'genres' ? t('nav.tracks') : t('nav.genres')"
+                @click="segC = segC === 'genres' ? 'tracks' : 'genres'"
+              >{{ segC === 'genres' ? t("nav.genres") : t("nav.tracks") }}</button>
             </div>
           </div>
           <div v-if="segC === 'genres'" ref="slotCGenreHost" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto rail-host--inline" :style="{ height: `${railCardH}px` }">
