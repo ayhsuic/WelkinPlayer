@@ -195,9 +195,6 @@ function frameLabel(f: DetailFrame): string {
   return isUnknownGroup(f.key) ? t(unknownKey[frameGroupKind(f.kind)]) : f.key;
 }
 
-/** Localized frame title; unknown sentinels resolve to the library label. */
-const detailTitle = computed(() => (detail.value ? frameLabel(detail.value) : ""));
-
 interface Crumb { kind: DetailFrame["kind"]; key: string; label: string; }
 
 /** Breadcrumb trail mirroring the drill-down stack; one segment per frame. */
@@ -325,26 +322,12 @@ const contextTracks = computed<Track[]>(() => {
   return pool;
 });
 
-/** Virtual hero card for the framed object: shown in slot A, not tappable. */
-const heroCard = computed<ShellCard | null>(() => {
-  if (!detail.value) return null;
-  const tracks = contextTracks.value;
-  const cover = tracks.find((x) => x.cover) ?? tracks[0];
-  return {
-    key: detail.value.key,
-    title: detailTitle.value,
-    subtitle: t("library.collections.trackCount", { count: tracks.length }),
-    cover: cover?.cover,
-    color: cover?.color,
-    initial: detailTitle.value.charAt(0),
-  };
-});
-
-/** Slot A: playlist/artist wall when empty, one virtual hero card when framed. */
-const slotACards = computed<ShellCard[]>(() => {
-  if (detail.value) return heroCard.value ? [heroCard.value] : [];
-  return segA.value === "playlists" ? playlistCards.value : cardsFrom(contextTracks.value, "artists");
-});
+/** Slot A: the top-level chooser (playlist/artist wall) stays live for every
+ *  framed condition. A pushed frame only narrows the shared pool; it never
+ *  replaces this wall with a read-only hero card. */
+const slotACards = computed<ShellCard[]>(() =>
+  segA.value === "playlists" ? playlistCards.value : cardsFrom(contextTracks.value, "artists"),
+);
 /** Slot B: albums ↔ years, filtered by the current context. */
 const slotBCards = computed<ShellCard[]>(() =>
   segB.value === "albums" ? cardsFrom(contextTracks.value, "albums") : cardsFrom(contextTracks.value, "years"),
@@ -362,7 +345,7 @@ const slotCTrackRows = computed(() =>
   Array.from({ length: Math.ceil(slotCTracks.value.length / addCols.value) }, (_, i) => i),
 );
 function slotCTrackAt(row: number, col: number): Track | undefined {
-  return slotCTracks.value[row * addCols.value + col];
+  return slotCTracks.value[row * addCols.value + col - 1];
 }
 
 /** Collapsing sticky header: once the list scrolls past a short peek, the large title
@@ -469,7 +452,7 @@ const addRowHeight = computed(() => {
   return Math.round(cover + addTextSlot.value + addRowGap.value);
 });
 function addTrack(row: number, col: number): Track | undefined {
-  return recentlyAdded.value[row * addCols.value + col];
+  return recentlyAdded.value[row * addCols.value + col - 1];
 }
 function measureAddWall(host: HTMLElement | null = addWallHost.value) {
   if (!host) return;
@@ -592,9 +575,9 @@ function onAlbumCard(card: ShellCard) { openDetail("album", card.key); }
 function onGenreCard(card: ShellCard) { openDetail("genre", card.key); }
 function onYearCard(card: ShellCard) { openDetail("year", card.key); }
 
-/** Slot A tap: the framed hero card is a virtual display only, not tappable. */
+/** Slot A tap: route by the active segment; the chooser stays live under any
+ *  framed condition. */
 function onSlotACard(card: ShellCard) {
-  if (detail.value) return;
   if (segA.value === "artists") onArtistCard(card);
   else onPlaylistCard(card);
 }
@@ -936,22 +919,16 @@ function onSlotBCard(card: ShellCard) {
 
       <!-- Index mode: three in-place slots (A wall / B albums-years / C genres-tracks). -->
       <template v-else>
-        <!-- Slot A: playlist/artist wall, or the framed virtual hero card. -->
+        <!-- Slot A: playlist/artist chooser wall; stays live under any condition. -->
         <section class="home-mt-section">
           <div class="home-mb-title home-mt-card flex items-center justify-between">
-            <div v-if="!detail" class="flex gap-3">
+            <div class="flex gap-3">
               <button
                 type="button"
                 class="home-section-title tracking-tight font-bold text-fg transition-colors hover:text-accent"
                 :title="segA === 'playlists' ? t('nav.artists') : t('nav.playlists')"
                 @click="segA = segA === 'playlists' ? 'artists' : 'playlists'"
               >{{ segA === 'playlists' ? t("nav.playlists") : t("nav.artists") }}</button>
-            </div>
-            <div v-else class="flex min-w-0 items-center gap-3">
-              <button type="button" class="grid h-9 w-9 shrink-0 place-items-center text-dim hover:text-fg" :aria-label="t('controls.collapse')" @click="backDetail">
-                <ChevronLeft :size="20" :stroke-width="2" />
-              </button>
-              <span class="home-section-title truncate font-bold tracking-tight">{{ detailTitle }}</span>
             </div>
           </div>
           <div ref="slotAHost" class="home-scroll-pad home-gap-x home-pb-rail no-scrollbar flex overflow-x-auto rec-host--inline" :style="{ height: `${recCardW}px` }">
@@ -961,7 +938,6 @@ function onSlotBCard(card: ShellCard) {
                   <button
                     :key="slotACards[i]!.key"
                     type="button"
-                    :disabled="!!detail"
                     class="home-rec-card ak-clip-tr group relative aspect-square shrink-0 overflow-hidden text-left"
                     :style="{ width: `${recCardW}px`, backgroundColor: slotACards[i]!.color ?? 'var(--accent)' }"
                     @click="onSlotACard(slotACards[i]!)"
